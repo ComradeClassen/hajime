@@ -60,21 +60,7 @@ Sato read it. The grip fight is going against him on the right side.
   F. [Write your own — short phrase]
 ```
 
-The player picks B and D.
-
-```
-0:24  Mate. Hajime.
-0:26  Tanaka does not engage. Hands active, no grip.
-       → Coach instruction received: "Break his grip first." ✓
-0:29  Sato reaches — Tanaka slaps the hand down.
-0:32  Sato reaches again — Tanaka pummels inside, secures sleeve.
-0:34  Tanaka has the dominant grip. Sato adjusts.
-0:38  Sato attacks ko-uchi — Tanaka stuffs, drops levels.
-       → ne-waza window: 34% — Tanaka commits. ✓
-       → Coach instruction received: "Go to the ground if he opens up." ✓
-0:41  Tanaka passes to side control. Sato turtles.
-0:44  Tanaka attacks the turnover...
-```
+The player picks B and D. The simulation resumes and Tanaka begins executing the new plan, biased by composure, fatigue, and trust.
 
 This is the soul of the game. Everything in the rest of this document is in service of making this scene work.
 
@@ -86,106 +72,29 @@ This is the soul of the game. Everything in the rest of this document is in serv
 
 ### RING 1 — The Match Engine (BUILD FIRST)
 
-**The tick model.** The simulation is event-driven, not time-uniform. A "second" in the match is not a fixed beat — it's a state change in the grip/posture/position graph. Quiet moments compress. Scrambles slow down. Most ticks resolve in milliseconds; a real grip exchange might fire 4–5 events per second.
+Event-driven tick simulation. Two judoka in a relational state graph (grip configuration, posture, position, stance matchup). Throw attempts as high-commitment state changes. Stuffed throws can open ne-waza windows. Mate is called naturally on stalemate, OOB, defensive resolution, or penalties. Standard IJF scoring.
 
-**The state graph.** At any moment, two judoka exist in a relational state defined by:
-- Grip configuration (each hand: free / sleeve / collar / bicep / belt / overhook / underhook)
-- Posture (upright / bent / broken / scrambling / down)
-- Position (kumi-kata exchange / engaged / disengaged / scramble / ne-waza)
-- Distance and stance (orthodox vs. orthodox, orthodox vs. southpaw, etc.)
+### RING 2 — The Coach Instruction System & Tournament Attention
 
-Every tick, each fighter "wants" to change the state in a direction favorable to them. Their ability to do so is a function of relevant attributes vs. the opponent's relevant attributes, modified by fatigue and composure.
+The Mate window. Two instructions max. Reception based on composure × trust × read speed × (1 - fatigue). Free-text instructions mapped to known tags via a small Claude call or local heuristic.
 
-**Throw attempts.** A throw is a sudden, high-commitment state change. It can succeed, partially succeed (small score), be stuffed, or be countered. A stuffed throw can open a ne-waza window. The probability of committing to ne-waza is influenced by training, fatigue, and the most recent coach instruction.
-
-**Mate.** The ref calls Mate when:
-- Stalemate threshold reached (X seconds of low-action gripping)
-- Out of bounds
-- A throw attempt resolves cleanly to defensive standing
-- A ne-waza scramble resolves to no progress
-- A penalty is given
-
-**Scoring.** Standard IJF scoring: ippon (immediate win), waza-ari, half-points accumulating. Penalties (shido) for passivity or illegal grips.
-
-### RING 2 — The Coach Instruction System
-
-**The Mate window.** When Mate is called, the simulation pauses. The player sees:
-- Current fighter state (all body part stats with deltas from match start)
-- Composure and fatigue indicators
-- Trust meter
-- A short prose summary of *what just happened* (this is where the writing voice lives)
-- 5–6 contextual instruction options + a free-text option
-
-**Two instructions max.** Hard limit. Forces the player to read and prioritize. You can't micromanage — you can only emphasize.
-
-**Instruction reception.** When the simulation resumes, the fighter's behavior is biased toward executing your instructions. The strength of that bias is:
-```
-reception = (composure × trust × read_speed) × (1 - fatigue_penalty)
-```
-A high-reception fighter executes cleanly. A low-reception fighter half-executes (right idea, wrong moment) or ignores it entirely and freelances.
-
-**Free-text instructions.** Run through a small Claude-in-Claude call (or local heuristic) that maps the player's phrase to one or more known instruction tags. "Be patient" maps to STAY_DEFENSIVE. "Get inside" maps to PUMMEL_FOR_INSIDE_GRIP. The player feels expressive; the simulation gets a clean signal.
+**Tournament Attention Economy** also begins here — when you have multiple judoka in one tournament, you can only sit in one chair at a time. See `design-notes/dojo-as-institution.md`.
 
 ### RING 3 — The Dojo & Training System
 
-**The dojo as facility.** A 2D top-down view of your dojo, Kairosoft-style. You buy and place training items. Each item:
-- Targets specific attribute clusters
-- Has a quality level (entry / good / elite)
-- Has a slot (only N judoka can use it per session)
-- May have a passive effect (a meditation corner raises composure recovery for everyone)
+The dojo as facility. Training items target specific attribute clusters. Weekly time advancement. Trust as the slowest variable in the game. Money & Prestige activate here — see `design-notes/dojo-as-institution.md`.
 
-**Training items (initial set):**
-- **Uchikomi bands** — grip endurance, throw entry speed
-- **Sparring partner (light)** — read speed, low fatigue cost
-- **Sparring partner (rival)** — read speed, composure, high fatigue cost
-- **Weight room** — explosive strength, raises injury risk
-- **Cardio room** — fatigue resistance
-- **Video study room** — fight IQ, read speed
-- **Meditation cushion** — composure, trust recovery
-- **Ice bath** — fatigue recovery between sessions
-- **Belt promotion mat** — milestone events, motivation
-- **Bulletin board** — set training focus, post tournament reminders
+### RING 4 — The Roster, Long Arcs, & Lineage
 
-**Training cycles.** Time advances in weeks. Each week, you assign each judoka to a training plan (a stack of items). Overtraining one cluster fatigues others and accumulates injury risk. The art is balance.
-
-**Trust.** Built slowly through:
-- Shared training time
-- Match instructions that turned out to be correct
-- Listening to a fighter's stated goals
-- Recovery time after losses
-
-Trust is the slowest variable in the game. A judoka who has been with you five seasons trusts you in a way a new recruit never will.
-
-### RING 4 — The Roster & Long Arcs
-
-**Recruitment.** Young judoka enter your dojo as 14–18-year-old prospects. Each has:
-- Body archetype (lever, motor, grip, ground specialist, etc.)
-- Personality facets (aggressive/patient, technical/athletic, confident/anxious)
-- Backstory hooks (came from a rival dojo / parent was an Olympian / first in family to compete)
-- Stated goals (make the national team / beat their rival / recover from an injury)
-
-**Career arcs.** A judoka progresses through belt ranks and weight classes, faces signature opponents who recur over years, and eventually retires (or is forced to retire by injury). Their arc with you can span 10+ in-game years.
-
-**Retirement and second careers.** A retired judoka can become a coach in your dojo, raising the cap on training quality. The Boxing Gym Story instinct: yesterday's stars become tomorrow's infrastructure.
+Recruitment of young prospects. Career arcs spanning 10+ in-game years. Multigenerational lineage when a sensei retires and a former judoka inherits the dojo. Traits, prestige, and institutional memory carry forward.
 
 ### RING 5 — The 2D Visual Layer (POST-PROTOTYPE)
 
-**The match view.** Two small pixel-art figures, side view. Stripes/lines indicate grip connections — a line from Tanaka's right hand to Sato's collar, pulsing red when strained, snapping when broken. Posture indicated by the angle of the figure. A faint stress halo around fighters under high load.
-
-**The dojo view.** Top-down or isometric, Kairosoft-style. You see your judoka moving between training items. Click a fighter for details.
-
-**The match log.** Always present. The visual is a companion to the prose, not a replacement for it.
-
-**Design principle:** symbols that change state, not animation frames. Information density over fluidity. We are making a sport-as-information-flow, not a fighting game.
+Pixel-art figures with stripe-based grip indicators. Kairosoft-style top-down dojo view. Always paired with the prose log, never replacing it. *Symbols that change state, not animation frames.*
 
 ### RING 6 — Sound (LATE)
 
-The designer is a musician (12-string guitar, Moog synthesizers). Eventually:
-- A dojo ambient theme that shifts with the time of day
-- Match tension layers that respond to score and fatigue
-- A signature motif that plays when one of *your* judoka enters their finals
-
-Build the world in text first. Add the sound when the world is ready to hold it.
+Dojo ambient theme, match tension layers responsive to score and fatigue, signature motif when one of *your* judoka enters their finals. Built when the world is ready to hold it.
 
 ---
 
@@ -193,34 +102,15 @@ Build the world in text first. Add the sound when the world is ready to hold it.
 
 *Initial set. Will grow with playtesting.*
 
-**Grip-focused**
-- Break his grip first
-- Get the dominant grip before you commit
-- Switch stance — attack the other side
-- Stop reaching with your tired hand
+**Grip-focused** — Break his grip first / Get the dominant grip before you commit / Switch stance — attack the other side / Stop reaching with your tired hand
 
-**Tempo-focused**
-- Stay patient. Let him come to you.
-- Push the pace. Tire him out.
-- Slow it down. Reset.
-- Attack on his next breath.
+**Tempo-focused** — Stay patient. Let him come to you / Push the pace. Tire him out / Slow it down. Reset / Attack on his next breath
 
-**Tactical**
-- Go to the ground if he opens up
-- Stay standing — he's better on the mat
-- Attack his weak leg
-- Counter, don't initiate
+**Tactical** — Go to the ground if he opens up / Stay standing — he's better on the mat / Attack his weak leg / Counter, don't initiate
 
-**Composure**
-- Tighten up. He's reading you.
-- Trust your training.
-- Forget the last exchange.
-- Breathe. You have time.
+**Composure** — Tighten up. He's reading you / Trust your training / Forget the last exchange / Breathe. You have time
 
-**Risk**
-- Take the chance. Go for ippon.
-- Play for shidos. He'll panic.
-- Defensive grip. Run the clock.
+**Risk** — Take the chance. Go for ippon / Play for shidos. He'll panic / Defensive grip. Run the clock
 
 ---
 
@@ -240,113 +130,71 @@ Build the world in text first. Add the sound when the world is ready to hold it.
 
 ## OPEN QUESTIONS
 
-**Q1: How real-time is the match?**
-Options: (a) live-scrolling log with pause-on-Mate, (b) tick-by-tick with player-controlled speed, (c) full replay after the fact with Mate windows surfaced as decision points. Probably (b) — gives the player agency over their own attention.
+**Q1: How real-time is the match?** Live-scrolling log with player-controlled speed seems right, but worth playtesting.
 
-**Q2: How many judoka in a stable?**
-Boxing Gym Story manages ~5 active fighters. That feels right for a starting cap. Eventually unlock more.
+**Q2: How many judoka in a stable?** 5 active fighters as a starting cap. Eventually unlock more — and competitive stables grow significantly across the multigenerational arc.
 
-**Q3: How long is a "season"?**
-A real judo season is roughly a year with 4–6 major tournaments. In-game time should compress so a full career arc fits in a play session of reasonable length. Maybe 1 in-game month = 5 minutes of play.
+**Q3: How long is a "season"?** ~1 in-game month = 5 minutes of play. A full career arc fits in a play session of reasonable length.
 
-**Q4: Single-discipline or multiple?**
-Pure judo for v1. BJJ, sambo, freestyle wrestling could be future expansions sharing the same engine.
+**Q4: Single-discipline or multiple?** Pure judo for v1. BJJ, sambo, freestyle wrestling could be future expansions sharing the same engine.
 
-**Q5: How does the player learn judo through play?**
-A non-judoka should be able to play and understand. Possible solution: a glossary tooltip on every term in the match log. Hover "ko-uchi-gari" → see a one-line description and a tiny diagram. The game teaches the sport as you play.
+**Q5: How does a non-judoka learn the sport through play?** Glossary tooltips on every term in the match log. Hover "ko-uchi-gari" → see a one-line description and a tiny diagram.
 
-**Q6: AI prose generation for matches?**
-Same question as Player Two. The simulation generates the structured event stream. A Claude-in-Claude call wraps each event in prose using the tone guide. Every match reads differently. This is experimental and powerful — but build the deterministic prose templates first as a fallback.
+**Q6: AI prose generation for matches?** Same architectural question as Player Two. Build deterministic prose templates first as a fallback; layer Claude-in-Claude generation on top once the system works.
 
-**Q7: Is there a metagame above the dojo?**
-National rankings, federation politics, sponsorships, media coverage of your fighters. All possible later. v1 is just dojo + matches.
+**Q7: Does the Mate window have a real-time pressure element?** A 10-second window to issue instructions before the fighter goes back out alone? Mirrors real coaching pressure. Possibly toggleable difficulty.
 
 ---
 
 ## WHAT TO BUILD FIRST (priority order)
 
-**Phase 1 — The Match Engine in Isolation (weeks 1–4)**
-Goal: a Python script that simulates one judo match between two hand-built fighters and prints a readable log to the terminal. No dojo, no roster, no UI. Just the match.
-- `Judoka` class with body-part stats, fatigue, composure
-- `Match` class that runs the tick loop
-- Grip state graph
-- Throw attempt resolution
-- Ne-waza window logic
-- Mate detection
-- Scoring
-- A first pass of the prose template system
+**Phase 1 — The Match Engine Skeleton.** Three-layer Judoka class. 15 body parts declared. Throw and Combo registries. Two hand-built fighters. Match tick loop with placeholder events. Match ends with a placeholder winner. Goal: prove the architecture compiles.
 
-**Phase 2 — The Mate Window (weeks 4–6)**
-Goal: pause the match, show the coach panel, accept input, resume.
-- Pause logic
-- Stat panel rendering (terminal first)
-- Instruction menu
-- Reception calculation
-- Resumption with biased behavior
+**Phase 2 — Real Combat Logic.** Real grip state graph. Throw success rolls using body archetype, dominant side, fatigue. Ne-waza windows. Mate detection. Scoring. First prose templates.
 
-**Phase 3 — A Single Training Cycle (weeks 6–10)**
-Goal: between two matches, the player can train one fighter and see the effect.
-- `Dojo` class with a small set of training items
-- Weekly time advancement
-- Attribute change calculations
-- Fatigue and injury risk
+**Phase 3 — The Mate Window.** Pause logic. Stat panel. Instruction menu. Reception calculation. Resumption.
 
-**Phase 4 — A Roster & Career (weeks 10–14)**
-Goal: 3 fighters in a stable, a 6-month season, an end-of-season ranking.
-- Recruitment screen
-- Calendar / tournament schedule
-- Multiple judoka simulating in parallel
-- Career stats tracking
+**Phase 4 — A Single Training Cycle.** Dojo class. Training items. Weekly time. Attribute changes. Injury risk.
 
-**Phase 5 — The 2D Layer (weeks 14+)**
-Only after the loop is undeniably fun in pure text.
+**Phase 5 — A Roster & Career.** Recruitment. Tournament schedule. Multiple judoka in parallel. First version of Tournament Attention Economy.
 
----
-
-## WHAT YOU NEED TO LEARN / EXPERIMENT WITH
-
-**Python concepts that will come up:**
-- State machines (the grip graph is one)
-- Probability and weighted choice (already familiar from Player Two)
-- Class composition (a Judoka *has* a Body, a Mind, a History)
-- Event queues (the match tick loop)
-
-**Things to just try:**
-- Watch 30 minutes of high-level judo with the sound off and try to write a tick log of one match by hand. See what events you notice. That's your event taxonomy.
-- Play one Boxing Gym Story session and pay attention to the *rhythm* — when do you get bored, when does it sing.
-- Re-read the DF combat log for one battle. Notice how it builds tension through accumulation of small events.
+**Phase 6 — The 2D Layer.** Only after the loop is undeniably fun in pure text.
 
 ---
 
 ## RELATIONSHIP TO PLAYER TWO
 
-Tachiwaza and Player Two share architectural DNA but are independent projects:
+Tachiwaza and Player Two are **parallel projects of equal priority.**
 
-- Both use tick-based simulation
-- Both layer prose over structured events
-- Both treat *systems as the author*
-- Both run in Python with the same toolchain
+Both share architectural DNA:
+- Tick-based simulation
+- Prose layered over structured events
+- Systems as the author
+- Python and the same toolchain
 
-But:
-- Player Two is a life simulator (decades, single subject, narrative weight)
-- Tachiwaza is a sport simulator (matches, stable of subjects, tactical weight)
-- Player Two release: January 9, 2027
-- Tachiwaza release: TBD — explicitly second priority
+Both compete for the same finite hours. Whichever project is generating real creative pull on a given day earns that day's session. The discipline is not which project ranks higher — it's that whichever one gets a session today gets a *clean* session: focused, committed at the end, with a clear next entry point recorded in the dashboard.
 
-**Scope discipline.** Tachiwaza work happens in dedicated sessions. It does not bleed into Player Two time. When working on one, the other repo stays closed.
+**Practical working model:**
+- Each project has its own repo, its own folder, its own dashboard, its own orientation doc
+- When a session is for one project, the other repo stays closed
+- Once a week (Sunday or whenever feels natural), a 10-minute meta-check: which project am I excited to open this week? That answer is data — not a contract — and over 3–4 weeks a pattern emerges
+- That pattern *is* the real roadmap. It comes from doing the work, not from deciding in advance
+
+**Scope discipline still applies inside any single session.** Don't try to build Ring 4 features when you're supposed to be writing Phase 1 skeleton code. The dojo-as-institution doc holds the long ambition; Phase 1 stays Phase 1. Discipline about staying inside the chosen ring is different from ranking projects.
+
+Player Two has a January 9, 2027 release target. That target was set when Player Two was the only project. If Tachiwaza turns out to be the alive project for an extended stretch, Player Two's date or scope adjusts. The release date serves the work. The work does not serve the release date.
 
 ---
 
 ## WHAT'S BEEN BUILT
 
-*Nothing yet. This is day one.*
+*Nothing yet. April 13, 2026 — design phase.*
 
 ## WHAT'S NEXT
 
-1. Sync the local repo to GitHub
-2. Commit this design doc and the orientation doc
-3. Sketch the `Judoka` data model on paper or in Obsidian
-4. First Python file: `match_engine.py` — start with two hardcoded judoka and a tick loop that prints "Tanaka steps in" and ends. Build outward from there.
+1. v0.2 of `data-model.md` integrating age curves, archetype definitions, and amplified dominant-side grips ✓
+2. First Claude Code session: implement Phase 1 skeleton from the data model spec
+3. Run `python src/main.py` and verify the architecture compiles and the placeholder match runs
 
 ---
 
