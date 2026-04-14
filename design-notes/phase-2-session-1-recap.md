@@ -143,4 +143,55 @@ Both fighters can attempt a throw in the same tick if their random rolls both su
 
 ---
 
-*Document version: Phase 2 Session 1. Update before Session 2.*
+## The Big Problem: Throws Are Happening Too Fast
+
+*Added after watching the first matches. This is the most important thing to think about before Session 2.*
+
+**What was observed:** throw attempts fire almost immediately and throughout the match. Some runs end before tick 50. There is no visible grip battle. The first throw of the match can happen at tick 3.
+
+**What real judo looks like:** a throw attempt is the *last* thing in a sequence that has to be earned. The sequence:
+
+1. **Grip fight** — both fighters probing, breaking grips, fighting for position. This can last 30–90 seconds with nothing that looks like a throw. The outcome is who ends up with the dominant grip.
+2. **Kuzushi** — the fighter with the dominant grip creates an off-balance. This is a *precondition* for throwing, not a result. You cannot commit to a throw entry on a planted, balanced opponent.
+3. **Throw entry** — the high-commitment movement. Only possible from a kuzushi position.
+4. **Resolution** — IPPON / WAZA_ARI / STUFFED / FAILED.
+
+The current simulation collapses all four phases into a single probability roll per tick. There is no "I am in the grip battle" phase. There is no kuzushi precondition. A throw can fire at any tick regardless of what came before.
+
+**The second problem: defensive outcomes are incomplete.** Right now `STUFFED` is the only defensive resolution. But the defender has three real options:
+
+- **Block** — absorb the entry and stay standing. (What STUFFED currently models.)
+- **Step and reset** — the attacker committed but didn't get full entry; both fighters reset to gripping. No ground window. No score threat. Just a positional reset.
+- **Counter-throw** — the attacker's committed momentum becomes kuzushi for the defender's own throw entry. This is one of the most exciting moments in judo: the opponent overcommits and you use their weight against them.
+
+Counter-throws are currently impossible to model. There is no path from "attacker committed" to "defender now has throw momentum."
+
+**The architecture already knows this.** The `Position` enum in `enums.py` has the right states:
+
+```
+STANDING_DISTANT  →  approaching, no contact
+GRIPPING          →  grip contact established, grip battle underway
+ENGAGED           →  kuzushi achieved or throw entry in progress
+SCRAMBLE          →  after a stuffed or partial throw
+NE_WAZA           →  ground work
+```
+
+These were declared in Phase 1 and nothing reads them yet. The grip battle and kuzushi phases are the content that should move fighters *through* those positions before a throw becomes available.
+
+**The design question for Session 2:**
+
+Does Session 2 build the position state machine — making `GRIPPING` and `ENGAGED` prerequisites before a throw attempt is possible — or does Session 2 stay scoped to the ne-waza window and leave throw frequency as a Phase 5 calibration problem?
+
+These are two different sessions. The state machine is the more important fix (it changes the *feel* of every match). The ne-waza window is the more contained fix (it only affects what happens after a STUFFED).
+
+**Things to think about on the way to work:**
+
+- Is the grip battle itself interesting enough to simulate tick-by-tick, or does it resolve quickly into "who has the dominant grip" as a single roll?
+- What does kuzushi look like as a system state? Is it a flag on the match? A property of the current `position`? Does it decay if the fighter doesn't immediately commit?
+- Counter-throws: should they use the same `resolve_throw()` formula with the roles swapped, or do they need their own resolution path?
+- If the grip battle can last 30 seconds (30 ticks) with no throw attempts, what is the match log showing during those ticks? Just "grip battle — Sato pulling" lines? That might be the right answer — but it needs prose templates to not feel like dead air.
+- The `ATTEMPT_PROB` constants are the quick fix (just lower them). But lowering them without adding the grip phase just means the same random timing with longer gaps. The *sequence* is what's missing, not the *frequency*.
+
+---
+
+*Document version: Phase 2 Session 1 (updated post-session). Update before Session 2.*
