@@ -3,7 +3,7 @@
 #
 # Phase 1 goal: prove the architecture compiles and classes compose correctly.
 # The tick loop is a placeholder — it prints events and accumulates fatigue,
-# but has no real combat logic yet. Real throws, grip graphs, and Mate
+# but has no real combat logic yet. Real throws, grip graphs, and Matte
 # detection all come in Phase 2.
 
 from dataclasses import dataclass, field  # dataclass for Match; field for mutable defaults
@@ -24,7 +24,7 @@ PLACEHOLDER_EVENTS: list[str] = [
     "{a} breaks {b}'s posture forward",
     "{b} resets - both fighters separate briefly",
     "{a} steps in - {b} squares up",
-    "stalemate at center - referee watching",
+    "stalemate at center — referee watching",
 ]
 # {a} and {b} are format placeholders filled in at runtime with the fighters' names
 
@@ -47,7 +47,7 @@ CARDIO_DRAIN_PER_TICK: float  = 0.003   # Cardio depletes ~0.003 per tick
 # MATCH
 # Contains two Judoka objects and runs the simulation loop.
 # Phase 1: prints placeholder events, accumulates fatigue, declares a winner.
-# Phase 2: adds the grip state graph, throw success rolls, and Mate detection.
+# Phase 2: adds the grip state graph, throw success rolls, and Matte detection.
 # ===========================================================================
 @dataclass
 class Match:

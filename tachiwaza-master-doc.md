@@ -32,7 +32,7 @@ Round 1 · 0:00 — Tanaka (blue) vs. Sato (white)
        → ne-waza window: 11% — Tanaka does not commit.
        → Both stand. Grips reset.
 0:22  Sato attacks o-uchi-gari — Tanaka's left leg absorbs.
-0:24  Mate.
+0:24  Matte.
 ```
 
 **[ Match paused — coach's chair ]**
@@ -72,11 +72,11 @@ This is the soul of the game. Everything in the rest of this document is in serv
 
 ### RING 1 — The Match Engine (BUILD FIRST)
 
-Event-driven tick simulation. Two judoka in a relational state graph (grip configuration, posture, position, stance matchup). Throw attempts as high-commitment state changes. Stuffed throws can open ne-waza windows. Mate is called naturally on stalemate, OOB, defensive resolution, or penalties. Standard IJF scoring.
+Event-driven tick simulation. Two judoka in a relational state graph (grip configuration, posture, position, stance matchup). Throw attempts as high-commitment state changes. Stuffed throws can open ne-waza windows. Matte is called naturally on stalemate, OOB, defensive resolution, or penalties. Standard IJF scoring.
 
 ### RING 2 — The Coach Instruction System & Tournament Attention
 
-The Mate window. Two instructions max. Reception based on composure × trust × read speed × (1 - fatigue). Free-text instructions mapped to known tags via a small Claude call or local heuristic.
+The Matte window. Two instructions max. Reception based on composure × trust × read speed × (1 - fatigue). Free-text instructions mapped to known tags via a small Claude call or local heuristic.
 
 **Tournament Attention Economy** also begins here — when you have multiple judoka in one tournament, you can only sit in one chair at a time. See `design-notes/dojo-as-institution.md`.
 
@@ -142,7 +142,7 @@ Dojo ambient theme, match tension layers responsive to score and fatigue, signat
 
 **Q6: AI prose generation for matches?** Same architectural question as Player Two. Build deterministic prose templates first as a fallback; layer Claude-in-Claude generation on top once the system works.
 
-**Q7: Does the Mate window have a real-time pressure element?** A 10-second window to issue instructions before the fighter goes back out alone? Mirrors real coaching pressure. Possibly toggleable difficulty.
+**Q7: Does the Matte window have a real-time pressure element?** A 10-second window to issue instructions before the fighter goes back out alone? Mirrors real coaching pressure. Possibly toggleable difficulty.
 
 ---
 
@@ -150,9 +150,9 @@ Dojo ambient theme, match tension layers responsive to score and fatigue, signat
 
 **Phase 1 — The Match Engine Skeleton.** Three-layer Judoka class. 15 body parts declared. Throw and Combo registries. Two hand-built fighters. Match tick loop with placeholder events. Match ends with a placeholder winner. Goal: prove the architecture compiles.
 
-**Phase 2 — Real Combat Logic.** Real grip state graph. Throw success rolls using body archetype, dominant side, fatigue. Ne-waza windows. Mate detection. Scoring. First prose templates.
+**Phase 2 — Real Combat Logic.** Real grip state graph. Throw success rolls using body archetype, dominant side, fatigue. Ne-waza windows. Matte detection. Scoring. First prose templates.
 
-**Phase 3 — The Mate Window.** Pause logic. Stat panel. Instruction menu. Reception calculation. Resumption.
+**Phase 3 — The Matte Window.** Pause logic. Stat panel. Instruction menu. Reception calculation. Resumption.
 
 **Phase 4 — A Single Training Cycle.** Dojo class. Training items. Weekly time. Attribute changes. Injury risk.
 

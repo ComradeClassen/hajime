@@ -22,10 +22,10 @@ You enter multiple judoka in a tournament. Their matches happen on overlapping s
 
 ### What "being coached" means
 
-A judoka with you in their chair gets the full Mate-window experience — your eyes on the fight, your two-instruction interventions, your read.
+A judoka with you in their chair gets the full Matte-window experience — your eyes on the fight, your two-instruction interventions, your read.
 
 A judoka without you fights alone:
-- Their Mate moments still happen, but they self-instruct based on personality and fight IQ
+- Their Matte moments still happen, but they self-instruct based on personality and fight IQ
 - Their composure is somewhat lower without your steady presence
 - They cannot benefit from in-the-moment tactical reads
 - A high-IQ, high-composure veteran can fight well without you. A young anxious prospect falls apart.

@@ -238,7 +238,7 @@ Effective strength of a part at any moment:
 effective = capability_age_modified × (1 - fatigue) × (0.3 if injured else 1.0)
 ```
 
-Fatigue accumulates based on what the part is *doing*. Recovery happens slowly during action and faster during Mate. Cardio modifies recovery rate. Age modifies recovery rate even more (older judoka recover slower).
+Fatigue accumulates based on what the part is *doing*. Recovery happens slowly during action and faster during Matte. Cardio modifies recovery rate. Age modifies recovery rate even more (older judoka recover slower).
 
 ### Cardio State
 
@@ -309,7 +309,7 @@ To be concrete about the scope of the first Claude Code session:
 ✅ The tick loop *does not yet have real combat logic.* It just prints `"tick N: [placeholder event]"` and updates fatigue on a couple of body parts.
 ✅ Match ends with a placeholder winner.
 
-That's it. No Mate window yet. No prose templates. No real grip state graph. We're proving the architecture is sound and the classes compose properly.
+That's it. No Matte window yet. No prose templates. No real grip state graph. We're proving the architecture is sound and the classes compose properly.
 
 **Phase 1 success criterion:** you can run `python src/main.py`, see 240 lines of output, and the two judoka objects look correct when inspected at the end (fatigue accumulated reasonably, capabilities unchanged, state populated, archetypes and dominant sides reflected in the data).
 
@@ -317,8 +317,8 @@ That's it. No Mate window yet. No prose templates. No real grip state graph. We'
 
 ## What Comes After Phase 1
 
-- **Phase 2:** Real grip state graph. Throw attempts with proper success rolls (using archetype, dominant side, age-modified capability, fatigue). Mate detection. Scoring.
-- **Phase 3:** Mate window. Stat panel. Instructions. Reception calculation. Resume.
+- **Phase 2:** Real grip state graph. Throw attempts with proper success rolls (using archetype, dominant side, age-modified capability, fatigue). Matte detection. Scoring.
+- **Phase 3:** Matte window. Stat panel. Instructions. Reception calculation. Resume.
 - **Phase 4:** Prose template system. Events get wrapped in real sentences using the tone guide.
 - **Phase 5:** Calibration pass. Watch many simulated matches. Tune curves.
 
@@ -331,7 +331,7 @@ These don't block Phase 1. They become real once we can watch matches:
 - How fast does grip fatigue accumulate?
 - How much does composure actually swing per event?
 - What's the right base rate for throw attempts per minute?
-- How often should Mate be called?
+- How often should Matte be called?
 - How big is the ne-waza window after a stuffed throw?
 - What are the exact age curve shapes for each attribute cluster?
 - What's the right efficiency penalty for a stance switch?

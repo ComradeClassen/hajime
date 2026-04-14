@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Tachiwaza is a 2D coaching simulation game about judo. The player is not the fighter — the player is the coach. You build a stable of judoka, train them in your dojo, and watch their matches unfold as a deeply simulated, tick-by-tick stream of grip exchanges, throws, scrambles, and ground transitions. When the referee calls Mate and the action pauses, you step in. You get two words to your fighter. Then the simulation resumes — and how well your instruction lands depends on who that fighter is, how tired they are, and how much they trust you.
+Tachiwaza is a 2D coaching simulation game about judo. The player is not the fighter — the player is the coach. You build a stable of judoka, train them in your dojo, and watch their matches unfold as a deeply simulated, tick-by-tick stream of grip exchanges, throws, scrambles, and ground transitions. When the referee calls Matte and the action pauses, you step in. You get two words to your fighter. Then the simulation resumes — and how well your instruction lands depends on who that fighter is, how tired they are, and how much they trust you.
 
 This document is the starting orientation. It captures the emotional and design intent. The mechanics live in the master doc. The code lives in `src/`.
 
@@ -22,11 +22,11 @@ The designer brings: a real love of the sport, a Player-Two-built fluency in Pyt
 
 You are in the chair beside the mat. Your fighter walks out. You spent two seasons building their grip endurance, three months convincing them to trust your reads, and last week you finally got them to stop reaching with their right hand when they're tired. None of that is visible to anyone but you.
 
-The match starts. You watch the log scroll. You see the fight you trained for — and the fight you didn't. The ref says Mate. Your fighter looks at you.
+The match starts. You watch the log scroll. You see the fight you trained for — and the fight you didn't. The ref says Matte. Your fighter looks at you.
 
 You have two words.
 
-That's the game. The dojo is where you build the conditions. The match is where you witness what those conditions produce. The Mate window is where you get to *be there* — briefly, partially, never in full control.
+That's the game. The dojo is where you build the conditions. The match is where you witness what those conditions produce. The Matte window is where you get to *be there* — briefly, partially, never in full control.
 
 ---
 
@@ -38,7 +38,7 @@ That's the game. The dojo is where you build the conditions. The match is where 
 
 **Coach's calm.** You are not in the fight. You are beside it. The game's emotional register is steady — the warmth of a small dojo, the quiet between rounds, the long arc of building someone over years.
 
-**The Mate moment as an event.** When the ref calls Mate and the simulation freezes and your fighter's stats appear and you have ten real seconds to type two instructions — that should feel *charged*. The game's whole architecture exists to make that moment matter.
+**The Matte moment as an event.** When the ref calls Mate and the simulation freezes and your fighter's stats appear and you have ten real seconds to type two instructions — that should feel *charged*. The game's whole architecture exists to make that moment matter.
 
 ---
 
@@ -62,7 +62,7 @@ That's the game. The dojo is where you build the conditions. The match is where 
 
 **The body is the stat sheet.** Right grip strength, left grip strength, posture, legs, cardio, composure. Every body part has fatigue and recovery curves. Training in the dojo targets specific clusters. A fighter with elite cardio holds grip strength deeper into a match. A fighter with weak posture gets bent and broken.
 
-**Mate is the agency window.** The referee calls Mate naturally — stalemate, out of bounds, a stuffed throw resolving in defensive grip. The simulation pauses. Two instructions, max. Then it resumes. This is the only time the player speaks into the fight.
+**Matte is the agency window.** The referee calls Matte naturally — stalemate, out of bounds, a stuffed throw resolving in defensive grip. The simulation pauses. Two instructions, max. Then it resumes. This is the only time the player speaks into the fight.
 
 **Reception depends on the fighter.** The same instruction lands differently on different judoka. A fighter with high composure and high trust executes it cleanly. A panicked or distrustful fighter half-executes or freelances. Trust is built in the dojo over time — it is its own slow-growing variable.
 
@@ -70,7 +70,7 @@ That's the game. The dojo is where you build the conditions. The match is where 
 
 **Prose over data.** The match log is not just `THROW_ATTEMPT seoi-nage RESULT stuffed`. It reads like a sportswriter who knows judo: *"Tanaka steps in. Right hand reaches for the lapel. Sato's left hand intercepts — pistol grip on the sleeve."* The data is the skeleton. The prose is the body.
 
-**No graphics until the simulation sings.** The first prototype is text. A scrolling match log, a stat panel, the Mate window. Only when the loop is undeniably fun do we add the 2D pixel layer.
+**No graphics until the simulation sings.** The first prototype is text. A scrolling match log, a stat panel, the Matte window. Only when the loop is undeniably fun do we add the 2D pixel layer.
 
 ---
 
