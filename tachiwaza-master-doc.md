@@ -5,6 +5,24 @@
 
 ---
 
+## THE PRIORITY DECISION — APRIL 15, 2026
+
+**As of April 15, 2026, Tachiwaza is the primary project. Player Two is paused until January 10, 2027. On January 10, 2027, the designer reassesses with a finished (or near-finished) Tachiwaza in hand and decides what Player Two becomes next.**
+
+This decision was made because:
+
+1. **Tachiwaza's scope is visible from where the designer is standing.** Judo is two people on a mat and two coaches watching. That's a rectangle you can draw around a problem. Player Two's ambition — simulating any human life in any geography in any era — is a decade-long project. The summit of Tachiwaza is visible. The summit of Player Two is behind a ridge.
+
+2. **The tech transfers upward.** The grip graph teaches relational-state modeling. The Matte window teaches agency-within-simulation. The prose templates teach literary rendering of structured events. The calibration work teaches tuning-by-observation. All of these are Player Two infrastructure. Building Tachiwaza is earning the tools for Player Two.
+
+3. **Focused creative pull.** Tachiwaza is the alive project. Following that signal is the right thing to do.
+
+This decision protects the designer's future self from second-guessing. When a weak moment arrives in July and the temptation is to open Player Two — the answer is already here. The choice was made clearly on April 15 and it does not need to be re-made every session.
+
+**Player Two is paused, not abandoned.** Its design documents remain in the repo. Its orientation doc remains valid. On January 10, 2027, it resumes as the next nine-month project — but started by a more capable builder with a shipped game behind them.
+
+---
+
 ## THE CORE LOOP
 
 You coach a stable of judoka. You train them in the dojo. You enter them in matches. You watch the matches simulate tick-by-tick as a stream of grip exchanges, fatigue events, throw attempts, scrambles, and ground transitions. When the referee calls Matte, the simulation pauses. You see your fighter's current state. You issue up to two short instructions. The simulation resumes — and how well your instructions land depends on the fighter's composure, fight IQ, fatigue, and trust in you. After the match, you return to the dojo and use what you learned to shape the next training cycle.
@@ -72,6 +90,34 @@ Sato read it. The grip fight is going against him on the right side.
 The player picks B and D. The simulation resumes and Tanaka begins executing the new plan, biased by composure, fatigue, trust — and the physics of his body against Sato's.
 
 This is the soul of the game. Everything in the rest of this document is in service of making this scene work.
+
+---
+
+## THE NORTH STAR — DESIGN BY STORY
+
+*The working principle of the project.*
+
+Tarn Adams described his design philosophy for Dwarf Fortress like this: he and his brother would write the stories they wanted the game to produce, and then they would design the systems that could produce those stories. The design process was narrative-first. You imagine what you want to read at the end of a simulation run, then you build the machine that can generate it.
+
+**Tachiwaza is built the same way.**
+
+The Anchoring Scene above is not a mockup. It is a story the designer wants to read. A match where Tanaka goes for his strongest throw too early, where Sato reads it and sprawls, where a brief ne-waza window opens and the fighter does not commit, where the grips reset and the coach gets a Matte window and has to choose what to say. That's the story. The grip graph exists because that story needs a grip graph to be legible. The coach IQ system exists because that coaching moment needs the player to be able to read the fighter's state and choose between real options.
+
+Every architectural decision in this document traces back to a scene the designer wanted to be able to witness.
+
+**This is how the design discipline works going forward:**
+
+1. Write a scene. Not a feature list. A concrete match, a specific training session, a particular coaching moment that the designer wants to be able to watch.
+2. Read the scene and identify what systems would be required to produce it.
+3. Build the smallest version of those systems that lets the scene happen.
+4. Run the simulation. See if the scene emerges. If it doesn't, refine.
+5. Write the next scene. It will require the next system. Build that.
+
+The Anchoring Scene (above) is the first scene. Its system requirements produced Ring 1 and parts of Ring 2. More scenes exist in the design documents — the designer should keep writing them. Every new scene is a forcing function for the next system.
+
+**What this means practically:** when in doubt about what to build next, do not look at the ring roadmap. Look at the scenes. Write one that excites the designer. Ask: "What systems does this scene require?" Build those.
+
+The game is not a feature pile. The game is the collection of stories it can produce. The rings, the phases, the sessions — those are the scaffolding. The scenes are the thing.
 
 ---
 
@@ -379,45 +425,144 @@ After Ring 1 Phase 3, work opens onto Ring 2 Phase 1 (first real Matte window). 
 
 ## WHAT TO BUILD FIRST (priority order)
 
-**Phase 1 — The Match Engine Skeleton.** ✅ COMPLETE (April 13, 2026)
+*Updated April 15, 2026 to reflect the priority decision — Tachiwaza has the designer's full attention for the next nine months and ships January 9, 2027.*
+
+### THE RELEASE TARGET: JANUARY 9, 2027
+
+The designer's birthday. Early Access / Public Beta on Steam and itch.io. A birthday release for a game about dignity, tradition, and the small struggles that happen inside a bounded rectangle.
+
+Three scenarios, ranked by ambition, with Scenario C as the disciplined fallback:
+
+---
+
+### SCENARIO A — Ring 1 + Ring 2 Complete (REALISTIC)
+
+**What ships:**
+
+*Ring 1 — Match Engine:* Phase 1, Phase 2, Phase 3 (calibration) all complete. Grip graph operational. Position state machine works. Ne-waza chains (chokes, joint locks, pins with osaekomi clock). Referee with personality. Matches feel like real judo at the four-minute scale.
+
+*Ring 2 — Coach Instruction System:* Matte window as a real interface. Coach IQ filters what the player sees. Two-instruction limit. Reception calculation (composure × trust × IQ × fatigue × voice compatibility). Cultural coach voices implemented for 5+ of the 13 styles. Tournament Attention Economy works — 3 fighters in a tournament, player picks whose chair.
+
+*Content:*
+- Hand-built roster of 20-30 fighters across 5-7 cultural styles
+- 3 dojo starting points with different rosters and reputations
+- Procedural tournament generator (small / medium / large formats)
+- National-circuit calendar — a year of tournaments to enter
+
+*Prose:*
+- Full templates for ~80% of common events
+- Multiple stress registers (warm when calm, flat when tired)
+- Cultural flavoring in coach voices
+
+*Visual layer:*
+- Pixel-art top-down view of two judoka
+- Visible grip indicators (stripes connecting hands to gi targets)
+- Stat panel showing the filtered grip graph
+- Dojo background scene (Kairosoft-style)
+
+*Sound:*
+- Ambient dojo theme
+- Match tension layers responsive to score and fatigue
+- Signature motif when one of *your* judoka reaches their finals
+
+*What does NOT ship in Scenario A:*
+- Ring 3 (Dojo training, finances, recruitment)
+- Multigenerational play
+- Play-as-judoka mode
+- Mod support
+
+**Honest probability of completion: 85%.** This is what real Early Access looks like. 40-80 hours of play. A judoka would feel seen. A non-judoka could learn judo from it. Steam Early Access at $15-20.
+
+---
+
+### SCENARIO B — Scenario A + Beginning of Ring 3 (AMBITIOUS)
+
+**What ships beyond Scenario A:**
+
+*Beginning of Ring 3 — The Dojo as Facility:*
+- Dojo as a real environment between matches
+- Training items (uchikomi bands, mirror drills, balance boards, sparring partners) targeting specific body parts and grip configurations
+- Weekly time advancement
+- Trust as a slow-growing variable
+- Basic money & expenses (kids' classes as revenue, salaries as expense)
+- Injury risk from overtraining
+
+*What does NOT ship from Ring 3:* Sponsorships, prestige scoring, the Wall, multigenerational lineage, recruitment of new prospects.
+
+**Honest probability of completion: 60%.** The risk is that Ring 3's systems bleed into Ring 1's polish and the dojo feels half-finished. Commit to Scenario B only if the designer reaches the decision point (end of October 2026) with strong momentum.
+
+---
+
+### SCENARIO C — Polished Scenario A, No Ring 3 (DISCIPLINED)
+
+Same as Scenario A, but extra hours redirected to:
+- More cultural styles (8-10 of the 13 fully implemented)
+- Larger roster (40-50 fighters)
+- Varied tournament formats
+- Higher prose coverage (90%+)
+- Deeper calibration (200+ watched matches, rhythm right)
+- Better pixel art with character
+- Stronger sound integration
+- Tutorial mode that teaches non-judoka the sport through a guided first match
+
+**Honest probability of completion: 90%.** This is the disciplined choice. It accepts that nine months produces ONE polished thing rather than two half-done things. What ships feels authored.
+
+---
+
+### THE STRATEGY
+
+**Aim for Scenario A. Build toward Scenario B. Be willing to land on Scenario C.**
+
+Month-by-month roadmap:
+
+- **April-July 2026 (Months 1-3):** Finish Ring 1 completely. Phase 2 Session 2 (this week), Phase 3 calibration. By end of July: the match engine is *done* and the designer has watched 50+ matches that feel like real judo.
+
+- **August-October 2026 (Months 4-6):** Build Ring 2. Matte window. Coach IQ filtering. Cultural coach voices. Tournament Attention Economy. By end of October: the coaching loop is real and a tournament with 3 fighters bites.
+
+- **November-December 2026 (Months 7-8):** **DECISION POINT.** Two questions:
+  - Is Ring 1 + Ring 2 solid enough to ship as-is?
+  - Do I have momentum and vision for the beginning of Ring 3?
+
+  If yes to both → push for Scenario B with the dojo training system.
+  If no to either → commit to Scenario C: polish, content, prose, sound, tutorial.
+
+- **Early January 2027 (Month 9):** Final polish, bug fixes, marketing prep, launch page, trailer script. Ship January 9.
+
+---
+
+### THE PHASE QUEUE (UNCHANGED)
+
+The scenarios above are the shipping plan. The phase-by-phase build order remains:
+
+**Phase 1 — Skeleton.** ✅ COMPLETE (April 13, 2026)
 
 **Phase 2 — Real Combat + Grip Graph + Ne-Waza + Referee.**
 
-  **Session 1 — Throw Resolution & Scoring.** ✅ COMPLETE (April 14, 2026)
-  - Mate → Matte rename
-  - effective_body_part() implementation
-  - Throw resolution: IPPON / WAZA_ARI / STUFFED / FAILED
-  - Scoring wired to match state; match end conditions
-  - Identified the "throws fire every tick" problem → drove Session 2 scope
+  *Session 1 — Throw Resolution & Scoring.* ✅ COMPLETE (April 14, 2026)
 
-  **Session 2 — The Grip Graph, the Position Machine, the Ne-Waza Door, and the Referee.** (NEXT)
-  - Body parts expand from 15 to 24 (head, hips, thighs, knees, shins, wrists)
-  - GripEdge / GripGraph as Match-level state, replacing grip_configuration dict
+  *Session 2 — The Grip Graph, the Position Machine, the Ne-Waza Door, and the Referee.* (NEXT)
+  - Body parts expand from 15 to 24
+  - GripEdge / GripGraph as Match-level state
   - Position state machine gates throw attempts on graph satisfaction
   - Throws rewritten with EdgeRequirement prerequisites
-  - Ne-waza window opens on STUFFED with multi-turn commitment chains for choke / armbar / pin
+  - Ne-waza window with multi-turn commitment chains
   - OsaekomiClock for pin scoring
-  - Referee class with four personality variables (newaza_patience, stuffed_throw_tolerance, match_energy_read, grip_initiative_strictness)
-  - Landing angle resolution for borderline IPPON / WAZA_ARI calls
-  - Belt rank gating on composure hits from referee calls
-  - Hajime / Matte / Ippon ceremonial calls
+  - Referee class with personality variables
+  - Landing angle resolution for borderline calls
+  - Belt rank gating on composure hits
   - Full plan: `phase-2-session-2-plan.md`
 
-**Phase 3 — Ring 1 Calibration.**
-Watch many simulated matches. Tune the grip sub-loop thresholds, the throw resolution modifiers, the referee personality defaults, the edge fatigue rates, the ne-waza commitment chain timings. Adjust until the match rhythm looks like real judo at elite level.
+**Phase 3 — Ring 1 Calibration.** Watch many matches. Tune thresholds.
 
-**Phase 4 (Ring 2 Phase 1) — The Matte Window.**
-Pause logic. Stat panel including physical variable readout and graph rendering filtered by coach IQ. Instruction menu with seven-category taxonomy. Reception calculation including voice compatibility. Resumption.
+**Phase 4 (Ring 2 Phase 1) — The Matte Window.** First real coaching interface.
 
-**Phase 5 (Ring 3 Phase 1) — A Single Training Cycle.**
-Dojo class. Training items target physical variables AND specific grip configurations / ne-waza graspers. Coaching IQ as a trainable variable that affects Matte panel legibility. Weekly time. Attribute changes. Injury risk.
+**Phase 5 (Ring 2 Phase 2) — Cultural coach voices & Tournament Attention Economy.**
 
-**Phase 6 (Ring 4 Phase 1) — A Roster & Career.**
-Recruitment. Body type and signature grip preferences as recruitment lens. School demographics biasing the recruit pool. Tournament schedule. Multiple judoka in parallel. First version of Tournament Attention Economy. Career arcs.
+**Phase 6 (Ring 3 Phase 1) — A Single Training Cycle.** (Scenario B only)
 
-**Later — The 2D Layer.** Only after the loop is undeniably fun in pure text.
+**Later — The 2D Layer.** After the text loop is undeniably fun.
 
-**Even later — Play-as-Judoka mode.** Sketched in `play-as-judoka-mode.md`. Post-Ring 4.
+**Even later — Play-as-Judoka mode.** Post-release. Sketched in `play-as-judoka-mode.md`.
 
 ---
 
@@ -440,23 +585,37 @@ Recruitment. Body type and signature grip preferences as recruitment lens. Schoo
 
 ## RELATIONSHIP TO PLAYER TWO
 
-Tachiwaza and Player Two are **parallel projects of equal priority.**
+**Updated April 15, 2026.**
 
-Both share architectural DNA:
+Tachiwaza is the primary project through January 9, 2027. Player Two is paused. See the PRIORITY DECISION section at the top of this document for the full rationale.
+
+This section remains here because the two projects are architecturally related and Tachiwaza's build directly advances Player Two's eventual resumption.
+
+**Shared architectural DNA:**
 - Tick-based simulation
 - Prose layered over structured events
 - Systems as the author
 - Python and the same toolchain
+- Relational state between entities as a first-class concept
 
-Both compete for the same finite hours. Whichever project is generating real creative pull on a given day earns that day's session. The discipline is not which project ranks higher — it's that whichever one gets a session today gets a *clean* session: focused, committed at the end, with a clear next entry point recorded in the dashboard.
+**What Tachiwaza teaches Player Two:**
 
-**Practical working model:**
-- Each project has its own repo, its own folder, its own dashboard, its own orientation doc
-- When a session is for one project, the other repo stays closed
-- Once a week, a 10-minute meta-check: which project am I excited to open this week? That answer is data, not a contract — and over 3–4 weeks a pattern emerges
-- That pattern *is* the real roadmap
+- The grip graph is a specific instance of a general pattern: how to model the relationship between two entities as bipartite typed edges. Player Two's parallel-lives architecture (the boy meets the grandmother, the grandmother's life thread intersects with the mother's, the teacher notices the student) uses the same architectural bones. Building Tachiwaza's grip graph is learning Player Two's relational substrate.
 
-Player Two has a January 9, 2027 release target. If Tachiwaza turns out to be the alive project for an extended stretch, Player Two's date or scope adjusts. The release date serves the work. The work does not serve the release date.
+- The Matte window teaches agency-within-simulation — how the player influences an autonomous system without controlling it. Player Two's choice-prompt architecture is the same problem in a different context.
+
+- The prose template system teaches literary rendering of structured events without the prose becoming decoration. Player Two needs this for its life-event writing.
+
+- Calibration by observation — watching many matches and tuning thresholds until the rhythm feels right — is a discipline Player Two will need for its life-simulation tuning.
+
+**Practical working model through January 9, 2027:**
+- Tachiwaza has the designer's full creative attention
+- Player Two's repo stays closed during Tachiwaza sessions
+- Player Two's design documents remain in its repo, untouched and valid
+- If an idea arrives that belongs to Player Two, it is written down as a quick note in Player Two's repo and then the designer returns to Tachiwaza
+- On January 10, 2027, the designer opens Player Two with a finished Tachiwaza behind them
+
+**The reason this works:** the designer is not losing nine months of Player Two development. They are earning the infrastructure Player Two needs. When they return, they return stronger.
 
 ---
 
