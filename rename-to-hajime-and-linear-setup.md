@@ -1,4 +1,4 @@
-# Rename Tachiwaza → Hajime + Linear Setup
+# Rename Hajime → Hajime + Linear Setup
 ### Step-by-step execution plan. Follow in order. Do not skip steps.
 
 *Created April 16, 2026. Written to be executed in a single sitting of ~45–60 minutes. The order matters — each step assumes the previous one completed cleanly.*
@@ -9,7 +9,7 @@
 
 ### What this document does
 
-This doc walks you through renaming the project from **Tachiwaza** to **Hajime** across:
+This doc walks you through renaming the project from **Hajime** to **Hajime** across:
 - Your local filesystem
 - Obsidian vault
 - Git repository (local + GitHub)
@@ -28,14 +28,14 @@ The rename has one major trap unique to this title: the word **"hajime" already 
 
 **These existing uses of the word `hajime` are correct and must survive the rename untouched.**
 
-The good news: because we're renaming `Tachiwaza` → `Hajime` and doing case-sensitive whole-word replacements on `Tachiwaza` / `tachiwaza` / `TACHIWAZA`, we are never searching for the string `hajime` as a find-target. So technically there is no collision.
+The good news: because we're renaming `Hajime` → `Hajime` and doing case-sensitive whole-word replacements on `Hajime` / `hajime` / `HAJIME`, we are never searching for the string `hajime` as a find-target. So technically there is no collision.
 
 The caution: after the rename, some contexts will have `Hajime` appearing as both the project name and the judo term on the same page, which is semantically fine but can be visually confusing. We handle this in Step 3 with a pre-flight audit so you know where the existing `hajime` references are and can spot-check them after the rename is done.
 
 **The defensive order:**
 1. Commit current state (so you can roll back if anything goes wrong).
 2. Audit existing `hajime` usages first — know where they live so you can verify they survived.
-3. Do case-sensitive replacements on `Tachiwaza` variants in a specific order.
+3. Do case-sensitive replacements on `Hajime` variants in a specific order.
 4. Test the code still runs.
 5. Rename the folders and GitHub repo last (so you aren't fighting path changes mid-edit).
 6. Linear setup comes after the rename is clean.
@@ -56,12 +56,12 @@ The caution: after the rename, some contexts will have `Hajime` appearing as bot
 
 ### STEP 1 — Commit and push current state (safety net)
 
-Open terminal in `C:\Users\jackc\Documents\tachiwaza` and run:
+Open terminal in `C:\Users\jackc\Documents\hajime` and run:
 
 ```bash
 git status
 git add -A
-git commit -m "Pre-rename checkpoint: snapshot before Tachiwaza → Hajime migration"
+git commit -m "Pre-rename checkpoint: snapshot before Hajime → Hajime migration"
 git push origin main
 ```
 
@@ -89,7 +89,7 @@ In VS Code, open the project folder. Then:
 2. Search for: `hajime` (case-insensitive, no "match case" toggle).
 3. Note the files where `hajime` appears. Expected hits:
    - `The_Chair__the_Grip__and_the_Throw...md` — multiple references to "Matte-Hajime cycles"
-   - `tachiwaza-master-doc.md` — possibly in prose examples (`0:00 Hajime`)
+   - `hajime-master-doc.md` — possibly in prose examples (`0:00 Hajime`)
    - `data-model.md` or `grip-sub-loop.md` — possibly in state descriptions
    - Python files: potentially `hajime_tick` or similar timing variables
 4. **Copy this list somewhere you can reference it after Step 7.** A scratch text file, a note in Obsidian (before you close it — too late, then just jot it on paper), whatever works.
@@ -100,12 +100,12 @@ In VS Code, open the project folder. Then:
 
 ---
 
-### STEP 4 — Replace `Tachiwaza` (capitalized) across the project
+### STEP 4 — Replace `Hajime` (capitalized) across the project
 
 In VS Code:
 
 1. `Ctrl+Shift+H` (global find-and-replace).
-2. Find: `Tachiwaza`
+2. Find: `Hajime`
 3. Replace: `Hajime`
 4. **Toggle "Match Case" ON** (the Aa icon).
 5. **Toggle "Match Whole Word" ON** (the `ab` icon with brackets).
@@ -116,26 +116,26 @@ In VS Code:
    - Cross-file references
 7. Click "Replace All."
 
-**Verify:** Spot-check `tachiwaza-master-doc.md` → the title should now read `# HAJIME — Master Design & Development Document` (or similar — your exact heading style).
+**Verify:** Spot-check `hajime-master-doc.md` → the title should now read `# HAJIME — Master Design & Development Document` (or similar — your exact heading style).
 
 **A note on the result:** you'll see sentences now like "Hajime is the primary project through January 9, 2027." That sentence is correct in two ways at once — it refers to the game and nods at the referee call. Lean into that; it's one of the reasons the title works.
 
 ---
 
-### STEP 5 — Replace `tachiwaza` (lowercase) across the project
+### STEP 5 — Replace `hajime` (lowercase) across the project
 
-**Caution:** This step cannot collide with existing `hajime` uses because we're matching whole words and case-sensitively — `hajime` and `tachiwaza` are completely different character strings. Still, be deliberate.
+**Caution:** This step cannot collide with existing `hajime` uses because we're matching whole words and case-sensitively — `hajime` and `hajime` are completely different character strings. Still, be deliberate.
 
 In VS Code:
 
 1. `Ctrl+Shift+H`.
-2. Find: `tachiwaza`
+2. Find: `hajime`
 3. Replace: `hajime`
 4. **Toggle "Match Case" ON.**
 5. **Toggle "Match Whole Word" ON.**
 6. Review results. Expected hits:
-   - Filenames referenced in wiki-links: `[[tachiwaza-master-doc]]` → `[[hajime-master-doc]]`
-   - Python imports (if any): `from tachiwaza import ...` → `from hajime import ...`
+   - Filenames referenced in wiki-links: `[[hajime-master-doc]]` → `[[hajime-master-doc]]`
+   - Python imports (if any): `from hajime import ...` → `from hajime import ...`
    - Variable names like `tachiwaza_root` or `TACHIWAZA_VERSION`
 7. Click "Replace All."
 
@@ -143,12 +143,12 @@ In VS Code:
 
 ---
 
-### STEP 6 — Replace `TACHIWAZA` (all caps, if any)
+### STEP 6 — Replace `HAJIME` (all caps, if any)
 
 Some constants may be all-caps. Quick sweep:
 
 1. `Ctrl+Shift+H`.
-2. Find: `TACHIWAZA`
+2. Find: `HAJIME`
 3. Replace: `HAJIME`
 4. **Match Case ON, Match Whole Word ON.**
 5. Review and replace all.
@@ -191,12 +191,12 @@ Or whatever the entrypoint is for your match simulation.
 
 ### STEP 9 — Rename the markdown files
 
-Files to rename in the Obsidian vault (likely in `C:\Users\jackc\Documents\tachiwaza\` or an `obsidian-vault` subfolder):
+Files to rename in the Obsidian vault (likely in `C:\Users\jackc\Documents\hajime\` or an `obsidian-vault` subfolder):
 
 | Old filename | New filename |
 |---|---|
-| `tachiwaza-master-doc.md` | `hajime-master-doc.md` |
-| `tachiwaza-orientation.md` | `hajime-orientation.md` |
+| `hajime-master-doc.md` | `hajime-master-doc.md` |
+| `hajime-orientation.md` | `hajime-orientation.md` |
 | `The_Chair__the_Grip__and_the_Throw__A_Judo_Coaching_Language_and_Style_Bible_for_Tachiwaza.md` | `The_Chair__the_Grip__and_the_Throw__A_Judo_Coaching_Language_and_Style_Bible_for_Hajime.md` |
 | `From_Tissue_Layers_to_Tatami__What_Dwarf_Fortress_Teaches_Tachiwaza.md` | `From_Tissue_Layers_to_Tatami__What_Dwarf_Fortress_Teaches_Hajime.md` |
 
@@ -211,7 +211,7 @@ Use File Explorer or VS Code's file tree to rename (right-click → Rename).
 Renaming files breaks `[[link]]` references. In VS Code, do one more global find-and-replace pass for the markdown link syntax:
 
 1. `Ctrl+Shift+H`.
-2. Find: `[[tachiwaza-master-doc]]`
+2. Find: `[[hajime-master-doc]]`
 3. Replace: `[[hajime-master-doc]]`
 4. Match Case ON.
 5. Replace All.
@@ -227,7 +227,7 @@ Repeat for each renamed file. Do the same for the two research docs if they're w
 In File Explorer:
 
 1. Navigate to `C:\Users\jackc\Documents\`.
-2. Right-click `tachiwaza` → Rename → `hajime`.
+2. Right-click `hajime` → Rename → `hajime`.
 3. Press Enter.
 
 **If Windows refuses** with "folder in use": VS Code is still holding the folder open. Close VS Code, rename, then reopen.
@@ -238,10 +238,10 @@ In File Explorer:
 
 ### STEP 12 — Rename the GitHub repo
 
-1. Go to `https://github.com/<your-username>/tachiwaza` (or whatever the current URL is).
+1. Go to `https://github.com/<your-username>/hajime` (or whatever the current URL is).
 2. Click **Settings** (top tab).
 3. Scroll down to the **Repository name** field.
-4. Change `tachiwaza` to `hajime`.
+4. Change `hajime` to `hajime`.
 5. Click **Rename**.
 
 GitHub auto-redirects the old URL to the new one, so any old clones won't immediately break — but the correct thing to do is update your local remote.
@@ -279,11 +279,11 @@ Back in terminal:
 cd C:\Users\jackc\Documents\hajime
 git status
 git add -A
-git commit -m "Rename Tachiwaza → Hajime: full rename across vault, codebase, and repo"
+git commit -m "Rename Hajime → Hajime: full rename across vault, codebase, and repo"
 git push origin main
 ```
 
-**Verify:** GitHub now shows the repo at the new URL with a fresh commit titled "Rename Tachiwaza → Hajime..."
+**Verify:** GitHub now shows the repo at the new URL with a fresh commit titled "Rename Hajime → Hajime..."
 
 ---
 
@@ -413,7 +413,7 @@ Print this or save it as a sticky note in your workspace:
 
 Before closing the laptop:
 
-1. **Update `hajime-master-doc.md`** — change the title block, add a line near the top saying "Renamed from Tachiwaza on April 16, 2026. The title *Hajime* refers to the referee's call that starts every match — the game is everything that happens before Hajime is set, and everything that happens after."
+1. **Update `hajime-master-doc.md`** — change the title block, add a line near the top saying "Renamed from Hajime on April 16, 2026. The title *Hajime* refers to the referee's call that starts every match — the game is everything that happens before Hajime is set, and everything that happens after."
 2. **Create `post-january.md`** — empty file at first, with just a header. This is the parking lot for Ring 3+ ideas that arrive during Ring 1/2 work.
 3. **Commit it all:**
    ```bash
@@ -436,7 +436,7 @@ You forgot `git remote set-url origin <new-url>` in Step 12. Run it.
 You likely missed a file in Step 10's wiki-link update pass. Use Obsidian's "Files" sidebar → look for red/unresolved links → fix them manually.
 
 ### "Python code throws an error after the rename"
-An import statement still references the old name. Open the file the traceback points to. Run `Ctrl+Shift+F` and search for `tachiwaza` globally — find the last one and replace it.
+An import statement still references the old name. Open the file the traceback points to. Run `Ctrl+Shift+F` and search for `hajime` globally — find the last one and replace it.
 
 ### "Linear's GitHub integration doesn't auto-close issues"
 Check that your commit message format is **exactly** `HAJ-<number>: ...` with a space after the colon. Linear's parser is picky. Also verify the PR was merged to `main`, not just closed.

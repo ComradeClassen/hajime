@@ -227,7 +227,7 @@ def build_sato() -> Judoka:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run a Tachiwaza match.")
+    parser = argparse.ArgumentParser(description="Run a Hajime match.")
     parser.add_argument("--referee", choices=["suzuki", "petrov"], default="suzuki",
                         help="Which referee personality to use (default: suzuki)")
     parser.add_argument("--runs", type=int, default=1,

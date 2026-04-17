@@ -11,7 +11,7 @@
 
 Every occurrence of `Mate` (the referee call) in source files and design documents was corrected to `Matte`. The Japanese is *matte* (待って), two t's. This was committed as its own clean diff before any logic changes.
 
-Files changed: `src/match.py`, `design-notes/data-model.md`, `design-notes/dojo-as-institution.md`, `tachiwaza-master-doc.md`, `tachiwaza-orientation.md`.
+Files changed: `src/match.py`, `design-notes/data-model.md`, `design-notes/dojo-as-institution.md`, `hajime-master-doc.md`, `hajime-orientation.md`.
 
 The word `stalemate` was deliberately left unchanged — that's an English word, not the referee call.
 

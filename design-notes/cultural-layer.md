@@ -1,7 +1,7 @@
 # The Cultural Layer — Design Note v0.1
 ### National Styles, Inherited DNA, and Emergent Dojo Identity
 
-*This document specifies the cultural and lineage layer of Tachiwaza. It is
+*This document specifies the cultural and lineage layer of Hajime. It is
 scoped to Ring 2, Ring 3, and Ring 4 — the coaching, training, and roster
 systems. It is NOT part of Ring 1. The Grip Sub-Loop, throw resolution,
 and match engine operate without any cultural data at all. This layer
@@ -27,7 +27,7 @@ styles from day one will ship nothing. The Cultural Layer is the
 discipline that holds both truths at once: the styles matter, and they
 earn their way into the simulation ring by ring.
 
-Equally important: **Tachiwaza's dojo persists across generations**, and
+Equally important: **Hajime's dojo persists across generations**, and
 one of the deepest game design spaces in the project is watching a
 dojo's cultural identity drift over decades as different sensei inherit
 the wall. This layer is where that drift becomes computable.

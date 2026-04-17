@@ -3,7 +3,7 @@
 rename_to_hajime.py
 ===================
 
-Renames Tachiwaza → Hajime across all text files in the project.
+Renames Hajime → Hajime across all text files in the project.
 
 Replaces Steps 4, 5, 6, and 10 of the rename execution doc in a single
 deterministic pass. Does NOT rename files or folders — that stays manual
@@ -15,10 +15,10 @@ Behavior:
   - Skips: .git/, __pycache__/, .obsidian/, node_modules/, venv/, .venv/,
            and any binary files (detected by attempting UTF-8 decode).
   - In each text file, performs three case-sensitive whole-word replacements:
-      Tachiwaza  -> Hajime
-      tachiwaza  -> hajime
-      TACHIWAZA  -> HAJIME
-  - Also updates Obsidian wiki-links of the form [[tachiwaza-*]]
+      Hajime  -> Hajime
+      hajime  -> hajime
+      HAJIME  -> HAJIME
+  - Also updates Obsidian wiki-links of the form [[hajime-*]]
     to [[hajime-*]] (Step 10 work).
   - Existing uses of "hajime" as the judo term are NEVER touched
     because we never search for "hajime" as a find-target.
@@ -30,7 +30,7 @@ Safety:
   - Aborts immediately if it can't write to a file.
 
 Usage:
-  cd C:\\Users\\jackc\\Documents\\tachiwaza
+  cd C:\\Users\\jackc\\Documents\\hajime
   python rename_to_hajime.py            # dry run, shows what would change
   python rename_to_hajime.py --apply    # actually write the changes
 """
@@ -86,12 +86,12 @@ REPLACEMENTS = [
     # Wiki-link prefix replacements first (Step 10 work) — these are
     # technically subsumed by the bare-word replacements below, but
     # listing them explicitly makes the dry-run output more readable.
-    (re.compile(r"\[\[tachiwaza-"), "[[hajime-", "wiki-link [[tachiwaza-* ]]"),
+    (re.compile(r"\[\[hajime-"), "[[hajime-", "wiki-link [[hajime-* ]]"),
 
     # Then the three case-sensitive whole-word replacements (Steps 4-6).
-    (re.compile(r"\bTachiwaza\b"), "Hajime",   "Tachiwaza (capitalized)"),
-    (re.compile(r"\btachiwaza\b"), "hajime",   "tachiwaza (lowercase)"),
-    (re.compile(r"\bTACHIWAZA\b"), "HAJIME",   "TACHIWAZA (all caps)"),
+    (re.compile(r"\bTachiwaza\b"), "Hajime",   "Hajime (capitalized)"),
+    (re.compile(r"\btachiwaza\b"), "hajime",   "hajime (lowercase)"),
+    (re.compile(r"\bTACHIWAZA\b"), "HAJIME",   "HAJIME (all caps)"),
 ]
 
 
@@ -159,7 +159,7 @@ def process_file(path: Path, apply: bool) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Rename Tachiwaza -> Hajime across all text files."
+        description="Rename Hajime -> Hajime across all text files."
     )
     parser.add_argument(
         "--apply",

@@ -1,4 +1,4 @@
-# TACHIWAZA — Master Design & Development Document
+# HAJIME — Master Design & Development Document
 ### A Living Brainstorm / Build Roadmap / Reference
 
 *This document is a working artifact. Update it after every session.*
@@ -7,15 +7,15 @@
 
 ## THE PRIORITY DECISION — APRIL 15, 2026
 
-**As of April 15, 2026, Tachiwaza is the primary project. Player Two is paused until January 10, 2027. On January 10, 2027, the designer reassesses with a finished (or near-finished) Tachiwaza in hand and decides what Player Two becomes next.**
+**As of April 15, 2026, Hajime is the primary project. Player Two is paused until January 10, 2027. On January 10, 2027, the designer reassesses with a finished (or near-finished) Hajime in hand and decides what Player Two becomes next.**
 
 This decision was made because:
 
-1. **Tachiwaza's scope is visible from where the designer is standing.** Judo is two people on a mat and two coaches watching. That's a rectangle you can draw around a problem. Player Two's ambition — simulating any human life in any geography in any era — is a decade-long project. The summit of Tachiwaza is visible. The summit of Player Two is behind a ridge.
+1. **Hajime's scope is visible from where the designer is standing.** Judo is two people on a mat and two coaches watching. That's a rectangle you can draw around a problem. Player Two's ambition — simulating any human life in any geography in any era — is a decade-long project. The summit of Hajime is visible. The summit of Player Two is behind a ridge.
 
-2. **The tech transfers upward.** The grip graph teaches relational-state modeling. The Matte window teaches agency-within-simulation. The prose templates teach literary rendering of structured events. The calibration work teaches tuning-by-observation. All of these are Player Two infrastructure. Building Tachiwaza is earning the tools for Player Two.
+2. **The tech transfers upward.** The grip graph teaches relational-state modeling. The Matte window teaches agency-within-simulation. The prose templates teach literary rendering of structured events. The calibration work teaches tuning-by-observation. All of these are Player Two infrastructure. Building Hajime is earning the tools for Player Two.
 
-3. **Focused creative pull.** Tachiwaza is the alive project. Following that signal is the right thing to do.
+3. **Focused creative pull.** Hajime is the alive project. Following that signal is the right thing to do.
 
 This decision protects the designer's future self from second-guessing. When a weak moment arrives in July and the temptation is to open Player Two — the answer is already here. The choice was made clearly on April 15 and it does not need to be re-made every session.
 
@@ -99,7 +99,7 @@ This is the soul of the game. Everything in the rest of this document is in serv
 
 Tarn Adams described his design philosophy for Dwarf Fortress like this: he and his brother would write the stories they wanted the game to produce, and then they would design the systems that could produce those stories. The design process was narrative-first. You imagine what you want to read at the end of a simulation run, then you build the machine that can generate it.
 
-**Tachiwaza is built the same way.**
+**Hajime is built the same way.**
 
 The Anchoring Scene above is not a mockup. It is a story the designer wants to read. A match where Tanaka goes for his strongest throw too early, where Sato reads it and sprawls, where a brief ne-waza window opens and the fighter does not commit, where the grips reset and the coach gets a Matte window and has to choose what to say. That's the story. The grip graph exists because that story needs a grip graph to be legible. The coach IQ system exists because that coaching moment needs the player to be able to read the fighter's state and choose between real options.
 
@@ -150,7 +150,7 @@ These live in the Identity layer. They are who the judoka IS. They shape every c
 
 *Added April 14, 2026 (Phase 2 Session 2). The bipartite state structure underneath every match. Full spec in `grip-graph.md`.*
 
-The grip graph is the architectural piece that makes every other system in Tachiwaza work the way it should.
+The grip graph is the architectural piece that makes every other system in Hajime work the way it should.
 
 A judo match is not two fighters with stat sheets — it is a **relational state** between two bodies. Who is gripping what, with which hand, at what depth, with what strength, in which configuration. The grip graph models this state explicitly as a bipartite graph: each active grip is an edge connecting one fighter's grasping body part to one location on the other fighter's gi or body, with metadata for grip type, depth, strength, and how long it's been held.
 
@@ -178,11 +178,11 @@ Underneath the Matte cycle and the tick heartbeat, a third rhythm runs continuou
 
 The sub-loop operates on the grip graph: TUG_OF_WAR computes a `grip_delta` from the live edge list; KUZUSHI_WINDOW checks throw prerequisites against the graph; STIFLED_RESET breaks all edges and steps both fighters back. The sub-loop is the runtime layer that drives the graph through its state changes.
 
-**Three outcomes, not two.** Most judo games model throws as binary: attempted/not attempted. Tachiwaza models the space between throws as active, contested, and resolution-bearing. Most of a real match's time — and most of where matches are actually decided — lives inside this sub-loop.
+**Three outcomes, not two.** Most judo games model throws as binary: attempted/not attempted. Hajime models the space between throws as active, contested, and resolution-bearing. Most of a real match's time — and most of where matches are actually decided — lives inside this sub-loop.
 
 **The coach is not always involved.** A match can end inside a single sub-loop cycle. A fighter who wins the opening grip war decisively, opens a kuzushi window at tick 12, and lands seoi-nage for ippon has ended the match before the referee called Matte. The coach never spoke. This is not a failure mode — it's one of the most beautiful outcomes in real judo, and the game has to allow for it.
 
-This creates Tachiwaza's first real lesson about the limits of authorship: **preparation is the primary lever, not intervention.** Over a career, good coaching is distributed across training, not chair-time.
+This creates Hajime's first real lesson about the limits of authorship: **preparation is the primary lever, not intervention.** Over a career, good coaching is distributed across training, not chair-time.
 
 ---
 
@@ -306,7 +306,7 @@ Sound responds to physical thresholds. Music shifts when fatigue crosses a speci
 
 *Added April 14, 2026. A future direction, not in scope for any current ring. Full sketch in `play-as-judoka-mode.md`.*
 
-Coaching is the soul of Tachiwaza. But the grip graph architecture also opens the door to a separate mode where the player controls a judoka directly — the same way DF's Adventure Mode lets you wrestle with explicit control over which body part grabs which target.
+Coaching is the soul of Hajime. But the grip graph architecture also opens the door to a separate mode where the player controls a judoka directly — the same way DF's Adventure Mode lets you wrestle with explicit control over which body part grabs which target.
 
 In play-as-judoka mode, the grip graph IS the chess board. You see the live edges. You choose which grasper goes for which target. You commit to throw entries. You roll counter-actions in ne-waza. The action choices flow from the visible graph state, the way DF's Adventure Mode wrestling menu generates options dynamically from the current grapple state.
 
@@ -320,7 +320,7 @@ Out of scope until post-Ring 4. Architecturally, this mode requires the grip gra
 
 ## THE SKILL CEILING
 
-*This is what separates Tachiwaza from other sports sims.*
+*This is what separates Hajime from other sports sims.*
 
 **Casual player experience:**
 - Tanaka is strong on the right side
@@ -370,7 +370,7 @@ Same simulation. Different depths of reading. Neither player is wrong. The game 
 
 **The voice of the dojo is warm.** This is home. This is where the work happens. The dojo prose has the texture of routine — sweat, repetition, small jokes, the smell of the mats.
 
-**No hype. No announcer voice.** Tachiwaza is not the UFC. It is judo — a sport with deep roots, formal etiquette, and an understated culture. The writing should respect that.
+**No hype. No announcer voice.** Hajime is not the UFC. It is judo — a sport with deep roots, formal etiquette, and an understated culture. The writing should respect that.
 
 **Every fighter is treated with dignity.** Including the opponents. Including the ones who lose. Especially the ones who lose.
 
@@ -425,7 +425,7 @@ After Ring 1 Phase 3, work opens onto Ring 2 Phase 1 (first real Matte window). 
 
 ## WHAT TO BUILD FIRST (priority order)
 
-*Updated April 15, 2026 to reflect the priority decision — Tachiwaza has the designer's full attention for the next nine months and ships January 9, 2027.*
+*Updated April 15, 2026 to reflect the priority decision — Hajime has the designer's full attention for the next nine months and ships January 9, 2027.*
 
 ### THE RELEASE TARGET: JANUARY 9, 2027
 
@@ -579,7 +579,7 @@ The scenarios above are the shipping plan. The phase-by-phase build order remain
 - `phase-2-session-2-plan.md` — The Claude Code brief for the next session.
 - `play-as-judoka-mode.md` — Sketch of the future direct-control mode.
 - `The Chair, the Grip, and the Throw` (coaching bible) — Research document on national fighting styles, Matte window research, referee behavior, prose voice reference.
-- `From Tissue Layers to Tatami` — Research document on Dwarf Fortress combat / grapple architecture and what translates to Tachiwaza.
+- `From Tissue Layers to Tatami` — Research document on Dwarf Fortress combat / grapple architecture and what translates to Hajime.
 
 ---
 
@@ -587,9 +587,9 @@ The scenarios above are the shipping plan. The phase-by-phase build order remain
 
 **Updated April 15, 2026.**
 
-Tachiwaza is the primary project through January 9, 2027. Player Two is paused. See the PRIORITY DECISION section at the top of this document for the full rationale.
+Hajime is the primary project through January 9, 2027. Player Two is paused. See the PRIORITY DECISION section at the top of this document for the full rationale.
 
-This section remains here because the two projects are architecturally related and Tachiwaza's build directly advances Player Two's eventual resumption.
+This section remains here because the two projects are architecturally related and Hajime's build directly advances Player Two's eventual resumption.
 
 **Shared architectural DNA:**
 - Tick-based simulation
@@ -598,9 +598,9 @@ This section remains here because the two projects are architecturally related a
 - Python and the same toolchain
 - Relational state between entities as a first-class concept
 
-**What Tachiwaza teaches Player Two:**
+**What Hajime teaches Player Two:**
 
-- The grip graph is a specific instance of a general pattern: how to model the relationship between two entities as bipartite typed edges. Player Two's parallel-lives architecture (the boy meets the grandmother, the grandmother's life thread intersects with the mother's, the teacher notices the student) uses the same architectural bones. Building Tachiwaza's grip graph is learning Player Two's relational substrate.
+- The grip graph is a specific instance of a general pattern: how to model the relationship between two entities as bipartite typed edges. Player Two's parallel-lives architecture (the boy meets the grandmother, the grandmother's life thread intersects with the mother's, the teacher notices the student) uses the same architectural bones. Building Hajime's grip graph is learning Player Two's relational substrate.
 
 - The Matte window teaches agency-within-simulation — how the player influences an autonomous system without controlling it. Player Two's choice-prompt architecture is the same problem in a different context.
 
@@ -609,11 +609,11 @@ This section remains here because the two projects are architecturally related a
 - Calibration by observation — watching many matches and tuning thresholds until the rhythm feels right — is a discipline Player Two will need for its life-simulation tuning.
 
 **Practical working model through January 9, 2027:**
-- Tachiwaza has the designer's full creative attention
-- Player Two's repo stays closed during Tachiwaza sessions
+- Hajime has the designer's full creative attention
+- Player Two's repo stays closed during Hajime sessions
 - Player Two's design documents remain in its repo, untouched and valid
-- If an idea arrives that belongs to Player Two, it is written down as a quick note in Player Two's repo and then the designer returns to Tachiwaza
-- On January 10, 2027, the designer opens Player Two with a finished Tachiwaza behind them
+- If an idea arrives that belongs to Player Two, it is written down as a quick note in Player Two's repo and then the designer returns to Hajime
+- On January 10, 2027, the designer opens Player Two with a finished Hajime behind them
 
 **The reason this works:** the designer is not losing nine months of Player Two development. They are earning the infrastructure Player Two needs. When they return, they return stronger.
 

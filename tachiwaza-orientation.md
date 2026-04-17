@@ -1,8 +1,8 @@
-# Tachiwaza — Game Project Orientation
+# Hajime — Game Project Orientation
 
 ## What This Is
 
-Tachiwaza is a 2D coaching simulation game about judo. The player is not the fighter — the player is the coach. You build a stable of judoka, train them in your dojo, and watch their matches unfold as a deeply simulated, tick-by-tick stream of grip exchanges, throws, scrambles, and ground transitions. When the referee calls Matte and the action pauses, you step in. You get two words to your fighter. Then the simulation resumes — and how well your instruction lands depends on who that fighter is, how tired they are, and how much they trust you.
+Hajime is a 2D coaching simulation game about judo. The player is not the fighter — the player is the coach. You build a stable of judoka, train them in your dojo, and watch their matches unfold as a deeply simulated, tick-by-tick stream of grip exchanges, throws, scrambles, and ground transitions. When the referee calls Matte and the action pauses, you step in. You get two words to your fighter. Then the simulation resumes — and how well your instruction lands depends on who that fighter is, how tired they are, and how much they trust you.
 
 This document is the starting orientation. It captures the emotional and design intent. The mechanics live in the master doc. The code lives in `src/`.
 
@@ -10,9 +10,9 @@ This document is the starting orientation. It captures the emotional and design 
 
 ## Who Is Making This
 
-The designer is Comrade — a playwright, performer, and multidisciplinary artist working under Classen Creative LLC. He is also the author of *Player Two*, a parallel project that simulates entire human lives in the spirit of Dwarf Fortress's Legends Mode. Tachiwaza shares Player Two's DNA — entity-driven simulation, prose generated from structured events, tick-based time, the philosophy that *systems are the author* — but it is its own game, with its own scope and release.
+The designer is Comrade — a playwright, performer, and multidisciplinary artist working under Classen Creative LLC. He is also the author of *Player Two*, a parallel project that simulates entire human lives in the spirit of Dwarf Fortress's Legends Mode. Hajime shares Player Two's DNA — entity-driven simulation, prose generated from structured events, tick-based time, the philosophy that *systems are the author* — but it is its own game, with its own scope and release.
 
-Tachiwaza grew out of an earlier idea for a 3D physics-based judo game built in Godot, then Unreal. That project remains valid as a long-term ambition. This one is the version that can ship — and might be more *judo-true* than the physics version, because it can show what's actually happening in elite judo: the invisible grip war, the fatigue arithmetic, the read.
+Hajime grew out of an earlier idea for a 3D physics-based judo game built in Godot, then Unreal. That project remains valid as a long-term ambition. This one is the version that can ship — and might be more *judo-true* than the physics version, because it can show what's actually happening in elite judo: the invisible grip war, the fatigue arithmetic, the read.
 
 The designer brings: a real love of the sport, a Player-Two-built fluency in Python and tick-based simulation, and an instinct for the moments that matter inside a structured system.
 
@@ -34,7 +34,7 @@ That's the game. The dojo is where you build the conditions. The match is where 
 
 **Investment.** The judoka in your stable are not interchangeable. Each one has a body, a history, a relationship to you. When they win, you feel it. When they lose to someone you should have prepared them for, you feel that too.
 
-**The pleasure of reading.** A great Tachiwaza match is legible. You can see the grip war turning. You can feel the fatigue arriving. You notice the moment your fighter starts reaching out of panic instead of intent. The simulation rewards attention the way a real match does.
+**The pleasure of reading.** A great Hajime match is legible. You can see the grip war turning. You can feel the fatigue arriving. You notice the moment your fighter starts reaching out of panic instead of intent. The simulation rewards attention the way a real match does.
 
 **Coach's calm.** You are not in the fight. You are beside it. The game's emotional register is steady — the warmth of a small dojo, the quiet between rounds, the long arc of building someone over years.
 
@@ -44,13 +44,13 @@ That's the game. The dojo is where you build the conditions. The match is where 
 
 ## Primary Influences
 
-**Dwarf Fortress (combat & legends).** The match log is the soul of the game. DF's combat reads as literature because every event is granular and every event has consequence — a tendon torn here changes a fight three minutes later. Tachiwaza's match simulator should feel the same way: causally dense, narratively legible, generative of stories you didn't expect.
+**Dwarf Fortress (combat & legends).** The match log is the soul of the game. DF's combat reads as literature because every event is granular and every event has consequence — a tendon torn here changes a fight three minutes later. Hajime's match simulator should feel the same way: causally dense, narratively legible, generative of stories you didn't expect.
 
 **Boxing Gym Story (and the Kairosoft school).** The dojo-as-facility, the roster of fighters with stats and quirks, the rhythm of training cycles between tournaments, the satisfaction of optimizing a small organization. Kairosoft games understand that the *back office* of a sport is its own pleasure.
 
 **Football Manager.** The instruction layer at halftime. The way a coach's read can change a match without the coach playing it. The sense that your understanding of the game is itself a stat.
 
-**Real judo.** Specifically the elite-level grip war that casual viewers don't see. Tachiwaza is partly an attempt to make that war visible — to show why a match was won in the first thirty seconds of grip fighting before either fighter committed to a throw.
+**Real judo.** Specifically the elite-level grip war that casual viewers don't see. Hajime is partly an attempt to make that war visible — to show why a match was won in the first thirty seconds of grip fighting before either fighter committed to a throw.
 
 **Player Two (the designer's own work).** The principle that prose layered over a structured simulation creates emotion. The principle that variable weight matters — small variables (a fighter's favorite warm-up song) carry low divergence, big variables (a chronic shoulder injury) carry high divergence. The principle that *the soul of the simulation is in the sentence.*
 
@@ -80,14 +80,14 @@ That's the game. The dojo is where you build the conditions. The match is where 
 - **Format:** Terminal/text prototype first; 2D pixel-art layer planned for v0.5+
 - **Likely libraries:** Pygame for the 2D layer when ready; no engine dependency for the simulation core
 - **Long-term engine target:** Godot 2D if Pygame becomes a constraint
-- **Repo:** `C:\Users\jackc\Documents\tachiwaza` synced to GitHub
+- **Repo:** `C:\Users\jackc\Documents\hajime` synced to GitHub
 - **Development method:** Collaborative with Claude. Designer provides judo knowledge, design instincts, and prose voice. Claude writes architecture and code.
 
 ---
 
 ## The North Star
 
-Tachiwaza should make a non-judoka understand why a grip exchange matters. It should make a judoka feel seen — like someone finally built a game that knows what the sport actually is. And it should make the player feel, after a long arc of building a fighter from a 16-year-old prospect to a national medalist, that they were *present* for it.
+Hajime should make a non-judoka understand why a grip exchange matters. It should make a judoka feel seen — like someone finally built a game that knows what the sport actually is. And it should make the player feel, after a long arc of building a fighter from a 16-year-old prospect to a national medalist, that they were *present* for it.
 
 Not playing. Not watching. Coaching. Beside the mat, two words at a time.
 

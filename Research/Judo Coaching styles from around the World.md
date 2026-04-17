@@ -1,6 +1,6 @@
-# The chair, the grip, and the throw: a judo coaching language and style bible for Tachiwaza
+# The chair, the grip, and the throw: a judo coaching language and style bible for Hajime
 
-**Elite judo coaching happens in 5-to-10-second bursts during Matte pauses, using pre-coded shorthand that varies dramatically by culture — from Japanese coaches' quiet single-word technique calls to Georgian coaches roaring "fight, fight, fight!" while straining the stay-seated rule.** These cultural coaching voices map directly onto thirteen distinct national fighting styles, each shaped by a specific folk wrestling ancestor and producing recognizably different movement patterns, grip strategies, and tactical philosophies. What follows is a complete reference for building Tachiwaza's Referee class, Matte window instruction system, and prose voice — grounded in documented coaching behavior, named techniques, real match footage, and the actual words coaches use in the chair.
+**Elite judo coaching happens in 5-to-10-second bursts during Matte pauses, using pre-coded shorthand that varies dramatically by culture — from Japanese coaches' quiet single-word technique calls to Georgian coaches roaring "fight, fight, fight!" while straining the stay-seated rule.** These cultural coaching voices map directly onto thirteen distinct national fighting styles, each shaped by a specific folk wrestling ancestor and producing recognizably different movement patterns, grip strategies, and tactical philosophies. What follows is a complete reference for building Hajime's Referee class, Matte window instruction system, and prose voice — grounded in documented coaching behavior, named techniques, real match footage, and the actual words coaches use in the chair.
 
 ---
 
@@ -56,7 +56,7 @@ The coaching research literature (BJJ Intensive Camp guides, transferable to jud
 
 ### The Hajime-Matte coaching model
 
-The closest existing framework to a formalized matside coaching system is the **Hajime-Matte Model** developed by Sensei Nick Lowe. It breaks the contest into distinct phases with a trademark sequence: **DKK (Dominate Kumi-Kata) → TFI (Throw For Ippon) → WIN**. This maps directly onto what a coach communicates during Matte: first, how to win the grip war; then, which throw to execute; then, the score situation and adjustments. The model provides an instruction taxonomy that could structure Tachiwaza's coaching AI.
+The closest existing framework to a formalized matside coaching system is the **Hajime-Matte Model** developed by Sensei Nick Lowe. It breaks the contest into distinct phases with a trademark sequence: **DKK (Dominate Kumi-Kata) → TFI (Throw For Ippon) → WIN**. This maps directly onto what a coach communicates during Matte: first, how to win the grip war; then, which throw to execute; then, the score situation and adjustments. The model provides an instruction taxonomy that could structure Hajime's coaching AI.
 
 Rhadi Ferguson, 2004 Olympian who helped develop game plans for double Olympic champion Kayla Harrison, uses systems dynamics to analyze matches — treating the referee, crowd, clock, competitors, and coaches as interconnected variables. This analytical frame suggests that the coach's Matte call should be sensitive to all five variables, not just the fighter's technique.
 
@@ -74,7 +74,7 @@ The tactical philosophy is **ippon-or-nothing** — but with a modern tension. A
 
 Shohei Ono embodies the modern Japanese ideal. Two-time Olympic champion with one of the highest ippon rates in history, specializing in osoto-gari and uchi-mata, bowing silently after victories without celebration. His statement: "What I wanted to demonstrate was that my style is the strongest judo style." His coach Kanamaru Yusuke on the pre-match moment: "I think a lot about what I say to Ono before competing. I'm always thinking about the best thing to say just at that last moment."
 
-**For Tachiwaza**: A Japanese fighter moves with upright posture, seeks the classic grip quickly, and attacks with technically perfect throws. High ippon-probability, clean animations, potentially vulnerable to unorthodox grip fighters who deny them their preferred grip. The coaching voice is calm, single-word technique names, restrained emotion.
+**For Hajime**: A Japanese fighter moves with upright posture, seeks the classic grip quickly, and attacks with technically perfect throws. High ippon-probability, clean animations, potentially vulnerable to unorthodox grip fighters who deny them their preferred grip. The coaching voice is calm, single-word technique names, restrained emotion.
 
 ### Georgian style: power from the mountains
 
@@ -88,7 +88,7 @@ Neil Adams on first encountering Georgian judo in the late 1970s: **"The style w
 
 The Georgian grip war strategy is to bypass normal defensive structures entirely. Opponents trained in classical sleeve-lapel gripping are "simply not used to dealing and countering the chidaoba-influenced grips." They actively seek the over-the-shoulder position and will engage in aggressive wrestling-style clinch exchanges to get it.
 
-**For Tachiwaza**: A Georgian fighter uses low stance, heavy forward pressure, and reaches for the belt and over-the-shoulder position rather than standard lapel-sleeve. Throws look more like wrestling slams — raw power, extreme angles, occasionally lifting the opponent bodily off the mat. Excellent counter-throwers: if you attack a Georgian and miss, you get punished. The coaching voice is loud, intense, motivational. Historically weak in ne-waza defense but modern Georgian judo has corrected this.
+**For Hajime**: A Georgian fighter uses low stance, heavy forward pressure, and reaches for the belt and over-the-shoulder position rather than standard lapel-sleeve. Throws look more like wrestling slams — raw power, extreme angles, occasionally lifting the opponent bodily off the mat. Excellent counter-throwers: if you attack a Georgian and miss, you get punished. The coaching voice is loud, intense, motivational. Historically weak in ne-waza defense but modern Georgian judo has corrected this.
 
 ### French style: athletic tacticians from INSEP
 
@@ -102,7 +102,7 @@ David Douillet, Riner's predecessor (double Olympic champion, four-time world ch
 
 Patrick Roux's coaching philosophy centers on long-term development: **"Build resources so athletes are performant at the Olympic Games, not chase junior medals."** He advocates what he calls the "slalom" approach — taking the longer, winding path to build skills rather than shortcuts.
 
-**For Tachiwaza**: French fighters have high tactical intelligence, excellent grip-fighting, posture-breaking before explosive finishes. They can fight multiple styles. The coaching voice is analytical, precise, collaborative. Score managers who can finish when they choose to.
+**For Hajime**: French fighters have high tactical intelligence, excellent grip-fighting, posture-breaking before explosive finishes. They can fight multiple styles. The coaching voice is analytical, precise, collaborative. Score managers who can finish when they choose to.
 
 ### Russian/Soviet style: the sambo hybrid
 
@@ -112,7 +112,7 @@ Russian judoka can "achieve an ippon from any grip — no matter how unorthodox.
 
 Under Ezio Gamba's coaching (2009–2021), Russia's team was "psychologically liberated." Gamba's Italian precision combined with Russian physicality produced three Olympic golds at London 2012. He was voted best coach in Russia across all sports — the first foreigner to receive this honor.
 
-**For Tachiwaza**: Russian fighters are adaptable, comfortable from any grip, with strong ground skills from sambo crossover. Aggressive wrestling mentality. The coaching voice is technically specific. Post-2013, they've adapted but retain the DNA of the leg-grab era in their scrambling and unorthodox positioning.
+**For Hajime**: Russian fighters are adaptable, comfortable from any grip, with strong ground skills from sambo crossover. Aggressive wrestling mentality. The coaching voice is technically specific. Post-2013, they've adapted but retain the DNA of the leg-grab era in their scrambling and unorthodox positioning.
 
 ### Korean style: the lightning school
 
@@ -122,7 +122,7 @@ The distinguishing characteristic is **speed over power**. Korean techniques are
 
 Choi Min-ho's physical profile illustrates the Korean approach: 163cm, 60kg, but could deadlift **230kg** — overwhelming explosive strength-to-weight ratio channeled into speed rather than size.
 
-**For Tachiwaza**: Korean fighters are compact, blindingly fast, and attack from unusual angles. Their signature animation is the explosive drop — suddenly disappearing beneath the opponent's center of gravity. Fastest attack speed, potentially less raw power per throw. They can explode into an attack from seemingly nothing. Vulnerable to power-grapplers who prevent their entry.
+**For Hajime**: Korean fighters are compact, blindingly fast, and attack from unusual angles. Their signature animation is the explosive drop — suddenly disappearing beneath the opponent's center of gravity. Fastest attack speed, potentially less raw power per throw. They can explode into an attack from seemingly nothing. Vulnerable to power-grapplers who prevent their entry.
 
 ### Mongolian style: steppe wrestling in a judogi
 
@@ -132,7 +132,7 @@ The grip is the key distinguishing feature. Mongolians use **over-under** (one a
 
 **Naidangiin Tüvshinbayar** — Mongolia's first-ever Olympic gold medalist (2008, -100kg) — grew up wrestling on the steppe as a nomadic herder's son, didn't try judo until age 18. He defeated reigning Olympic champion Keiji Suzuki in 86 seconds. **Khashbaatar Tsagaanbaatar** won major honors across four different weight categories (-60, -66, -73, -81kg), demonstrating the bökh-trained fighter's ability to compete across sizes. Mongolia's judo infrastructure was built by **Khaltmaa Battulga**, who later became President of Mongolia — himself a 1981 sambo world champion who personally trained with the national team.
 
-**For Tachiwaza**: Stocky, powerful, forward-marching stance. Grip animations show reaching for belt and underhooks. Throws look like wrestling slams. Excellent counter-throwers. Vulnerable to speed fighters who avoid the clinch.
+**For Hajime**: Stocky, powerful, forward-marching stance. Grip animations show reaching for belt and underhooks. Throws look like wrestling slams. Excellent counter-throwers. Vulnerable to speed fighters who avoid the clinch.
 
 ### Brazilian style: ground predators with Japanese roots
 
@@ -142,7 +142,7 @@ Brazil has the largest Japanese community outside Japan (~2.1 million people), a
 
 Canto's social legacy shapes Brazilian coaching culture: he founded Instituto Reação, an NGO promoting judo in Rio's favelas. **Rafaela Silva** — 2013 World Champion, 2016 Olympic gold — grew up in Cidade de Deus favela and enrolled at Instituto Reação at age five. This family-oriented, community-embedded coaching model produces fighters who are emotionally connected to their coaches and fight with visible passion.
 
-**For Tachiwaza**: Brazilian fighters have elevated ne-waza stats, willingness to transition to ground, flying attacks that flow into submission attempts. Classical Japanese-influenced throwing with additional ground mastery. The coaching voice is emotional, vocal, emphasizes ground opportunities.
+**For Hajime**: Brazilian fighters have elevated ne-waza stats, willingness to transition to ground, flying attacks that flow into submission attempts. Classical Japanese-influenced throwing with additional ground mastery. The coaching voice is emotional, vocal, emphasizes ground opportunities.
 
 ### Cuban style: the Lamborghini school
 
@@ -154,7 +154,7 @@ The Cuban women's program is the most successful in judo history, built by **Ron
 
 The Cuban system flows from Fidel Castro's declaration that sports were "the right of the people, not the right of the wealthy." Every school participates in judo through the Junior Olympic Program. Athletes train full-time as their profession. The coaching approach emphasizes **combination attacks** — sophisticated multi-throw sequences designed to exploit defensive reactions.
 
-**For Tachiwaza**: High explosiveness, excellent conditioning/endurance, calculated combination attacks, power-plus-technique blend. The coaching voice combines motivational energy with scientific precision.
+**For Hajime**: High explosiveness, excellent conditioning/endurance, calculated combination attacks, power-plus-technique blend. The coaching voice combines motivational energy with scientific precision.
 
 ### Dutch style: technical giants from Geesink's lineage
 
@@ -162,7 +162,7 @@ Anton Geesink (1.98m, 120kg) shattered Japan's monopoly by winning the 1964 Toky
 
 The legacy: Dutch judo maintained a tradition of technically proficient bigger fighters. **Wim Ruska** won two golds at a single Olympics (1972). **Mark Huizinga** won the 2000 Olympic gold, five European titles, and twelve total European medals with classical technique and strong osaekomi (pinning). **Henk Grol** carried the heavyweight tradition into the modern era. **Noël van 't End** won the 2019 World Championship.
 
-**For Tachiwaza**: Technical and methodical, clean execution at all sizes, strong ground game especially in pins. Classical gripping with precision execution.
+**For Hajime**: Technical and methodical, clean execution at all sizes, strong ground game especially in pins. Classical gripping with precision execution.
 
 ### British style: the ground game as identity
 
@@ -170,9 +170,9 @@ Neil Adams (1981 World Champion, double Olympic silver, now 9th dan) defined Bri
 
 The British tradition produced specialists who set standing-position traps that lead to groundwork. **Craig Fallon** (2005 World Champion) created the **"Fallon Roll" (hiza-gatame)** — a signature armlock — plus tomoe-nage-into-juji-gatame combinations. **Euan Burton** developed juji-gatame from sumi-gaeshi grip and ude-gatame launched from a "Russian arm grip," showing cross-pollination between standing and ground.
 
-Adams on the urgency of judo's ground game versus BJJ: **"We have to build it and we have to build it quickly"** — calling groundwork **"that ten-second blast."** This is critical for Tachiwaza: judo ne-waza is not BJJ's patient positional game. It's explosive, urgent, and time-limited.
+Adams on the urgency of judo's ground game versus BJJ: **"We have to build it and we have to build it quickly"** — calling groundwork **"that ten-second blast."** This is critical for Hajime: judo ne-waza is not BJJ's patient positional game. It's explosive, urgent, and time-limited.
 
-**For Tachiwaza**: British fighters are transition-focused, following through on failed throws, staying close, attacking immediately on the ground. Submission hunters (armlocks, strangles) rather than pin specialists. The coaching voice is tactical, analytical, ne-waza-opportunity-focused.
+**For Hajime**: British fighters are transition-focused, following through on failed throws, staying close, attacking immediately on the ground. Submission hunters (armlocks, strangles) rather than pin specialists. The coaching voice is tactical, analytical, ne-waza-opportunity-focused.
 
 ### German style: disciplined technicians
 
@@ -204,7 +204,7 @@ But the reverse happens too. At the 2023 World Championships semifinal (-90kg), 
 
 Japan's legendary Toshihiko Koga — arguably the greatest ippon-seoi-nage practitioner ever — was defeated twice by this mechanism. In 1988, Soviet/Georgian Tenadze "forced Koga into adopting an extreme right-handed stance, something he was not used to." Tenadze's belt grip overwhelmed Koga. At the 1996 Atlanta Olympic final, France's Djamel Bouras replicated the strategy: he "had clearly studied Koga's gripping style and basically mauled him the way Tenadze had done." Bouras later said: **"I lost against Koga in semi in Chiba, at the 1995 World Championships, but that also gave me power and I kept the image of that loss and trained with that always in mind."**
 
-The lesson for Tachiwaza's AI: mauling/belt-grip style can neutralize even the most technically brilliant fighters if the mauler controls the grip and closes distance. But if the technical fighter maintains distance and scores early, the mauler must overcome a deficit — and Koga squandered exactly this advantage by "playing the defensive game, hoping to kill time."
+The lesson for Hajime's AI: mauling/belt-grip style can neutralize even the most technically brilliant fighters if the mauler controls the grip and closes distance. But if the technical fighter maintains distance and scores early, the mauler must overcome a deficit — and Koga squandered exactly this advantage by "playing the defensive game, hoping to kill time."
 
 ### Georgian power versus Korean speed: 2025 World Mixed Team Final
 
@@ -234,7 +234,7 @@ What earns direct hansoku-make: head-diving techniques, intentionally trying to 
 
 Three types of hansoku-make exist with different consequences: **progressive** (from accumulated shidos — athlete may continue in repechage), **"protection" direct** (dangerous technique — athlete may continue), and **"spirit of judo" direct** (unsportsmanlike conduct — full disqualification plus sanctions).
 
-Reading the referee's tendencies is a key coaching skill. As Dr. Diba Mani (IJF-A Referee) notes: **"European referees often emphasize gripping initiative. Asian referees may be quicker on technical scoring. Some are stricter on passivity."** For Tachiwaza's referee personality system, this variation is the core design parameter.
+Reading the referee's tendencies is a key coaching skill. As Dr. Diba Mani (IJF-A Referee) notes: **"European referees often emphasize gripping initiative. Asian referees may be quicker on technical scoring. Some are stricter on passivity."** For Hajime's referee personality system, this variation is the core design parameter.
 
 The 2025 rule overhaul reintroduced **yuko** (for 5-second ne-waza pins), expanded below-belt grips, allowed bear grips, and re-allowed reverse seoi-nage for seniors — each change shifting the tactical equilibrium.
 
@@ -254,9 +254,9 @@ On being thrown — ippon seoinage: **"Crouch down, then explode into the air an
 
 The IJF's own writing, especially by Jo Crowley, combines respectful formality with dramatic match description: "It could be said that to be in the company of an Olympic judo champion is to be presented with someone who has reached an absolute pinnacle, a ceiling which cannot be surpassed."
 
-Kanamaru Yusuke offers perhaps the best single line for Tachiwaza's prose voice: **"Judo is like a sea; when you see it you want to go swimming and it's so vast and you want to try to get through all of it but you never will."**
+Kanamaru Yusuke offers perhaps the best single line for Hajime's prose voice: **"Judo is like a sea; when you see it you want to go swimming and it's so vast and you want to try to get through all of it but you never will."**
 
-### Coaching philosophy lines for Tachiwaza's dialogue system
+### Coaching philosophy lines for Hajime's dialogue system
 
 These are direct quotes, attributed, that could inform coach character dialogue:
 
@@ -278,11 +278,11 @@ These are direct quotes, attributed, that could inform coach character dialogue:
 
 ### Essential reference texts
 
-The books that would most inform Tachiwaza's prose and systems: Kyuzo Mifune's *The Canon of Judo* (1956, the bible of technique philosophy); Neil Adams's *A Life in Judo* (autobiography with commentary voice); Katsuhiko Kashiwazaki's *Fighting Judo* (the groundwork bible — Olympian Nik Fairbrother credited it for her medal); Patrick Roux's *L'Art du Judo* (structured around technique, training, the champion, the coach, and values); Kano's *Mind Over Muscle*; and Anton Geesink's *My Championship Judo* (on his legendary kesa-gatame: "By concentrating my full weight on his trunk, resting only on the outside of my right foot... it has become impossible for him to move").
+The books that would most inform Hajime's prose and systems: Kyuzo Mifune's *The Canon of Judo* (1956, the bible of technique philosophy); Neil Adams's *A Life in Judo* (autobiography with commentary voice); Katsuhiko Kashiwazaki's *Fighting Judo* (the groundwork bible — Olympian Nik Fairbrother credited it for her medal); Patrick Roux's *L'Art du Judo* (structured around technique, training, the champion, the coach, and values); Kano's *Mind Over Muscle*; and Anton Geesink's *My Championship Judo* (on his legendary kesa-gatame: "By concentrating my full weight on his trunk, resting only on the outside of my right foot... it has become impossible for him to move").
 
 ---
 
-## Conclusion: design parameters for Tachiwaza
+## Conclusion: design parameters for Hajime
 
 The Matte window instruction system should generate culturally-flavored 2–5 word commands from a taxonomy of seven call types (score/time, grip, technique, tactical, tempo, defensive, motivational), with cultural modifiers controlling volume, emotional register, technical specificity, and language mix. A Japanese coach personality should be quiet and technique-name-focused; a Georgian coach should be loud and motivational; a French coach should be analytically precise.
 

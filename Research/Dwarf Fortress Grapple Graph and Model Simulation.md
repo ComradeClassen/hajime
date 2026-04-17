@@ -1,6 +1,6 @@
-# From tissue layers to tatami: what Dwarf Fortress teaches Tachiwaza
+# From tissue layers to tatami: what Dwarf Fortress teaches Hajime
 
-**Dwarf Fortress's body-part simulation, nerve system, grapple graph, and prose engine constitute the deepest combat model in gaming history — and roughly 60% of its architecture translates directly to a judo coaching sim.** The other 40% would bury Tachiwaza in scope. This document maps what to take, what to leave, and what to build first, treating DF's design as a studied reference rather than a blueprint. The core lesson is this: DF's combat feels alive because every noun in every sentence maps to an actual simulation datum. Tachiwaza needs the same — every grip, every fatigue tick, every postural shift should generate prose that reads like it was written by a human who loves judo, because the simulation underneath is specific enough to support that level of detail.
+**Dwarf Fortress's body-part simulation, nerve system, grapple graph, and prose engine constitute the deepest combat model in gaming history — and roughly 60% of its architecture translates directly to a judo coaching sim.** The other 40% would bury Hajime in scope. This document maps what to take, what to leave, and what to build first, treating DF's design as a studied reference rather than a blueprint. The core lesson is this: DF's combat feels alive because every noun in every sentence maps to an actual simulation datum. Hajime needs the same — every grip, every fatigue tick, every postural shift should generate prose that reads like it was written by a human who loves judo, because the simulation underneath is specific enough to support that level of detail.
 
 ---
 
@@ -86,7 +86,7 @@ What determines outcomes: **relative mass is the dominant factor** — a dwarf c
 
 ### Adventure Mode's wrestling UI makes the grapple graph legible
 
-This is the design pattern most directly relevant to Tachiwaza. Adventure Mode's wrestling screen is divided into two panels:
+This is the design pattern most directly relevant to Hajime. Adventure Mode's wrestling screen is divided into two panels:
 
 **Top panel — Current Holds Display:** Shows all active grab relationships with clear directionality. Format: `You [right upper arm] →→ GRAB →→ [upper body] Goblin`. Arrows pointing from you toward them mean you're holding them; reversed arrows mean they're holding you. This is the grapple graph rendered as readable text — every edge in the bipartite graph is displayed with its vertices and type.
 
@@ -134,19 +134,19 @@ The design process itself was narrative-first: *"That was the main reason we mad
 
 ---
 
-## Part 2: Translation to Tachiwaza Ring 1–2
+## Part 2: Translation to Hajime Ring 1–2
 
 ### Your 15-body-part model is probably the right granularity — with two additions
 
-Tachiwaza's current model has 15 body parts: right/left hand, right/left forearm, right/left bicep, right/left shoulder, right/left leg, right/left foot, core, lower_back, neck. Each with 0–10 capability values, 0.0–1.0 fatigue, and an injury boolean.
+Hajime's current model has 15 body parts: right/left hand, right/left forearm, right/left bicep, right/left shoulder, right/left leg, right/left foot, core, lower_back, neck. Each with 0–10 capability values, 0.0–1.0 fatigue, and an injury boolean.
 
-DF's humanoid has ~82 body parts with full tissue layer stacks. The question is whether Tachiwaza should move toward that granularity.
+DF's humanoid has ~82 body parts with full tissue layer stacks. The question is whether Hajime should move toward that granularity.
 
 **Honest answer: no, not for tissue layers. But yes for two structural additions.**
 
 DF's tissue layer system exists because it needs to model swords cutting through skin into muscle into bone — the layer-by-layer penetration is the entire point of the combat resolution. Judo doesn't have penetrating damage. Nobody's sword is working through Sato's epidermis. The forces in judo are **compressive** (pins), **torsive** (joint locks), **constrictive** (chokes), and **impact** (throws landing on the mat). These don't propagate through tissue layers — they act on joints, the neck, the ribcage, and the overall musculoskeletal system.
 
-What DF's architecture *does* teach Tachiwaza is that **the body part model should be as granular as your prose needs it to be.** If your combat log will never say "left knee," you don't need a left knee body part. If it will say "left knee," you need the knee in the model.
+What DF's architecture *does* teach Hajime is that **the body part model should be as granular as your prose needs it to be.** If your combat log will never say "left knee," you don't need a left knee body part. If it will say "left knee," you need the knee in the model.
 
 **Two additions to consider:**
 
@@ -164,7 +164,7 @@ Nobody's getting their spine severed in judo. But the *functional architecture* 
 
 **Fatigue as localized motor impairment.** DF's motor nerve damage makes a limb present but non-functional. In judo, extreme localized fatigue does the same thing — a judoka whose forearms are burned from a prolonged grip battle has arms that are physically present but can't maintain grip strength. Your current fatigue model (0.0–1.0 per body part) already captures this. The DF lesson is to make the functional consequences crisp: at what fatigue threshold does grip strength degrade? At what threshold does a judoka physically lose a grip involuntarily (DF equivalent: "drops the weapon")? Define thresholds, not gradients. **0.7 fatigue = grip strength halved. 0.9 fatigue = involuntary grip break is possible each tick.**
 
-**Pain-adjacent effects from impact.** DF's pain system — where accumulated pain halves all combat rolls and eventually causes unconsciousness — maps to the impact and recovery dynamics of judo throws. A judoka who just got slammed hard with an osoto-gari and landed flat on their back experiences a moment of being stunned, winded, disoriented. In DF terms, this is the combination of the `COMBAT_EVENT_STUNNED`, `COMBAT_EVENT_WINDED`, and dizziness effects. For Tachiwaza, model this as a **stun/impact state** that decays over ticks: a hard landing produces 2–4 ticks of degraded capability (slower reactions, reduced scramble effectiveness, ne-waza vulnerability), modified by the judoka's toughness and conditioning.
+**Pain-adjacent effects from impact.** DF's pain system — where accumulated pain halves all combat rolls and eventually causes unconsciousness — maps to the impact and recovery dynamics of judo throws. A judoka who just got slammed hard with an osoto-gari and landed flat on their back experiences a moment of being stunned, winded, disoriented. In DF terms, this is the combination of the `COMBAT_EVENT_STUNNED`, `COMBAT_EVENT_WINDED`, and dizziness effects. For Hajime, model this as a **stun/impact state** that decays over ticks: a hard landing produces 2–4 ticks of degraded capability (slower reactions, reduced scramble effectiveness, ne-waza vulnerability), modified by the judoka's toughness and conditioning.
 
 **Adrenaline masking fatigue.** DF's martial trance — where fighting multiple enemies makes a dwarf immune to pain penalties with effective skill = (skill+1)×5 — is a direct analogue to the adrenaline state in competitive judo. A judoka who's losing by waza-ari with 30 seconds left fights through fatigue that would have degraded them earlier. Model this as a **composure_state modifier** on fatigue effects: when composure is high and the tactical situation is desperate (losing on score, late in the match), fatigue thresholds shift upward. The judoka can push through grip fatigue that would have caused them to release earlier.
 
@@ -211,7 +211,7 @@ class GripEdge:
 
 ### The Mate window as Adventure Mode's wrestling menu
 
-This is the most exciting design direction in the document. DF's Adventure Mode wrestling screen shows the player the grapple state explicitly — top panel displays all active holds, bottom panel shows context-dependent actions. The Mate window in Tachiwaza could work the same way: **when the referee pauses the match, the player sees the grip graph and positional state explicitly, and the available instructions are derived from that visible state.**
+This is the most exciting design direction in the document. DF's Adventure Mode wrestling screen shows the player the grapple state explicitly — top panel displays all active holds, bottom panel shows context-dependent actions. The Mate window in Hajime could work the same way: **when the referee pauses the match, the player sees the grip graph and positional state explicitly, and the available instructions are derived from that visible state.**
 
 Here's what this could look like. When Mate is called, the Mate window displays:
 
@@ -232,13 +232,13 @@ The 2-word instruction taxonomy you've already designed works here, but the *ava
 
 This is exactly DF's wrestling UI pattern: **state display + context-dependent action list**. The player reads the state, understands the tactical situation from the graph, and issues an instruction that maps to a state transition. The coach doesn't need to understand the simulation math — they read the grip graph like a judo coach reads the gripping situation, and they give the instruction they'd give if they were standing at matside.
 
-The key difference from DF's Adventure Mode: the player doesn't control the judoka directly. They issue an instruction that the judoka *interprets* based on fight_iq, composure, trust, and fatigue. This is the coaching layer that makes Tachiwaza a coaching sim rather than a fighting game. The Mate window shows the state (like DF's wrestling menu) but the instruction is mediated through the judoka's reception system (unlike DF, where the player's choice is executed directly).
+The key difference from DF's Adventure Mode: the player doesn't control the judoka directly. They issue an instruction that the judoka *interprets* based on fight_iq, composure, trust, and fatigue. This is the coaching layer that makes Hajime a coaching sim rather than a fighting game. The Mate window shows the state (like DF's wrestling menu) but the instruction is mediated through the judoka's reception system (unlike DF, where the player's choice is executed directly).
 
 **Design implication:** The instructions should feel like reading from a naturally constrained menu, not like free text. The player sees the grip graph and the position state, and the available instructions emerge from those — just as DF's "Lock joint" only appears when you've already grabbed the limb. "ATTACK NOW" only appears when the grip graph supports a throw attempt. "BREAK GRIP" only appears when the opponent has a controlling grip. This makes the coaching feel responsive and informed rather than abstract.
 
 ### How DF's prose granularity maps to the sportswriter voice
 
-DF's prose works because every element of the sentence maps to a simulation datum. Tachiwaza's prose should work the same way. Here's the translation:
+DF's prose works because every element of the sentence maps to a simulation datum. Hajime's prose should work the same way. Here's the translation:
 
 **DF's template:**
 ```
@@ -246,7 +246,7 @@ DF's prose works because every element of the sentence maps to a simulation datu
 [TISSUE_DAMAGE_1], [TISSUE_DAMAGE_2], and [TISSUE_DAMAGE_3]!
 ```
 
-**Tachiwaza's equivalent template:**
+**Hajime's equivalent template:**
 ```
 [DESCRIPTOR ACTOR] [TECHNIQUE_VERB] [TARGET]'s [BODY_PART/GRIP_TARGET] — 
 [ENTRY_QUALITY], [KUZUSHI_DETAIL], [LANDING_RESULT].
@@ -281,7 +281,7 @@ Simulation: throw_attempt event (OSOTO_GARI, success), throw_landing event (impa
 
 **The DF lesson:** Every prose element should trace back to a simulation variable. "Clean reap" means the osoto-gari's execution score was high. "Flat on his back" means the landing_angle is directly dorsal. "Right hand still on the collar" means the grip edge persisted through the position transition. "Shallow hooks" means the ne-waza grasper edges have low depth values. The sportswriter voice isn't decoration over a generic event — it's a literary rendering of specific simulation state, the same way DF's "tearing the muscle and fracturing the bone" is a literary rendering of the material science calculation.
 
-The announcement taxonomy for Tachiwaza should define event types analogous to DF's:
+The announcement taxonomy for Hajime should define event types analogous to DF's:
 
 - `GRIP_ESTABLISH` / `GRIP_BREAK` / `GRIP_FIGHT` / `GRIP_UPGRADE`
 - `KUZUSHI_ATTEMPT` (off-balancing)
@@ -298,7 +298,7 @@ Each event type gets a set of prose templates, and the specific simulation data 
 
 ## Part 3: What not to build
 
-### Tissue layers are a trap for Tachiwaza
+### Tissue layers are a trap for Hajime
 
 DF needs tissue layers because weapons interact with anatomy at different depths. Judo doesn't. Adding skin → fat → muscle → bone to each of your 15 body parts would multiply your state space by 4× without producing better prose or more interesting decisions. The injury boolean is the right abstraction for within-match injury. Between matches, a richer injury model makes sense (sprained ankle → reduced right_foot capability for 3 tournaments), but that's a Ring 3+ concern. **Don't build tissue layers.**
 
@@ -308,7 +308,7 @@ DF's SHEAR_YIELD / IMPACT_FRACTURE math is mesmerizing but irrelevant. Judo thro
 
 ### Individual fingers and toes
 
-DF models individual fingers because you can gouge an eye with a specific finger and a goblin can bite off your index finger. Tachiwaza's gripping system operates at the hand level. A judoka's grip is a whole-hand action — the biomechanics of how individual fingers wrap around the gi is real but below the resolution that produces interesting coaching decisions. Your `right_hand` and `left_hand` as atomic gripping units is correct. **Don't add fingers.**
+DF models individual fingers because you can gouge an eye with a specific finger and a goblin can bite off your index finger. Hajime's gripping system operates at the hand level. A judoka's grip is a whole-hand action — the biomechanics of how individual fingers wrap around the gi is real but below the resolution that produces interesting coaching decisions. Your `right_hand` and `left_hand` as atomic gripping units is correct. **Don't add fingers.**
 
 ### Nerve damage as a permanent within-match system
 
@@ -320,7 +320,7 @@ DF's combat includes facing, distance, charging, dodge-into-cliff-edge physics. 
 
 ### Exhaustion / blood volume tracking
 
-DF tracks blood as a fluid with volume that depletes through wounds. Tachiwaza's cardio system (capacity + efficiency) already covers endurance. Don't add a fluid-volume tracker for anything. **Fatigue and cardio are sufficient abstractions for a sport context.**
+DF tracks blood as a fluid with volume that depletes through wounds. Hajime's cardio system (capacity + efficiency) already covers endurance. Don't add a fluid-volume tracker for anything. **Fatigue and cardio are sufficient abstractions for a sport context.**
 
 ---
 

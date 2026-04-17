@@ -1,5 +1,5 @@
 # enums.py
-# All shared enumerations for the Tachiwaza simulation.
+# All shared enumerations for the Hajime simulation.
 # Keeping enums in one file prevents circular imports — everything else can
 # import from here without pulling in the full Judoka or Match machinery.
 

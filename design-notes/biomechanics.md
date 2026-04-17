@@ -2,7 +2,7 @@
 ### The Physics Layer That Makes Every Match Unrepeatable
 
 *This document captures the core design philosophy for how physical reality 
-should shape the Tachiwaza simulation. It is written before the code exists 
+should shape the Hajime simulation. It is written before the code exists 
 so the architecture never accidentally rules it out. Update as the rings develop.*
 
 ---
@@ -36,7 +36,7 @@ piece of their body fails in a specific way with specific downstream
 consequences. A leg wound three minutes ago changes how a fighter moves 
 now. The system remembers.
 
-Tachiwaza should do the same thing for a judo match.
+Hajime should do the same thing for a judo match.
 
 Not "right_hand fatigue = 0.4." But: this hand, with this grip strength, 
 fatiguing at this rate against this opponent's specific resistance, on 

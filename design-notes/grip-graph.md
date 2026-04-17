@@ -6,7 +6,7 @@ of two grappling judoka. The grip sub-loop reads from it. Throw resolution
 reads from it. The Matte window renders it. The ne-waza system extends it.
 Every observable moment of a match traces back to a transition on this
 graph. It is the most foundational change of Phase 2 Session 2 — and the
-architectural piece that makes the rest of Tachiwaza possible.*
+architectural piece that makes the rest of Hajime possible.*
 
 ---
 
@@ -14,7 +14,7 @@ architectural piece that makes the rest of Tachiwaza possible.*
 
 A judo match is not two fighters with stat sheets — it is a **relational
 state** between two bodies. Who is gripping what, with which hand, at what
-depth, with what strength, in which configuration. Tachiwaza models this
+depth, with what strength, in which configuration. Hajime models this
 state explicitly as a bipartite graph.
 
 The architecture is borrowed directly from Dwarf Fortress's grapple system,

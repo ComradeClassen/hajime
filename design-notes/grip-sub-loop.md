@@ -51,7 +51,7 @@ runtime layer that drives those state changes.
 
 ## The Three Rhythms of a Match
 
-Tachiwaza has three nested rhythms running simultaneously, each with its own
+Hajime has three nested rhythms running simultaneously, each with its own
 trigger and its own timescale:
 
 ### Rhythm 1 — The Tick

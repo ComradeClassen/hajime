@@ -1,6 +1,6 @@
 # The Dojo as Institution — Design Note v0.2
 
-*Captures the multigenerational, economic, and relational layer of the game. These are the systems that turn Tachiwaza from a match simulator into something deeper — a coaching life simulator with dynastic play.*
+*Captures the multigenerational, economic, and relational layer of the game. These are the systems that turn Hajime from a match simulator into something deeper — a coaching life simulator with dynastic play.*
 
 ---
 
@@ -213,7 +213,7 @@ This is the part that protects the build queue from the ambition.
 
 ## A Note on Ambition vs. Build Queue
 
-This document is the most ambitious thing in the Tachiwaza folder. It's also the thing that, if executed, makes Tachiwaza a game that doesn't really exist anywhere else — a martial-arts coaching simulator with multigenerational dynastic play.
+This document is the most ambitious thing in the Hajime folder. It's also the thing that, if executed, makes Hajime a game that doesn't really exist anywhere else — a martial-arts coaching simulator with multigenerational dynastic play.
 
 The discipline isn't to deprioritize this vision — it's to *protect the build queue from it.* When a session is about Phase 1, build Phase 1. The lineage doc is here so it stays *captured* without leaking into work that isn't ready for it yet.
 

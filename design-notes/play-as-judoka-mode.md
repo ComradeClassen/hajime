@@ -11,7 +11,7 @@ later.*
 
 ## What It Is
 
-The default mode of Tachiwaza is coaching: you sit beside the mat, you
+The default mode of Hajime is coaching: you sit beside the mat, you
 watch the simulation run, you speak two words during Matte. The fighter
 is theirs. You shape who they are over time but you don't move their
 hands.
@@ -82,7 +82,7 @@ about reading three exchanges ahead.
 
 ---
 
-## Why This Mode Makes Sense for Tachiwaza
+## Why This Mode Makes Sense for Hajime
 
 **1. The architecture is already there.** The grip graph + position state
 machine + ne-waza commitment chains being built in Phase 2 Session 2 are
@@ -92,7 +92,7 @@ done.
 
 **2. It's a different shape of fun.** The coaching mode is contemplative,
 slow, dynastic. Play-as-judoka is tactical, immediate, competitive. They
-serve different moods. A player who loves Tachiwaza for the dojo career
+serve different moods. A player who loves Hajime for the dojo career
 might still want to spin up a quick match against a friend on a Tuesday
 night.
 
@@ -144,7 +144,7 @@ This is just for awareness — none of this gets built until post-Ring 4.
   showing them
 
 **None of this is in scope until the coaching mode is solid through Ring
-4.** The coaching mode is the soul of Tachiwaza. This is a parallel
+4.** The coaching mode is the soul of Hajime. This is a parallel
 offering, not a replacement.
 
 ---
@@ -162,7 +162,7 @@ actual roadmap. The discipline:
   the coaching simulation takes.
 
 - **Don't promise it.** It's not on any release roadmap. The January 9,
-  2027 release target (Player Two) doesn't apply here, and Tachiwaza's
+  2027 release target (Player Two) doesn't apply here, and Hajime's
   release target only covers the coaching mode through whatever rings
   ship by then.
 

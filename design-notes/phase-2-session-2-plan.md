@@ -442,7 +442,7 @@ matches feel like elite judo."
 
 After Session 2 ships, update:
 
-- **`tachiwaza-master-doc.md`** — move "Phase 2 Session 2" from "WHAT'S
+- **`hajime-master-doc.md`** — move "Phase 2 Session 2" from "WHAT'S
   NEXT" to "WHAT'S BEEN BUILT." Add "Phase 3 — Ring 1 Calibration" as the
   next entry.
 - **`data-model.md`** — bump to v0.5 if any field signatures changed
