@@ -4,6 +4,7 @@
 # import from here without pulling in the full Judoka or Match machinery.
 
 from enum import Enum, auto
+from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +242,79 @@ class GripType(Enum):
             GripType.CHOKE_HOLD:    0.8,
             GripType.ARMBAR_THREAT: 0.7,
         }[self]
+
+
+# ---------------------------------------------------------------------------
+# PHYSICS SUBSTRATE PART 2 — GRIP TYPE (seven standing grip types)
+# Clean separation from the legacy GripType enum above, which mixes grip
+# shape, depth, and ne-waza holds. GripTypeV2 covers only the seven
+# canonical standing grip types from the biomechanics literature.
+#
+# Legacy GripType stays in place for ne-waza grips (CHOKE_HOLD, ARMBAR_THREAT,
+# UNDERHOOK, TWO_ON_ONE) and for legacy standing throw prerequisites in
+# throws.py until Part 4 replaces EdgeRequirement with the four-dimension
+# signature.
+# ---------------------------------------------------------------------------
+class GripTypeV2(Enum):
+    SLEEVE     = auto()  # Sode — controls uke's arm rotation (hikite).
+    LAPEL_LOW  = auto()  # Eri-tori lower — mid-chest, standard working grip.
+    LAPEL_HIGH = auto()  # Eri-tori upper — collarbone; strong lift (tsurite).
+    COLLAR     = auto()  # Oku-eri — deep behind neck; max rotation authority.
+    BELT       = auto()  # Obi-tori — wraps back to grip belt; max CoM lift.
+    PISTOL     = auto()  # Sode-tori — sleeve-cuff clamp; defensive, strip-resistant.
+    CROSS      = auto()  # Katate-ai-gumi — "wrong" hand across; breaks geometry.
+
+    def is_unconventional(self) -> bool:
+        """Under current IJF rules, unconventional grips must lead to immediate
+        attack. Used for the per-grip 5-tick unconventional-grip clock (Part 2.6).
+        """
+        return self in (GripTypeV2.BELT, GripTypeV2.PISTOL, GripTypeV2.CROSS)
+
+
+# ---------------------------------------------------------------------------
+# GRIP DEPTH (Part 2.4)
+# Discrete levels with modifiers in [0.0, 1.0] that multiply into the force
+# envelope. Stripping moves DEEP → STANDARD → POCKET → SLIPPING → stripped.
+# ---------------------------------------------------------------------------
+class GripDepth(Enum):
+    SLIPPING = auto()   # 0.2 — being actively stripped, one tick from lost
+    POCKET   = auto()   # 0.4 — fingertip grip, barely held
+    STANDARD = auto()   # 0.7 — normal working grip
+    DEEP     = auto()   # 1.0 — fully seated grip
+
+    def modifier(self) -> float:
+        return {
+            GripDepth.SLIPPING: 0.2,
+            GripDepth.POCKET:   0.4,
+            GripDepth.STANDARD: 0.7,
+            GripDepth.DEEP:     1.0,
+        }[self]
+
+    def degraded(self) -> Optional["GripDepth"]:
+        """Next step in the strip chain. None means the grip is stripped entirely."""
+        return {
+            GripDepth.DEEP:     GripDepth.STANDARD,
+            GripDepth.STANDARD: GripDepth.POCKET,
+            GripDepth.POCKET:   GripDepth.SLIPPING,
+            GripDepth.SLIPPING: None,
+        }[self]
+
+    def deepened(self) -> "GripDepth":
+        """Next step when DEEPEN succeeds. DEEP is terminal."""
+        return {
+            GripDepth.SLIPPING: GripDepth.POCKET,
+            GripDepth.POCKET:   GripDepth.STANDARD,
+            GripDepth.STANDARD: GripDepth.DEEP,
+            GripDepth.DEEP:     GripDepth.DEEP,
+        }[self]
+
+
+# ---------------------------------------------------------------------------
+# GRIP MODE (Part 2.5) — per-tick choice by the owning judoka
+# ---------------------------------------------------------------------------
+class GripMode(Enum):
+    CONNECTIVE = auto()  # Binds the dyad, minimal force, low fatigue cost.
+    DRIVING    = auto()  # Transmits directed force; high fatigue cost.
 
 
 # ---------------------------------------------------------------------------

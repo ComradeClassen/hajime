@@ -47,7 +47,11 @@ STALEMATE_THRESHOLD:      float = 0.12  # grip_delta band considered stalemate
 STALEMATE_DURATION:       int   = 18    # ticks of stalemate before STIFLED_RESET
 RESET_RECOVERY_TICKS_MIN: int   = 2
 RESET_RECOVERY_TICKS_MAX: int   = 4
-ENGAGEMENT_TICKS_NEEDED:  int   = 2     # ticks before initial grips form
+ENGAGEMENT_TICKS_NEEDED:  int   = 2     # legacy floor; real duration is max(reach_ticks_for(A),B)
+
+# Part 2.6 passivity clocks (1 tick = 1 second in v0.1).
+KUMI_KATA_SHIDO_TICKS:        int = 30   # grip-to-attack threshold
+UNCONVENTIONAL_SHIDO_TICKS:   int = 5    # BELT/PISTOL/CROSS immediate-attack threshold
 
 # Throw resolution
 NOISE_STD:           float = 2.0
@@ -240,6 +244,14 @@ class Match:
             fighter_b.identity.name: 0,
         }
 
+        # Part 2.6 kumi-kata clock — per-fighter counter that starts once
+        # the fighter has any grip edge and resets on a driving-mode attack.
+        # Shido issued when it reaches KUMI_KATA_SHIDO_TICKS.
+        self.kumi_kata_clock: dict[str, int] = {
+            fighter_a.identity.name: 0,
+            fighter_b.identity.name: 0,
+        }
+
         # Stuffed throw tracking (for referee Matte timing)
         self._stuffed_throw_tick: int = 0
 
@@ -329,6 +341,7 @@ class Match:
 
         # 7. Passivity
         self._update_passivity(tick, events)
+        self._update_grip_passivity(tick, events)
 
         # 8. Print events
         self._print_events(events)
@@ -343,8 +356,19 @@ class Match:
 
         # -----------------------------------------------------------------
         if state == SubLoopState.ENGAGEMENT:
+            # Part 2.7: while closing distance, both hands are REACHING.
+            self._set_reaching(self.fighter_a)
+            self._set_reaching(self.fighter_b)
+
             self.engagement_ticks += 1
-            if self.engagement_ticks >= ENGAGEMENT_TICKS_NEEDED:
+            # Reach duration is the slower fighter's belt-based reach time
+            # (the dyad can't seat grips until both hands have arrived).
+            reach_ticks = max(
+                self.grip_graph.reach_ticks_for(self.fighter_a),
+                self.grip_graph.reach_ticks_for(self.fighter_b),
+                ENGAGEMENT_TICKS_NEEDED,
+            )
+            if self.engagement_ticks >= reach_ticks:
                 new_edges = self.grip_graph.attempt_engagement(
                     self.fighter_a, self.fighter_b, tick
                 )
@@ -358,8 +382,8 @@ class Match:
                                 f"({edge.grasper_part.value}) → "
                                 f"{edge.target_id} "
                                 f"({edge.target_location.value}, "
-                                f"{edge.grip_type.name}, "
-                                f"depth {edge.depth:.2f})"
+                                f"{edge.grip_type_v2.name} @ "
+                                f"{edge.depth_level.name})"
                             ),
                         ))
                     self.sub_loop_state  = SubLoopState.TUG_OF_WAR
@@ -371,6 +395,20 @@ class Match:
         # -----------------------------------------------------------------
         elif state == SubLoopState.TUG_OF_WAR:
             self.tug_of_war_ticks += 1
+
+            # Part 2.7: each tick of tug-of-war, each grasper tries to deepen
+            # their grips one step (POCKET → STANDARD → DEEP). Real Part 3
+            # will gate this behind an explicit DEEPEN action; for v0.1 we
+            # advance opportunistically.
+            fighters_by_id = {
+                self.fighter_a.identity.name: self.fighter_a,
+                self.fighter_b.identity.name: self.fighter_b,
+            }
+            for edge in list(self.grip_graph.edges):
+                grasper = fighters_by_id.get(edge.grasper_id)
+                if grasper is not None:
+                    self.grip_graph.deepen_grip(edge, grasper)
+
             grip_delta = self.grip_graph.compute_grip_delta(
                 self.fighter_a, self.fighter_b
             )
@@ -571,8 +609,10 @@ class Match:
         )
         events.extend(result_events)
 
-        # Update last-attack tick
+        # Update last-attack tick + Part 2.6 attack-reset
         self._last_attack_tick[attacker.identity.name] = tick
+        self.grip_graph.register_attack(attacker.identity.name)
+        self.kumi_kata_clock[attacker.identity.name] = 0
 
         return events
 
@@ -610,6 +650,8 @@ class Match:
         events.extend(result_events)
 
         self._last_attack_tick[attacker.identity.name] = tick
+        self.grip_graph.register_attack(attacker.identity.name)
+        self.kumi_kata_clock[attacker.identity.name] = 0
         return events
 
     # -----------------------------------------------------------------------
@@ -971,6 +1013,70 @@ class Match:
     def _decay_stun(self, judoka: Judoka) -> None:
         if judoka.state.stun_ticks > 0:
             judoka.state.stun_ticks -= 1
+
+    def _set_reaching(self, judoka: Judoka) -> None:
+        """Part 2.7: while closing distance, a fighter's free hands are
+        REACHING. Hands already GRIPPING_UKE are left alone (a surviving
+        grip from a stuffed throw shouldn't be demoted).
+        """
+        from body_state import ContactState as _CS
+        for key in ("right_hand", "left_hand"):
+            ps = judoka.state.body.get(key)
+            if ps is None:
+                continue
+            if ps.contact_state == _CS.FREE:
+                ps.contact_state = _CS.REACHING
+
+    def _update_grip_passivity(self, tick: int, events: list[Event]) -> None:
+        """Part 2.6 passivity clocks.
+
+        - Per-fighter kumi-kata clock: ticks while the fighter owns any grip;
+          resets on an attack (throw commit). Shido at KUMI_KATA_SHIDO_TICKS.
+        - Per-grip unconventional clock: lives on each GripEdge; ticked in
+          grip_graph.tick_update(). Shido if any owned edge crosses
+          UNCONVENTIONAL_SHIDO_TICKS.
+        """
+        for fighter in (self.fighter_a, self.fighter_b):
+            name = fighter.identity.name
+            owned = self.grip_graph.edges_owned_by(name)
+
+            # Kumi-kata clock: advances only while this fighter is gripping.
+            if owned:
+                self.kumi_kata_clock[name] += 1
+            else:
+                self.kumi_kata_clock[name] = 0
+
+            reason: Optional[str] = None
+            if self.kumi_kata_clock[name] >= KUMI_KATA_SHIDO_TICKS:
+                reason = "kumi-kata passivity"
+                self.kumi_kata_clock[name] = 0
+
+            # Unconventional-grip clock (per edge).
+            for edge in owned:
+                if edge.unconventional_clock >= UNCONVENTIONAL_SHIDO_TICKS:
+                    reason = reason or (
+                        f"unconventional grip ({edge.grip_type_v2.name}) without attack"
+                    )
+                    edge.unconventional_clock = 0
+
+            if reason is None:
+                continue
+
+            fighter.state.shidos += 1
+            events.append(Event(
+                tick=tick,
+                event_type="SHIDO_AWARDED",
+                description=(
+                    f"[ref: {self.referee.name}] Shido — "
+                    f"{name} ({reason}). "
+                    f"Total: {fighter.state.shidos}."
+                ),
+            ))
+            if fighter.state.shidos >= 3:
+                self.winner     = (self.fighter_b if fighter is self.fighter_a
+                                   else self.fighter_a)
+                self.win_method = "hansoku-make"
+                self.match_over = True
 
     def _update_passivity(self, tick: int, events: list[Event]) -> None:
         # "Active" = fighter attempted a throw within the last 30 ticks
