@@ -188,7 +188,7 @@ def test_match_reaches_decision_within_240_ticks() -> None:
     assert m.ticks_run <= 240
     # Match either ended (winner set) or ran the full distance with a draw.
     assert m.win_method in ("ippon", "two waza-ari", "decision", "draw",
-                             "hansoku-make", "ippon (pin)")
+                             "hansoku-make", "ippon (pin)", "ippon (submission)")
 
 
 def test_commit_throw_resolves_via_resolve_throw() -> None:

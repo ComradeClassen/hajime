@@ -33,6 +33,7 @@ class ThrowID(Enum):
     HARAI_GOSHI  = auto()  # Hip sweep
     TAI_OTOSHI   = auto()  # Body drop — combo finisher when harai-goshi is read
     SUMI_GAESHI  = auto()  # Corner sacrifice — mirrored-stance favourite
+    DE_ASHI_HARAI = auto()  # Forward foot sweep — timing-window ashi-waza (Part 5.4)
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +207,14 @@ THROW_REGISTRY: dict[ThrowID, Throw] = {
         description=(
             "Corner sacrifice throw. Attacker falls backward, hooking the opponent's "
             "inner thigh with the foot and flipping them over."
+        ),
+    ),
+    ThrowID.DE_ASHI_HARAI: Throw(
+        throw_id=ThrowID.DE_ASHI_HARAI,
+        name="De-ashi-harai",
+        description=(
+            "Forward foot sweep. Tori sweeps uke's forward-stepping foot at the "
+            "precise moment it unweights — the canonical timing-window throw."
         ),
     ),
 }
@@ -394,6 +403,24 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.SACRIFICE,
         base_effectiveness_dominant=5.0,
         base_effectiveness_off_side=7.0,  # Higher off-side: mirrored stance specialty
+    ),
+
+    ThrowID.DE_ASHI_HARAI: ThrowDef(
+        throw_id=ThrowID.DE_ASHI_HARAI,
+        name="De-ashi-harai",
+        requires=[
+            # Foot sweep — the timing window is the gate; legacy grip prereq is minimal
+            EdgeRequirement(
+                grasper_part=BodyPart.NON_DOMINANT_HAND,
+                target_location=GripTarget.DOMINANT_SLEEVE,
+                min_depth=0.2,
+            ),
+        ],
+        posture_requirement=[Posture.UPRIGHT, Posture.SLIGHTLY_BENT, Posture.BROKEN],
+        primary_body_parts=[BodyPart.RIGHT_FOOT, BodyPart.CORE],
+        landing_profile=LandingProfile.LATERAL,
+        base_effectiveness_dominant=6.0,   # low raw effectiveness; the payoff is the timing
+        base_effectiveness_off_side=5.0,
     ),
 }
 

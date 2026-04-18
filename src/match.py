@@ -463,6 +463,7 @@ class Match:
                 self.winner = (self.fighter_a
                                if self.fighter_a.identity.name == winner_name
                                else self.fighter_b)
+                self.win_method = "ippon (submission)"
                 self.match_over = True
                 return
             if ev.event_type == "ESCAPE_SUCCESS":
@@ -905,15 +906,60 @@ class Match:
             events.extend(stuffed_events)
 
         else:  # FAILED
+            events.extend(self._resolve_failed_commit(
+                attacker, defender, throw_id, throw_name, net, tick,
+            ))
+
+        return events
+
+    # -----------------------------------------------------------------------
+    # FAILED-COMMIT FAILURE-OUTCOME ROUTING (Part 4.5 / Part 6.3)
+    # -----------------------------------------------------------------------
+    def _resolve_failed_commit(
+        self, attacker: Judoka, defender: Judoka, throw_id: ThrowID,
+        throw_name: str, net: float, tick: int,
+    ) -> list[Event]:
+        events: list[Event] = []
+        a_name = attacker.identity.name
+
+        # Worked-template throws route through the FailureSpec selector.
+        # Legacy throws fall through to a generic "failed" event as before.
+        from worked_throws import worked_template_for
+        template = worked_template_for(throw_id)
+        if template is None:
             events.append(Event(
-                tick=tick,
-                event_type="FAILED",
+                tick=tick, event_type="FAILED",
                 description=(
                     f"[throw] {a_name} → {throw_name} → failed "
                     f"(no commitment, net {net:+.2f})"
                 ),
             ))
+            return events
 
+        from failure_resolution import (
+            select_failure_outcome, apply_failure_resolution,
+        )
+        resolution = select_failure_outcome(
+            template, attacker, defender, self.grip_graph,
+        )
+        apply_failure_resolution(resolution, attacker)
+
+        events.append(Event(
+            tick=tick, event_type="FAILED",
+            description=(
+                f"[throw] {a_name} → {throw_name} → failed "
+                f"({resolution.outcome.name}; "
+                f"{resolution.failed_dimension} score "
+                f"{resolution.dimension_score:.2f}; "
+                f"recovery {resolution.recovery_ticks} tick(s))"
+            ),
+            data={
+                "outcome":          resolution.outcome.name,
+                "recovery_ticks":   resolution.recovery_ticks,
+                "failed_dimension": resolution.failed_dimension,
+                "dimension_score":  resolution.dimension_score,
+            },
+        ))
         return events
 
     # -----------------------------------------------------------------------

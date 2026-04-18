@@ -72,11 +72,15 @@ def perceive(actual_match: float, judoka: "Judoka",
 
 
 # ---------------------------------------------------------------------------
-# ACTUAL-SIGNATURE MATCH (v0.1)
-# The true 0.0–1.0 match for a throw given current match state. v0.1 composes
-# two simple factors — grip prerequisites satisfied, and defender in kuzushi.
-# Part 4 will replace this with the four-dimension signature (grips × posture
-# × velocity × reap-contact).
+# ACTUAL-SIGNATURE MATCH
+# Ground-truth 0.0–1.0 match for a throw given current match state.
+#
+# Two paths:
+#   - Worked-template path (Part 5): throw has an entry in WORKED_THROWS →
+#     dispatch to throw_signature.signature_match, which runs the full
+#     four-dimension weighted match (Part 4.2).
+#   - Legacy path: two 0.5-weight factors (grip prereqs + kuzushi predicate).
+#     Used for throws not yet instantiated as Part-5 templates.
 # ---------------------------------------------------------------------------
 def actual_signature_match(
     throw_id: ThrowID,
@@ -84,12 +88,13 @@ def actual_signature_match(
     defender: "Judoka",
     graph: "GripGraph",
 ) -> float:
-    """Ground-truth signature match in [0, 1].
+    from worked_throws import worked_template_for
+    template = worked_template_for(throw_id)
+    if template is not None:
+        from throw_signature import signature_match
+        return signature_match(template, attacker, defender, graph)
 
-    Two 0.5-weight factors:
-      - grip graph satisfies the throw's EdgeRequirements
-      - defender is in kuzushi (CoM outside recoverable envelope)
-    """
+    # --- Legacy two-factor path ---
     td = THROW_DEFS.get(throw_id)
     if td is None:
         return 0.0

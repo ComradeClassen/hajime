@@ -326,32 +326,35 @@ def _match_lever_body_parts(
     req: LeverBodyPartRequirement, attacker: "Judoka", defender: "Judoka",
 ) -> float:
     from body_state import FootContactState
-    checks: list[float] = []
+
+    # Fulcrum-geometry hard gate (spec 5.3): "Critical constraint — tori's
+    # hips MUST be below uke's hips." Per Gutiérrez-Santiago (2013) this is
+    # the #1 failure mode for Seoi-nage. If the offset isn't met, the Lever
+    # body-parts dimension plummets to zero regardless of support config.
+    tori_h = attacker.state.body_state.com_height
+    uke_h  = defender.state.body_state.com_height
+    offset = uke_h - tori_h
+    if req.fulcrum_offset_below_uke_com_m > 0.0:
+        if offset < req.fulcrum_offset_below_uke_com_m:
+            return 0.0
+        fulcrum_score = 1.0
+    else:
+        fulcrum_score = 1.0 if offset >= 0.0 else 0.0
 
     # Support configuration.
     left_planted  = attacker.state.body_state.foot_state_left.contact_state  == FootContactState.PLANTED
     right_planted = attacker.state.body_state.foot_state_right.contact_state == FootContactState.PLANTED
     if req.tori_supporting_feet == SupportRequirement.DOUBLE_SUPPORT:
-        checks.append(1.0 if (left_planted and right_planted) else 0.0)
+        support_score = 1.0 if (left_planted and right_planted) else 0.0
     elif req.tori_supporting_feet == SupportRequirement.SINGLE_SUPPORT:
-        checks.append(1.0 if (left_planted ^ right_planted) else 0.0)
+        support_score = 1.0 if (left_planted ^ right_planted) else 0.0
     else:
         # Knee-down variants — we can't yet distinguish kneeling from standing
         # in BodyState v1. Treat as "not standing double support" for now and
         # credit the geometry check if at least one foot/knee is bearing load.
-        checks.append(1.0 if (left_planted or right_planted) else 0.5)
+        support_score = 1.0 if (left_planted or right_planted) else 0.5
 
-    # Fulcrum offset: tori's CoM height must be at least `offset_below_uke_com_m`
-    # below uke's CoM height. (Hips correlate with CoM at shizentai height.)
-    tori_h = attacker.state.body_state.com_height
-    uke_h  = defender.state.body_state.com_height
-    offset = uke_h - tori_h
-    if req.fulcrum_offset_below_uke_com_m <= 0.0:
-        checks.append(1.0 if offset >= 0.0 else 0.0)
-    else:
-        checks.append(min(1.0, max(0.0, offset / req.fulcrum_offset_below_uke_com_m)))
-
-    return sum(checks) / len(checks) if checks else 0.0
+    return 0.5 * (support_score + fulcrum_score)
 
 
 # ---------------------------------------------------------------------------
@@ -389,12 +392,32 @@ def signature_match(
 
     Weights default to the classification's canonical weighting (Part 4.2);
     pass `weights` to override for experiments.
+
+    Two hard gates override the weighted sum and force the signature to zero:
+      - Couple with timing_window, outside the window (spec 4.6): "match
+        plummets regardless of other dimensions."
+      - Lever with fulcrum-offset constraint, tori's hips above uke's (spec
+        5.3): "tori's hips MUST be below uke's hips."
+    Both are enforced inside the body-parts match function, which returns
+    exactly 0.0 in those cases — we propagate that to the full signature.
     """
     w = weights or throw.signature_weights()
+    b = match_body_parts(throw, attacker, defender)
+    if b == 0.0 and _has_hard_body_gate(throw):
+        return 0.0
     k = match_kuzushi_vector(throw, attacker, defender)
     f = match_force_application(throw, attacker, graph)
-    b = match_body_parts(throw, attacker, defender)
     p = match_uke_posture(throw, defender)
     score = w.kuzushi * k + w.force * f + w.body * b + w.posture * p
     # Floating-point hygiene at the boundaries.
     return max(0.0, min(1.0, score))
+
+
+def _has_hard_body_gate(throw: ThrowTemplate) -> bool:
+    """True when the template's body-parts requirement carries a hard gate
+    (timing window for Couple; fulcrum-offset constraint for Lever) that
+    should short-circuit the full signature to zero when unmet.
+    """
+    if throw.classification == ThrowClassification.COUPLE:
+        return throw.body_part_requirement.timing_window is not None
+    return throw.body_part_requirement.fulcrum_offset_below_uke_com_m > 0.0
