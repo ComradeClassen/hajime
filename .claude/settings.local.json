@@ -16,7 +16,8 @@
       "Bash(python tests/test_grips.py)",
       "Bash(git commit -m ' *)",
       "Bash(python -c \"import sys; sys.path.insert\\(0, 'src'\\); import match; print\\('match imports ok'\\)\")",
-      "Bash(python tests/test_force_model.py)"
+      "Bash(python tests/test_force_model.py)",
+      "Bash(python tests/test_throw_templates.py)"
     ]
   }
 }
