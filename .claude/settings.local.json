@@ -9,7 +9,14 @@
       "Bash(python src/main.py --runs 50 --seed 7)",
       "Bash(python src/main.py --runs 20 --seed 42)",
       "Bash(python src/main.py --runs 3 --seed 1337)",
-      "Bash(python src/main.py --referee petrov --runs 3 --seed 42)"
+      "Bash(python src/main.py --referee petrov --runs 3 --seed 42)",
+      "Bash(python tests/test_body_state.py)",
+      "Bash(python -c ' *)",
+      "Bash(python src/main.py --seed 1)",
+      "Bash(python tests/test_grips.py)",
+      "Bash(git commit -m ' *)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, 'src'\\); import match; print\\('match imports ok'\\)\")",
+      "Bash(python tests/test_force_model.py)"
     ]
   }
 }
