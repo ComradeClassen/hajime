@@ -22,7 +22,8 @@
       "Bash(python -c \"from worked_throws import WORKED_THROWS, worked_template_for; from failure_resolution import select_failure_outcome, apply_failure_resolution; from perception import actual_signature_match; print\\('imports OK', len\\(WORKED_THROWS\\)\\)\")",
       "Bash(python tests/test_worked_throws.py)",
       "Bash(python tests/test_failure_resolution.py)",
-      "Bash(python tests/__TRACKED_VAR__)"
+      "Bash(python tests/__TRACKED_VAR__)",
+      "Bash(python tests/test_skill_compression.py)"
     ]
   }
 }
