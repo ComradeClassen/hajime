@@ -43,6 +43,11 @@ from perception import actual_signature_match, perceive
 from skill_compression import (
     SubEvent, SUB_EVENT_LABELS, compression_n_for, sub_event_schedule,
 )
+from counter_windows import (
+    CounterWindow, actual_counter_window, perceived_counter_window,
+    has_counter_resources, select_counter_throw, counter_fire_probability,
+    attacker_vulnerability_for,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -108,13 +113,14 @@ GRIP_DOMINANT_THROWS: frozenset[ThrowID] = frozenset({
 # ---------------------------------------------------------------------------
 @dataclass
 class _ThrowInProgress:
-    attacker_name: str
-    defender_name: str
-    throw_id:      ThrowID
-    start_tick:    int
-    compression_n: int
-    schedule:      dict[int, list[SubEvent]]
-    commit_actual: float                          # signature match at commit time
+    attacker_name:  str
+    defender_name:  str
+    throw_id:       ThrowID
+    start_tick:     int
+    compression_n:  int
+    schedule:       dict[int, list[SubEvent]]
+    commit_actual:  float                          # signature match at commit time
+    last_sub_event: Optional[SubEvent] = None      # most recent emitted — drives Part 6.2 window region
 
     def offset(self, current_tick: int) -> int:
         return current_tick - self.start_tick
@@ -350,6 +356,19 @@ class Match:
         # resolves the throw via the same landing path as single-tick commits.
         advance_events = self._advance_throws_in_progress(tick)
         events.extend(advance_events)
+        if self.match_over:
+            self._post_tick(tick, events)
+            return
+        if self.sub_loop_state == SubLoopState.NE_WAZA:
+            self._post_tick(tick, events)
+            return
+
+        # Part 6.2 — counter-window opportunities. Each tick, check whether
+        # either fighter's dyad state lets them fire a counter against the
+        # other. At most one counter fires per tick; a counter aborts any
+        # in-progress attempt it preempts.
+        counter_events = self._check_counter_opportunities(tick)
+        events.extend(counter_events)
         if self.match_over:
             self._post_tick(tick, events)
             return
@@ -898,6 +917,11 @@ class Match:
                 ),
                 data={"sub_event": sub.name, "throw_name": throw_name},
             ))
+        # Part 6.2 region classification reads the most recent sub-event.
+        if sub_events:
+            tip = self._throws_in_progress.get(attacker.identity.name)
+            if tip is not None:
+                tip.last_sub_event = sub_events[-1]
         return events
 
     def _resolve_kake(
@@ -975,6 +999,96 @@ class Match:
         if fighter_name not in self._throws_in_progress:
             return actions
         return [a for a in actions if a.kind != ActionKind.COMMIT_THROW]
+
+    # -----------------------------------------------------------------------
+    # COUNTER-WINDOW OPPORTUNITIES (Part 6.2)
+    # Gives each fighter a chance to fire a counter against the OTHER fighter
+    # given the current dyad-region. At most one counter fires per tick.
+    # -----------------------------------------------------------------------
+    def _check_counter_opportunities(
+        self, tick: int, rng: Optional[random.Random] = None,
+    ) -> list[Event]:
+        r = rng if rng is not None else random
+        events: list[Event] = []
+        for defender, attacker in (
+            (self.fighter_a, self.fighter_b),
+            (self.fighter_b, self.fighter_a),
+        ):
+            # A fighter already mid-attempt themselves can't counter.
+            if defender.identity.name in self._throws_in_progress:
+                continue
+            fired = self._try_fire_counter(defender, attacker, tick, r)
+            if fired is not None:
+                events.extend(fired)
+                # One counter per tick. A chain counter (tori counters uke's
+                # counter) is a Ring-2+ concern.
+                break
+        return events
+
+    def _try_fire_counter(
+        self, defender: Judoka, attacker: Judoka, tick: int,
+        rng: random.Random,
+    ) -> Optional[list[Event]]:
+        tip = self._throws_in_progress.get(attacker.identity.name)
+        last_sub = tip.last_sub_event if tip is not None else None
+        attacker_throw_id = tip.throw_id if tip is not None else None
+
+        actual = actual_counter_window(
+            attacker, defender, self.grip_graph, tip, last_sub,
+        )
+        if actual == CounterWindow.NONE:
+            return None
+
+        perceived = perceived_counter_window(actual, defender, rng=rng)
+        if perceived == CounterWindow.NONE:
+            return None
+        if not has_counter_resources(defender):
+            return None
+
+        # Pick a counter throw. Sen-sen-no-sen has no attacker throw_id yet;
+        # use a defender-side default so select_counter_throw can still run.
+        effective_throw_id = attacker_throw_id or ThrowID.DE_ASHI_HARAI
+        counter_id = select_counter_throw(defender, perceived, effective_throw_id)
+        if counter_id is None:
+            return None
+
+        vuln = attacker_vulnerability_for(effective_throw_id)
+        p = counter_fire_probability(defender, perceived, vuln)
+        if rng.random() >= p:
+            return None
+
+        # Counter fires.
+        events: list[Event] = [Event(
+            tick=tick, event_type="COUNTER_COMMIT",
+            description=(
+                f"[counter] {defender.identity.name} reads {perceived.name} — "
+                f"fires {THROW_REGISTRY[counter_id].name} against "
+                f"{attacker.identity.name}."
+            ),
+            data={
+                "window":          perceived.name,
+                "actual_window":   actual.name,
+                "counter_throw":   counter_id.name,
+                "attacker_throw":  effective_throw_id.name,
+                "attacker":        attacker.identity.name,
+                "defender":        defender.identity.name,
+            },
+        )]
+
+        # If tori was mid-attempt, abort it — the counter preempts.
+        if tip is not None:
+            events.extend(self._abort_throw_in_progress(
+                tip, attacker, defender, tick, reason="countered",
+            ))
+
+        # Route the defender's counter through the standard commit path. They
+        # get the same skill-compression treatment as any other commit, so
+        # an elite resolves immediately; a non-elite enters a fresh
+        # multi-tick attempt (and could theoretically be countered in turn).
+        events.extend(self._resolve_commit_throw(
+            defender, attacker, counter_id, tick,
+        ))
+        return events
 
     # -----------------------------------------------------------------------
     # COMPOSURE / STALEMATE HELPERS
