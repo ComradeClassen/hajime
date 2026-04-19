@@ -61,11 +61,14 @@ def _seat_deep_grips(graph: GripGraph, attacker, defender,
 # ---------------------------------------------------------------------------
 # Template instantiation sanity
 # ---------------------------------------------------------------------------
-def test_all_four_worked_throws_are_registered() -> None:
-    assert set(WORKED_THROWS.keys()) == {
-        ThrowID.UCHI_MATA, ThrowID.O_SOTO_GARI,
-        ThrowID.SEOI_NAGE,  ThrowID.DE_ASHI_HARAI,
-    }
+def test_part_5_1_through_5_4_worked_throws_are_registered() -> None:
+    """The original four worked throws from spec 5.1–5.4 must be in the
+    registry. The Part 5.5 / HAJ-29 backfill adds more; test_backfilled_throws
+    covers the full set.
+    """
+    for tid in (ThrowID.UCHI_MATA, ThrowID.O_SOTO_GARI,
+                ThrowID.SEOI_NAGE, ThrowID.DE_ASHI_HARAI):
+        assert tid in WORKED_THROWS
 
 
 def test_classifications_match_spec() -> None:
@@ -187,7 +190,9 @@ def test_actual_signature_match_routes_to_template_for_worked_throws() -> None:
     worked_score = actual_signature_match(ThrowID.UCHI_MATA, t, s, g)
     assert worked_score > 0.0
     # A ThrowID not in the worked registry still uses legacy and returns 0.
-    legacy_score = actual_signature_match(ThrowID.HARAI_GOSHI, t, s, g)
+    # SUMI_GAESHI is the only v0.1 throw without a Part-5 template.
+    assert ThrowID.SUMI_GAESHI not in WORKED_THROWS
+    legacy_score = actual_signature_match(ThrowID.SUMI_GAESHI, t, s, g)
     assert legacy_score == 0.0
 
 

@@ -30,10 +30,15 @@ class ThrowID(Enum):
     O_SOTO_GARI  = auto()  # Major outer reap
     O_UCHI_GARI  = auto()  # Major inner reap
     KO_UCHI_GARI = auto()  # Minor inner reap — low-commitment setup
-    HARAI_GOSHI  = auto()  # Hip sweep
+    HARAI_GOSHI  = auto()  # Hip sweep — competitive Couple form
     TAI_OTOSHI   = auto()  # Body drop — combo finisher when harai-goshi is read
     SUMI_GAESHI  = auto()  # Corner sacrifice — mirrored-stance favourite
     DE_ASHI_HARAI = auto()  # Forward foot sweep — timing-window ashi-waza (Part 5.4)
+    # Backfill ThrowIDs (Part 5.5 / HAJ-29):
+    O_GOSHI             = auto()  # Major hip throw — Lever
+    HARAI_GOSHI_CLASSICAL = auto()  # Classical Harai-goshi — Lever form (hip fulcrum)
+    TOMOE_NAGE          = auto()  # Circle / sacrifice throw — Lever with inverted commit
+    O_GURUMA            = auto()  # Major wheel — Lever, extended-leg fulcrum
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +220,38 @@ THROW_REGISTRY: dict[ThrowID, Throw] = {
         description=(
             "Forward foot sweep. Tori sweeps uke's forward-stepping foot at the "
             "precise moment it unweights — the canonical timing-window throw."
+        ),
+    ),
+    ThrowID.O_GOSHI: Throw(
+        throw_id=ThrowID.O_GOSHI,
+        name="O-goshi",
+        description=(
+            "Major hip throw. Tori rotates in, places hip below uke's hips, "
+            "lifts and pivots uke over the sacrum — the foundational hip throw."
+        ),
+    ),
+    ThrowID.HARAI_GOSHI_CLASSICAL: Throw(
+        throw_id=ThrowID.HARAI_GOSHI_CLASSICAL,
+        name="Harai-goshi (classical)",
+        description=(
+            "Classical Harai-goshi. Hip-fulcrum Lever form — tori's hip drives "
+            "under uke's CoM while the sweeping leg brushes the far thigh."
+        ),
+    ),
+    ThrowID.TOMOE_NAGE: Throw(
+        throw_id=ThrowID.TOMOE_NAGE,
+        name="Tomoe-nage",
+        description=(
+            "Circle / sacrifice throw. Tori drops under uke, plants a foot on "
+            "uke's lower abdomen or belt, and rolls uke overhead in a full arc."
+        ),
+    ),
+    ThrowID.O_GURUMA: Throw(
+        throw_id=ThrowID.O_GURUMA,
+        name="O-guruma",
+        description=(
+            "Major wheel. Tori's extended leg at hip-line becomes the fulcrum "
+            "uke rotates over — maximum moment arm among Lever throws."
         ),
     ),
 }
@@ -421,6 +458,98 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.LATERAL,
         base_effectiveness_dominant=6.0,   # low raw effectiveness; the payoff is the timing
         base_effectiveness_off_side=5.0,
+    ),
+
+    ThrowID.O_GOSHI: ThrowDef(
+        throw_id=ThrowID.O_GOSHI,
+        name="O-goshi",
+        requires=[
+            EdgeRequirement(
+                grasper_part=BodyPart.DOMINANT_HAND,
+                target_location=GripTarget.OPPOSITE_LAPEL,
+                grip_type_in=[GripType.STANDARD, GripType.DEEP],
+                min_depth=0.4,
+            ),
+            EdgeRequirement(
+                grasper_part=BodyPart.NON_DOMINANT_HAND,
+                target_location=GripTarget.DOMINANT_SLEEVE,
+                min_depth=0.3,
+            ),
+        ],
+        posture_requirement=[Posture.UPRIGHT, Posture.SLIGHTLY_BENT, Posture.BROKEN],
+        primary_body_parts=[BodyPart.RIGHT_HIP, BodyPart.LOWER_BACK, BodyPart.CORE],
+        landing_profile=LandingProfile.FORWARD_ROTATIONAL,
+        base_effectiveness_dominant=7.0,
+        base_effectiveness_off_side=5.0,
+    ),
+
+    ThrowID.HARAI_GOSHI_CLASSICAL: ThrowDef(
+        throw_id=ThrowID.HARAI_GOSHI_CLASSICAL,
+        name="Harai-goshi (classical)",
+        requires=[
+            EdgeRequirement(
+                grasper_part=BodyPart.DOMINANT_HAND,
+                target_location=GripTarget.OPPOSITE_LAPEL,
+                grip_type_in=[GripType.DEEP, GripType.HIGH_COLLAR],
+                min_depth=0.5,
+            ),
+            EdgeRequirement(
+                grasper_part=BodyPart.NON_DOMINANT_HAND,
+                target_location=GripTarget.DOMINANT_SLEEVE,
+                min_depth=0.3,
+            ),
+        ],
+        posture_requirement=[Posture.SLIGHTLY_BENT, Posture.BROKEN],
+        primary_body_parts=[BodyPart.RIGHT_HIP, BodyPart.RIGHT_THIGH, BodyPart.LOWER_BACK],
+        landing_profile=LandingProfile.HIGH_FORWARD_ROTATIONAL,
+        base_effectiveness_dominant=7.0,
+        base_effectiveness_off_side=4.0,
+    ),
+
+    ThrowID.TOMOE_NAGE: ThrowDef(
+        throw_id=ThrowID.TOMOE_NAGE,
+        name="Tomoe-nage",
+        requires=[
+            # Sacrifice throw — both grips moderate depth, forward kuzushi
+            EdgeRequirement(
+                grasper_part=BodyPart.DOMINANT_HAND,
+                target_location=GripTarget.OPPOSITE_LAPEL,
+                min_depth=0.3,
+            ),
+            EdgeRequirement(
+                grasper_part=BodyPart.NON_DOMINANT_HAND,
+                target_location=GripTarget.DOMINANT_SLEEVE,
+                min_depth=0.3,
+            ),
+        ],
+        posture_requirement=[Posture.UPRIGHT, Posture.SLIGHTLY_BENT, Posture.BROKEN],
+        primary_body_parts=[BodyPart.CORE, BodyPart.RIGHT_FOOT, BodyPart.LOWER_BACK],
+        landing_profile=LandingProfile.SACRIFICE,
+        base_effectiveness_dominant=6.0,
+        base_effectiveness_off_side=6.0,
+    ),
+
+    ThrowID.O_GURUMA: ThrowDef(
+        throw_id=ThrowID.O_GURUMA,
+        name="O-guruma",
+        requires=[
+            EdgeRequirement(
+                grasper_part=BodyPart.DOMINANT_HAND,
+                target_location=GripTarget.OPPOSITE_LAPEL,
+                grip_type_in=[GripType.STANDARD, GripType.DEEP],
+                min_depth=0.4,
+            ),
+            EdgeRequirement(
+                grasper_part=BodyPart.NON_DOMINANT_HAND,
+                target_location=GripTarget.DOMINANT_SLEEVE,
+                min_depth=0.3,
+            ),
+        ],
+        posture_requirement=[Posture.UPRIGHT, Posture.SLIGHTLY_BENT, Posture.BROKEN],
+        primary_body_parts=[BodyPart.RIGHT_THIGH, BodyPart.RIGHT_HIP, BodyPart.CORE],
+        landing_profile=LandingProfile.HIGH_FORWARD_ROTATIONAL,
+        base_effectiveness_dominant=7.0,
+        base_effectiveness_off_side=4.0,
     ),
 }
 

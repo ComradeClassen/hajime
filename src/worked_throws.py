@@ -241,16 +241,464 @@ DE_ASHI_HARAI: CoupleThrow = CoupleThrow(
 )
 
 
+# ===========================================================================
+# PART 5.5 / HAJ-29 BACKFILL
+# The remaining v0.1 throws, each inheriting the template structure without
+# new physics code. Research depth varies per spec 5.5 — numerical values
+# are starter calibrations. Phase 3 work will tune these against match feel.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# O-GOSHI (大腰) — Lever, sacrum/hip fulcrum (foundational hip throw)
+# ---------------------------------------------------------------------------
+O_GOSHI: LeverThrow = LeverThrow(
+    name="O-goshi",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(1.0, 0.0),                    # straight forward
+        tolerance_rad=math.radians(25),
+        min_displacement_past_recoverable=0.12,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",                    # hikite (sleeve)
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",                   # tsurite — belt or lapel
+            grip_type=(GripTypeV2.BELT, GripTypeV2.LAPEL_HIGH),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    required_forces=(
+        ForceRequirement(
+            hand="left_hand", kind=ForceKind.PULL,
+            direction=(1.0, 0.0, -0.3),
+            min_magnitude_n=280.0,
+        ),
+        ForceRequirement(
+            hand="right_hand", kind=ForceKind.LIFT,
+            direction=(0.4, 0.0, 0.92),          # mostly up + slight forward
+            min_magnitude_n=300.0,
+        ),
+    ),
+    min_lift_force_n=550.0,                      # sustained lift through kake
+    body_part_requirement=LeverBodyPartRequirement(
+        fulcrum_body_part=BodyPart.LOWER_BACK,   # sacrum region
+        fulcrum_contact_on_uke=BodyPart.CORE,
+        fulcrum_offset_below_uke_com_m=0.12,
+        tori_supporting_feet=SupportRequirement.DOUBLE_SUPPORT,
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(-5), math.radians(25)),
+        trunk_frontal_range=(math.radians(-15), math.radians(15)),
+        com_height_range=(0.88, 1.25),
+        uke_com_over_fulcrum=True,
+    ),
+    commit_threshold=0.65,
+    counter_vulnerability=0.55,
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_BENT_FORWARD_LOADED,
+        secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
+        tertiary=FailureOutcome.STANCE_RESET,
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# TAI-OTOSHI (体落) — Lever, shin fulcrum, pure rotational (no lift)
+# ---------------------------------------------------------------------------
+TAI_OTOSHI: LeverThrow = LeverThrow(
+    name="Tai-otoshi",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(1.0, 0.15),
+        tolerance_rad=math.radians(20),
+        min_displacement_past_recoverable=0.12,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",
+            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.LAPEL_LOW),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    required_forces=(
+        ForceRequirement(
+            hand="left_hand", kind=ForceKind.PULL,
+            direction=(1.0, 0.0, -0.4),
+            min_magnitude_n=320.0,
+        ),
+    ),
+    min_lift_force_n=150.0,                      # LOW — pure rotational, no lift
+    body_part_requirement=LeverBodyPartRequirement(
+        fulcrum_body_part=BodyPart.RIGHT_KNEE,   # extended shin/knee as block
+        fulcrum_contact_on_uke=BodyPart.RIGHT_KNEE,
+        fulcrum_offset_below_uke_com_m=0.05,     # shin-low fulcrum, not hip-low
+        tori_supporting_feet=SupportRequirement.DOUBLE_SUPPORT,
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(-5), math.radians(25)),
+        trunk_frontal_range=(math.radians(-20), math.radians(20)),
+        com_height_range=(0.88, 1.25),
+        uke_com_over_fulcrum=True,
+    ),
+    commit_threshold=0.65,
+    counter_vulnerability=0.45,
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_COMPROMISED_FORWARD_LEAN,
+        secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
+        tertiary=FailureOutcome.STANCE_RESET,
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# KO-UCHI-GARI (小内刈) — Couple, timing-sensitive ashi-waza
+# Spec 5.5: "most timing-sensitive ashi-waza, possibly gets the timing_window
+# variant like de-ashi-harai." Modeled with a timing window on uke's rear foot.
+# ---------------------------------------------------------------------------
+KO_UCHI_GARI: CoupleThrow = CoupleThrow(
+    name="Ko-uchi-gari",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(-0.7, 0.3),                   # back and slightly lateral
+        tolerance_rad=math.radians(35),
+        min_velocity_magnitude=0.25,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.POCKET,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",
+            grip_type=(GripTypeV2.LAPEL_LOW, GripTypeV2.LAPEL_HIGH),
+            min_depth=GripDepth.POCKET,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    couple_axis=CoupleAxis.TRANSVERSE,
+    min_torque_nm=150.0,                         # low — timing does the work
+    body_part_requirement=CoupleBodyPartRequirement(
+        tori_supporting_foot="left_foot",
+        tori_attacking_limb="right_foot",
+        contact_point_on_uke=BodyPart.RIGHT_FOOT,
+        contact_height_range=(0.0, 0.20),
+        timing_window=TimingWindow(
+            target_foot="right_foot",
+            weight_fraction_range=(0.15, 0.40),  # slightly wider window than de-ashi
+            window_duration_ticks=1,
+        ),
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(-15), math.radians(20)),
+        trunk_frontal_range=(math.radians(-45), math.radians(45)),
+        com_height_range=(0.70, 1.40),
+        base_state=UkeBaseState.MID_STEP,
+    ),
+    commit_threshold=0.45,
+    sukashi_vulnerability=0.25,
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_SWEEP_BOUNCES_OFF,
+        secondary=FailureOutcome.STANCE_RESET,
+        tertiary=FailureOutcome.PARTIAL_THROW,
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# O-UCHI-GARI (大内刈) — Couple, backward kuzushi, standard force-couple
+# ---------------------------------------------------------------------------
+O_UCHI_GARI: CoupleThrow = CoupleThrow(
+    name="O-uchi-gari",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(-1.0, -0.2),                  # backward and slightly left
+        tolerance_rad=math.radians(30),
+        min_velocity_magnitude=0.3,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",
+            grip_type=(GripTypeV2.LAPEL_LOW, GripTypeV2.LAPEL_HIGH),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    couple_axis=CoupleAxis.TRANSVERSE,
+    min_torque_nm=400.0,
+    body_part_requirement=CoupleBodyPartRequirement(
+        tori_supporting_foot="left_foot",
+        tori_attacking_limb="right_leg",
+        contact_point_on_uke=BodyPart.LEFT_THIGH,    # inner thigh hook
+        contact_height_range=(0.40, 0.70),
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(-10), math.radians(15)),
+        trunk_frontal_range=(math.radians(-20), math.radians(20)),
+        com_height_range=(0.85, 1.20),
+        base_state=UkeBaseState.WEIGHT_ON_REAPED_LEG,
+    ),
+    commit_threshold=0.50,
+    sukashi_vulnerability=0.30,
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_COMPROMISED_SINGLE_SUPPORT,
+        secondary=FailureOutcome.STANCE_RESET,
+        tertiary=FailureOutcome.PARTIAL_THROW,
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# HARAI-GOSHI (払腰) competitive form — Couple
+# Per spec 5.5 / Imamura 2007: modern competitive Harai-goshi is Couple-class.
+# ---------------------------------------------------------------------------
+HARAI_GOSHI: CoupleThrow = CoupleThrow(
+    name="Harai-goshi",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(1.0, 0.3),                    # forward-right corner
+        tolerance_rad=math.radians(30),
+        min_velocity_magnitude=0.4,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",
+            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    couple_axis=CoupleAxis.SAGITTAL,
+    min_torque_nm=550.0,
+    body_part_requirement=CoupleBodyPartRequirement(
+        tori_supporting_foot="left_foot",
+        tori_attacking_limb="right_leg",
+        contact_point_on_uke=BodyPart.RIGHT_THIGH,   # sweeping leg brushes far thigh
+        contact_height_range=(0.45, 0.80),
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(-5), math.radians(25)),
+        trunk_frontal_range=(math.radians(-15), math.radians(25)),
+        com_height_range=(0.95, 1.30),
+        base_state=UkeBaseState.WEIGHT_SHIFTING_FORWARD,
+    ),
+    commit_threshold=0.55,
+    sukashi_vulnerability=0.55,
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_COMPROMISED_SINGLE_SUPPORT,
+        secondary=FailureOutcome.TORI_COMPROMISED_FORWARD_LEAN,
+        tertiary=FailureOutcome.STANCE_RESET,
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# HARAI-GOSHI (払腰) classical form — Lever, hip fulcrum
+# ---------------------------------------------------------------------------
+HARAI_GOSHI_CLASSICAL: LeverThrow = LeverThrow(
+    name="Harai-goshi (classical)",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(1.0, 0.25),
+        tolerance_rad=math.radians(22),
+        min_displacement_past_recoverable=0.12,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",
+            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    required_forces=(
+        ForceRequirement(
+            hand="left_hand", kind=ForceKind.PULL,
+            direction=(1.0, 0.0, -0.3),
+            min_magnitude_n=300.0,
+        ),
+    ),
+    min_lift_force_n=450.0,
+    body_part_requirement=LeverBodyPartRequirement(
+        fulcrum_body_part=BodyPart.RIGHT_HIP,
+        fulcrum_contact_on_uke=BodyPart.CORE,
+        fulcrum_offset_below_uke_com_m=0.10,
+        tori_supporting_feet=SupportRequirement.DOUBLE_SUPPORT,
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(0), math.radians(25)),
+        trunk_frontal_range=(math.radians(-15), math.radians(15)),
+        com_height_range=(0.90, 1.25),
+        uke_com_over_fulcrum=True,
+    ),
+    commit_threshold=0.68,
+    counter_vulnerability=0.55,
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_BENT_FORWARD_LOADED,
+        secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
+        tertiary=FailureOutcome.STANCE_RESET,
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# TOMOE-NAGE (巴投) — Lever with inverted commit
+# Spec 5.5: tori sacrifices own balance as part of kuzushi; foot-on-belt
+# fulcrum. Commit threshold slightly lower than other Lever forms because
+# tori is already giving up standing position.
+# ---------------------------------------------------------------------------
+TOMOE_NAGE: LeverThrow = LeverThrow(
+    name="Tomoe-nage",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(1.0, 0.0),                    # straight forward — uke must be coming in
+        tolerance_rad=math.radians(25),
+        min_displacement_past_recoverable=0.10,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",
+            grip_type=(GripTypeV2.LAPEL_LOW, GripTypeV2.LAPEL_HIGH),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    required_forces=(
+        ForceRequirement(
+            hand="left_hand", kind=ForceKind.PULL,
+            direction=(1.0, 0.0, 0.3),           # pull forward-up as tori drops
+            min_magnitude_n=350.0,
+        ),
+    ),
+    min_lift_force_n=200.0,                      # LOW — tori goes under; gravity finishes it
+    body_part_requirement=LeverBodyPartRequirement(
+        fulcrum_body_part=BodyPart.RIGHT_FOOT,   # foot planted on uke's belt/lower abdomen
+        fulcrum_contact_on_uke=BodyPart.CORE,
+        fulcrum_offset_below_uke_com_m=0.0,      # tori on the ground; offset not the usual constraint
+        tori_supporting_feet=SupportRequirement.ONE_KNEE_DOWN_ONE_BENT,
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(-5), math.radians(30)),
+        trunk_frontal_range=(math.radians(-20), math.radians(20)),
+        com_height_range=(0.85, 1.30),
+        uke_com_over_fulcrum=True,
+    ),
+    commit_threshold=0.60,                       # slightly lower — sacrifice nature
+    counter_vulnerability=0.65,                  # tori is on the ground; miss = bad
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_ON_BOTH_KNEES_UKE_STANDING,
+        secondary=FailureOutcome.UKE_VOLUNTARY_NEWAZA,
+        tertiary=FailureOutcome.STANCE_RESET,
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# O-GURUMA (大車) — Lever, extended-leg fulcrum at hip-line
+# Spec 5.5: "maximum moment arm among Lever throws."
+# ---------------------------------------------------------------------------
+O_GURUMA: LeverThrow = LeverThrow(
+    name="O-guruma",
+    kuzushi_requirement=KuzushiRequirement(
+        direction=(1.0, 0.3),
+        tolerance_rad=math.radians(22),
+        min_displacement_past_recoverable=0.13,
+    ),
+    force_grips=(
+        GripRequirement(
+            hand="left_hand",
+            grip_type=(GripTypeV2.SLEEVE,),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+        GripRequirement(
+            hand="right_hand",
+            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+            min_depth=GripDepth.STANDARD,
+            mode=GripMode.DRIVING,
+        ),
+    ),
+    required_forces=(
+        ForceRequirement(
+            hand="left_hand", kind=ForceKind.PULL,
+            direction=(1.0, 0.0, -0.2),
+            min_magnitude_n=320.0,
+        ),
+    ),
+    min_lift_force_n=400.0,
+    body_part_requirement=LeverBodyPartRequirement(
+        fulcrum_body_part=BodyPart.RIGHT_THIGH,  # extended leg at hip-line
+        fulcrum_contact_on_uke=BodyPart.CORE,
+        fulcrum_offset_below_uke_com_m=0.08,
+        tori_supporting_feet=SupportRequirement.DOUBLE_SUPPORT,
+    ),
+    uke_posture_requirement=UkePostureRequirement(
+        trunk_sagittal_range=(math.radians(0), math.radians(30)),
+        trunk_frontal_range=(math.radians(-15), math.radians(20)),
+        com_height_range=(0.90, 1.30),
+        uke_com_over_fulcrum=True,
+    ),
+    commit_threshold=0.65,
+    counter_vulnerability=0.50,
+    failure_outcome=FailureSpec(
+        primary=FailureOutcome.TORI_BENT_FORWARD_LOADED,
+        secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
+        tertiary=FailureOutcome.STANCE_RESET,
+    ),
+)
+
+
 # ---------------------------------------------------------------------------
 # REGISTRY
 # Maps ThrowID → worked template. Throws not in this table fall back to the
 # legacy THROW_DEFS / EdgeRequirement path in throws.py.
 # ---------------------------------------------------------------------------
 WORKED_THROWS: dict[ThrowID, ThrowTemplate] = {
-    ThrowID.UCHI_MATA:     UCHI_MATA,
-    ThrowID.O_SOTO_GARI:   O_SOTO_GARI,
-    ThrowID.SEOI_NAGE:     SEOI_NAGE_MOROTE,
-    ThrowID.DE_ASHI_HARAI: DE_ASHI_HARAI,
+    # Part 5.1–5.4 — the originally-specified four
+    ThrowID.UCHI_MATA:             UCHI_MATA,
+    ThrowID.O_SOTO_GARI:           O_SOTO_GARI,
+    ThrowID.SEOI_NAGE:             SEOI_NAGE_MOROTE,
+    ThrowID.DE_ASHI_HARAI:         DE_ASHI_HARAI,
+    # Part 5.5 / HAJ-29 backfill
+    ThrowID.O_GOSHI:               O_GOSHI,
+    ThrowID.TAI_OTOSHI:            TAI_OTOSHI,
+    ThrowID.KO_UCHI_GARI:          KO_UCHI_GARI,
+    ThrowID.O_UCHI_GARI:           O_UCHI_GARI,
+    ThrowID.HARAI_GOSHI:           HARAI_GOSHI,
+    ThrowID.HARAI_GOSHI_CLASSICAL: HARAI_GOSHI_CLASSICAL,
+    ThrowID.TOMOE_NAGE:            TOMOE_NAGE,
+    ThrowID.O_GURUMA:              O_GURUMA,
 }
 
 

@@ -242,8 +242,11 @@ def test_vulnerability_pulls_from_worked_template() -> None:
 
 
 def test_vulnerability_default_for_legacy_throws() -> None:
-    # HARAI_GOSHI has no Part-5 template — default applies.
-    assert attacker_vulnerability_for(ThrowID.HARAI_GOSHI) == 0.30
+    # SUMI_GAESHI is the only v0.1 throw without a Part-5 template after
+    # HAJ-29 backfill — default 0.30 applies.
+    from worked_throws import WORKED_THROWS
+    assert ThrowID.SUMI_GAESHI not in WORKED_THROWS
+    assert attacker_vulnerability_for(ThrowID.SUMI_GAESHI) == 0.30
 
 
 # ---------------------------------------------------------------------------

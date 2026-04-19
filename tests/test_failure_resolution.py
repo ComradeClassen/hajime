@@ -206,19 +206,27 @@ def test_multi_tick_failure_resolves_at_kake_commit_tick() -> None:
 
 
 def test_match_failed_branch_for_legacy_throw_is_unchanged() -> None:
-    """Non-worked throws (e.g. HARAI_GOSHI) still fall through to the legacy
+    """Non-worked throws (e.g. SUMI_GAESHI, the only remaining legacy-only
+    throw after HAJ-29 backfill) still fall through to the generic
     'failed (no commitment, net X.XX)' event shape with no outcome data.
+    Elite belt forces N=1 so the resolution lands in a single tick.
     """
+    from enums import BeltRank
     from match import Match
     from referee import build_suzuki
+    from worked_throws import WORKED_THROWS
+    # Sanity — SUMI_GAESHI must remain legacy-only for this test to mean what
+    # it claims. If someone adds it to WORKED_THROWS, swap to another throw.
+    assert ThrowID.SUMI_GAESHI not in WORKED_THROWS
     random.seed(0)
     t, s = _pair()
+    t.identity.belt_rank = BeltRank.BLACK_5
     m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki())
     import match as match_module
     real_resolve = match_module.resolve_throw
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
-        events = m._resolve_commit_throw(t, s, ThrowID.HARAI_GOSHI, tick=9)
+        events = m._resolve_commit_throw(t, s, ThrowID.SUMI_GAESHI, tick=9)
     finally:
         match_module.resolve_throw = real_resolve
     failed = [ev for ev in events if ev.event_type == "FAILED"]
