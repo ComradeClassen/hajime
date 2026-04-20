@@ -29,7 +29,17 @@
       "Bash(python -c \"from match import Match; from compromised_state import COMPROMISED_STATE_CONFIGS, apply_compromised_body_state, counter_bonus_for, is_desperation_state, apply_desperation_overlay; print\\('imports OK', len\\(COMPROMISED_STATE_CONFIGS\\)\\)\")",
       "Bash(python tests/test_compromised_state.py)",
       "Bash(python -c \"from worked_throws import WORKED_THROWS; print\\('registered', len\\(WORKED_THROWS\\), 'throws'\\); [print\\(' -', tid.name\\) for tid in WORKED_THROWS]\")",
-      "Bash(python tests/test_backfilled_throws.py)"
+      "Bash(python tests/test_backfilled_throws.py)",
+      "Bash(python -m pytest tests/ -x --tb=short)",
+      "Bash(python -m pip install pytest)",
+      "Bash(python -m pytest tests/ --tb=short -p no:cacheprovider -p no:capture)",
+      "Bash(python -m pytest tests/ --tb=short -q)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m pytest tests/ --capture=no)",
+      "Bash(python -m pytest tests/ --capture=no -v)",
+      "Bash(python -m pytest tests/ --capture=no -q)",
+      "Read(//tmp/**)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

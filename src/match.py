@@ -835,6 +835,11 @@ class Match:
         )
         self.kumi_kata_clock[attacker.identity.name] = 0
 
+        # N=1 collapses THROW_ENTRY + four sub-event lines into the single
+        # outcome line emitted by _resolve_kake. The Event records still fire
+        # (callers / tests inspect event_type) — only the printed render is
+        # suppressed via data['silent'].
+        collapse_n1 = n <= 1
         events: list[Event] = [Event(
             tick=tick, event_type="THROW_ENTRY",
             description=(
@@ -844,12 +849,14 @@ class Match:
                 "throw_id": throw_id.name,
                 "compression_n": n,
                 "actual_match": actual,
+                "silent": collapse_n1,
             },
         )]
 
         # Emit tick-0 sub-events.
         events.extend(self._emit_sub_events(
             attacker, throw_name, schedule.get(0, []), tick,
+            silent=collapse_n1,
         ))
 
         if n <= 1:
@@ -927,6 +934,7 @@ class Match:
     def _emit_sub_events(
         self, attacker: Judoka, throw_name: str,
         sub_events: list[SubEvent], tick: int,
+        silent: bool = False,
     ) -> list[Event]:
         events: list[Event] = []
         for sub in sub_events:
@@ -936,7 +944,8 @@ class Match:
                 description=(
                     f"[throw] {attacker.identity.name} — {throw_name}: {label}."
                 ),
-                data={"sub_event": sub.name, "throw_name": throw_name},
+                data={"sub_event": sub.name, "throw_name": throw_name,
+                      "silent": silent},
             ))
         # Part 6.2 region classification reads the most recent sub-event.
         if sub_events:
@@ -1628,6 +1637,8 @@ class Match:
     # -----------------------------------------------------------------------
     def _print_events(self, events: list[Event]) -> None:
         for ev in events:
+            if ev.data.get("silent"):
+                continue
             print(f"t{ev.tick:03d}: {ev.description}")
 
     def _print_header(self) -> None:
