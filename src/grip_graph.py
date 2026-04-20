@@ -398,6 +398,7 @@ class GripGraph:
                 f"[grip] {edge.grasper_id} {edge.grasper_part.value} "
                 f"{edge.grip_type_v2.name} → {next_depth.name}."
             ),
+            data={"edge_id": id(edge)},
         )
 
     # -----------------------------------------------------------------------

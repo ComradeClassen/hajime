@@ -441,8 +441,15 @@ class Match:
         )
 
         # Step 1 — grip state updates (REACH/DEEPEN/STRIP/RELEASE/...).
+        # Snapshot pre-action depths so we can coalesce intra-tick
+        # strip/deepen oscillation (fighter_a silently deepens POCKET→STANDARD,
+        # fighter_b's strip selected against the pre-tick snapshot then
+        # drops it back to POCKET). Without this, a degrade event fires
+        # every tick for a grip whose net depth never changed.
+        pre_tick_depths = {id(e): e.depth_level for e in self.grip_graph.edges}
         self._apply_grip_actions(self.fighter_a, actions_a, tick, events)
         self._apply_grip_actions(self.fighter_b, actions_b, tick, events)
+        self._coalesce_grip_degrades(events, pre_tick_depths)
 
         # If still pre-engagement (no edges) and both fighters issued REACH
         # this tick, accumulate engagement_ticks. Seat POCKET grips once the
@@ -657,6 +664,32 @@ class Match:
         return (self.fighter_a
                 if edge.grasper_id == self.fighter_a.identity.name
                 else self.fighter_b)
+
+    def _coalesce_grip_degrades(
+        self, events: list[Event], pre_tick_depths: dict,
+    ) -> None:
+        """Drop GRIP_DEGRADE events whose edge ended the tick at its pre-tick
+        depth. Both fighters deepen-then-strip each other's grips every tick
+        in the shallow-grips branch of the action ladder; the strip fires a
+        degrade event even when the grasper's own DEEPEN this tick already
+        reversed it. Net-zero transitions are log noise.
+        """
+        live_edges = {id(e): e for e in self.grip_graph.edges}
+        filtered: list[Event] = []
+        for ev in events:
+            if ev.event_type != "GRIP_DEGRADE":
+                filtered.append(ev)
+                continue
+            edge_id = ev.data.get("edge_id")
+            edge = live_edges.get(edge_id) if edge_id is not None else None
+            if edge is None:
+                filtered.append(ev)
+                continue
+            pre = pre_tick_depths.get(edge_id)
+            if pre is not None and edge.depth_level == pre:
+                continue  # net-zero oscillation
+            filtered.append(ev)
+        events[:] = filtered
 
     # -----------------------------------------------------------------------
     # ENGAGEMENT RESOLUTION — both fighters reaching, no edges → seat POCKETs
