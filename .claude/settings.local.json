@@ -41,7 +41,9 @@
       "Read(//tmp/**)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(python src/main.py --runs 1 --seed 1)",
-      "Bash(python src/main.py --runs 1 --matchup 1 --seed 1)"
+      "Bash(python src/main.py --runs 1 --matchup 1 --seed 1)",
+      "Bash(python src/main.py --runs 3 --matchup 1 --seed 7)",
+      "Bash(python src/main.py --runs 1 --matchup 1 --seed 7)"
     ]
   }
 }

@@ -835,10 +835,9 @@ class Match:
         )
         self.kumi_kata_clock[attacker.identity.name] = 0
 
-        # N=1 collapses THROW_ENTRY + four sub-event lines into the single
-        # outcome line emitted by _resolve_kake. The Event records still fire
-        # (callers / tests inspect event_type) — only the printed render is
-        # suppressed via data['silent'].
+        # N=1 suppresses the four sub-event lines (they'd all land on the same
+        # tick as the outcome); the THROW_ENTRY stays visible so a successful
+        # elite throw still has a [throw] commit line preceding its [score].
         collapse_n1 = n <= 1
         events: list[Event] = [Event(
             tick=tick, event_type="THROW_ENTRY",
@@ -849,7 +848,6 @@ class Match:
                 "throw_id": throw_id.name,
                 "compression_n": n,
                 "actual_match": actual,
-                "silent": collapse_n1,
             },
         )]
 
@@ -1202,9 +1200,8 @@ class Match:
                 self.winner     = attacker
                 self.win_method = "ippon"
                 self.match_over = True
-                ippon_ev = self.referee.announce_ippon(a_name, tick)
-                events.append(ippon_ev)
-                events.append(self.referee.announce_matte(MatteReason.SCORING, tick))
+                # Throw lands → referee calls it → matte. Human reading
+                # order should match causal order.
                 events.append(Event(
                     tick=tick,
                     event_type="THROW_LANDING",
@@ -1212,12 +1209,12 @@ class Match:
                         f"[score] {a_name} → {throw_name} → IPPON."
                     ),
                 ))
+                events.append(self.referee.announce_ippon(a_name, tick))
+                events.append(self.referee.announce_matte(MatteReason.SCORING, tick))
 
             elif effective_award == "WAZA_ARI":
                 attacker.state.score["waza_ari"] += 1
                 wa_count = attacker.state.score["waza_ari"]
-                wa_ev = self.referee.announce_waza_ari(a_name, wa_count, tick)
-                events.append(wa_ev)
                 events.append(Event(
                     tick=tick,
                     event_type="THROW_LANDING",
@@ -1226,6 +1223,7 @@ class Match:
                         f"({wa_count}/2)."
                     ),
                 ))
+                events.append(self.referee.announce_waza_ari(a_name, wa_count, tick))
                 # Composure hit on defender
                 defender.state.composure_current = max(
                     0.0,
@@ -1424,7 +1422,6 @@ class Match:
             self.winner     = holder
             self.win_method = "ippon (pin)"
             self.match_over = True
-            events.append(self.referee.announce_ippon(holder_id, tick))
             events.append(Event(
                 tick=tick,
                 event_type="IPPON_AWARDED",
@@ -1433,6 +1430,7 @@ class Match:
                     f"({self.osaekomi.ticks_held}s hold)."
                 ),
             ))
+            events.append(self.referee.announce_ippon(holder_id, tick))
         elif award == "WAZA_ARI":
             holder.state.score["waza_ari"] += 1
             wa_count = holder.state.score["waza_ari"]
