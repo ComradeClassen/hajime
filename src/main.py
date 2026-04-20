@@ -223,6 +223,89 @@ def build_sato() -> Judoka:
 
 
 # ===========================================================================
+# BUILD YAMAMOTO / KIMURA (white-belt contrast pair)
+# Structurally identical to Tanaka / Sato — same physical stats, same
+# signature throws, same archetype. Only the belt rank and fight IQ change.
+# The point is to see the same judo body with different skill compression.
+# ===========================================================================
+def build_yamamoto() -> Judoka:
+    j = build_tanaka()
+    j.identity.name       = "Yamamoto"
+    j.identity.belt_rank  = BeltRank.WHITE
+    j.capability.fight_iq = 3
+    return j
+
+
+def build_kimura() -> Judoka:
+    j = build_sato()
+    j.identity.name       = "Kimura"
+    j.identity.belt_rank  = BeltRank.WHITE
+    j.capability.fight_iq = 3
+    return j
+
+
+# ===========================================================================
+# MATCHUPS
+# ===========================================================================
+MATCHUPS = {
+    "1": (
+        "Tanaka (BLACK_1, Seoi) vs Sato (BLACK_1, Uchi-mata)",
+        build_tanaka, build_sato,
+    ),
+    "2": (
+        "Yamamoto (WHITE) vs Kimura (WHITE)",
+        build_yamamoto, build_kimura,
+    ),
+}
+
+
+def _print_match_header(a: Judoka, b: Judoka, ref) -> None:
+    from throws import THROW_REGISTRY as TR
+    a_sig = TR[a.capability.signature_throws[0]].name
+    b_sig = TR[b.capability.signature_throws[0]].name
+    print()
+    print("=== Match starting ===")
+    print(f"{a.identity.name:<8} ({a.identity.belt_rank.name}) — {a_sig} specialist")
+    print(f"{b.identity.name:<8} ({b.identity.belt_rank.name}) — {b_sig} specialist")
+    print(f"Referee: {ref.name}")
+
+
+def _run_one_match(build_a, build_b, ref_builder) -> None:
+    a   = build_a()
+    b   = build_b()
+    ref = ref_builder()
+
+    # Physics-substrate Part 1.8: both judoka face each other at 1.0 m
+    # separation (CoM to CoM), centered on the mat origin.
+    place_judoka(a, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(b, com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+
+    _print_match_header(a, b, ref)
+    match = Match(fighter_a=a, fighter_b=b, referee=ref)
+    match.run()
+
+
+def _interactive_loop(ref_builder) -> None:
+    while True:
+        print()
+        print("Choose a matchup:")
+        for key, (label, _, _) in MATCHUPS.items():
+            print(f"  [{key}] {label}")
+        print("  [3] Quit")
+        try:
+            choice = input("> ").strip()
+        except EOFError:
+            break
+        if choice == "3" or choice.lower() in ("q", "quit", "exit"):
+            break
+        if choice not in MATCHUPS:
+            print(f"Unknown option: {choice!r}")
+            continue
+        _, build_a, build_b = MATCHUPS[choice]
+        _run_one_match(build_a, build_b, ref_builder)
+
+
+# ===========================================================================
 # ENTRY POINT
 # ===========================================================================
 if __name__ == "__main__":
@@ -231,8 +314,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run a Hajime match.")
     parser.add_argument("--referee", choices=["suzuki", "petrov"], default="suzuki",
                         help="Which referee personality to use (default: suzuki)")
-    parser.add_argument("--runs", type=int, default=1,
-                        help="Number of matches to run (default: 1)")
+    parser.add_argument("--runs", type=int, default=None,
+                        help="Number of matches to run non-interactively. "
+                             "If omitted, the interactive matchup menu opens.")
+    parser.add_argument("--matchup", choices=list(MATCHUPS.keys()), default="1",
+                        help="Which matchup to run for scripted --runs batches "
+                             "(default: 1)")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed for reproducible runs")
     args = parser.parse_args()
@@ -243,20 +330,13 @@ if __name__ == "__main__":
 
     ref_builder = build_suzuki if args.referee == "suzuki" else build_petrov
 
-    for i in range(args.runs):
-        if args.runs > 1:
-            print(f"\n{'#' * 65}")
-            print(f"# MATCH {i + 1} of {args.runs}")
-            print(f"{'#' * 65}")
-
-        tanaka = build_tanaka()
-        sato   = build_sato()
-        ref    = ref_builder()
-
-        # Physics-substrate Part 1.8: both judoka face each other at 1.0 m
-        # separation (CoM to CoM), centered on the mat origin.
-        place_judoka(tanaka, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
-        place_judoka(sato,   com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
-
-        match = Match(fighter_a=tanaka, fighter_b=sato, referee=ref)
-        match.run()
+    if args.runs is None:
+        _interactive_loop(ref_builder)
+    else:
+        _, build_a, build_b = MATCHUPS[args.matchup]
+        for i in range(args.runs):
+            if args.runs > 1:
+                print(f"\n{'#' * 65}")
+                print(f"# MATCH {i + 1} of {args.runs}")
+                print(f"{'#' * 65}")
+            _run_one_match(build_a, build_b, ref_builder)
