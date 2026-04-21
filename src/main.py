@@ -33,6 +33,7 @@ from judoka import Identity, Capability, State, Judoka
 from body_state import place_judoka
 from match import Match
 from referee import build_suzuki, build_petrov
+from debug_inspector import DebugSession, PAUSE_TRIGGERS, DEFAULT_PAUSE_ON
 
 
 # ===========================================================================
@@ -270,7 +271,7 @@ def _print_match_header(a: Judoka, b: Judoka, ref) -> None:
     print(f"Referee: {ref.name}")
 
 
-def _run_one_match(build_a, build_b, ref_builder) -> None:
+def _run_one_match(build_a, build_b, ref_builder, debug=None) -> None:
     a   = build_a()
     b   = build_b()
     ref = ref_builder()
@@ -281,11 +282,11 @@ def _run_one_match(build_a, build_b, ref_builder) -> None:
     place_judoka(b, com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
 
     _print_match_header(a, b, ref)
-    match = Match(fighter_a=a, fighter_b=b, referee=ref)
+    match = Match(fighter_a=a, fighter_b=b, referee=ref, debug=debug)
     match.run()
 
 
-def _interactive_loop(ref_builder) -> None:
+def _interactive_loop(ref_builder, debug_factory=None) -> None:
     while True:
         print()
         print("Choose a matchup:")
@@ -302,7 +303,8 @@ def _interactive_loop(ref_builder) -> None:
             print(f"Unknown option: {choice!r}")
             continue
         _, build_a, build_b = MATCHUPS[choice]
-        _run_one_match(build_a, build_b, ref_builder)
+        debug = debug_factory() if debug_factory else None
+        _run_one_match(build_a, build_b, ref_builder, debug=debug)
 
 
 # ===========================================================================
@@ -322,6 +324,17 @@ if __name__ == "__main__":
                              "(default: 1)")
     parser.add_argument("--seed", type=int, default=None,
                         help="Random seed for reproducible runs")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enable the calibration-observation overlay "
+                             "(HAJ-20). Events are tagged with handles "
+                             "(F#A, G#03, T#01, ...) and the match pauses "
+                             "at key beats for inspection. Inside a pause, "
+                             "type a handle to expand it, or `help`.")
+    parser.add_argument("--pause-on", default=None,
+                        help="Comma-separated pause triggers, or `all` / "
+                             "`none`. Implies --debug. Available: "
+                             + ", ".join(sorted(PAUSE_TRIGGERS))
+                             + f". Default: {','.join(sorted(DEFAULT_PAUSE_ON))}.")
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -330,8 +343,32 @@ if __name__ == "__main__":
 
     ref_builder = build_suzuki if args.referee == "suzuki" else build_petrov
 
+    debug_enabled = args.debug or args.pause_on is not None
+    if debug_enabled:
+        if args.pause_on is None:
+            pause_on = set(DEFAULT_PAUSE_ON)
+        elif args.pause_on in ("all",):
+            pause_on = set(PAUSE_TRIGGERS)
+        elif args.pause_on in ("none", ""):
+            pause_on = set()
+        else:
+            requested = {p.strip() for p in args.pause_on.split(",") if p.strip()}
+            unknown = requested - set(PAUSE_TRIGGERS)
+            if unknown:
+                parser.error(
+                    f"--pause-on: unknown trigger(s) {sorted(unknown)}. "
+                    f"Available: {sorted(PAUSE_TRIGGERS)}"
+                )
+            pause_on = requested
+
+        def debug_factory():
+            return DebugSession(pause_on=pause_on)
+    else:
+        def debug_factory():
+            return None
+
     if args.runs is None:
-        _interactive_loop(ref_builder)
+        _interactive_loop(ref_builder, debug_factory=debug_factory)
     else:
         _, build_a, build_b = MATCHUPS[args.matchup]
         for i in range(args.runs):
@@ -339,4 +376,4 @@ if __name__ == "__main__":
                 print(f"\n{'#' * 65}")
                 print(f"# MATCH {i + 1} of {args.runs}")
                 print(f"{'#' * 65}")
-            _run_one_match(build_a, build_b, ref_builder)
+            _run_one_match(build_a, build_b, ref_builder, debug=debug_factory())

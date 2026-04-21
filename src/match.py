@@ -276,11 +276,15 @@ class Match:
         fighter_b: Judoka,
         referee: Referee,
         max_ticks: int = 240,
+        debug=None,
     ) -> None:
         self.fighter_a = fighter_a
         self.fighter_b = fighter_b
         self.referee   = referee
         self.max_ticks = max_ticks
+        self._debug = debug
+        if self._debug is not None:
+            self._debug.bind_match(self)
 
         # Match-level state
         self.grip_graph   = GripGraph()
@@ -359,6 +363,8 @@ class Match:
     # -----------------------------------------------------------------------
     def run(self) -> None:
         self._print_header()
+        if self._debug is not None:
+            self._debug.print_banner()
 
         # Hajime
         hajime = self.referee.announce_hajime(tick=0)
@@ -369,6 +375,9 @@ class Match:
             self.ticks_run = tick
             self._tick(tick)
             if self.match_over:
+                break
+            if self._debug is not None and self._debug.quit_requested():
+                print("[debug] match aborted by inspector.")
                 break
 
         self._resolve_match()
@@ -566,6 +575,9 @@ class Match:
 
         self._print_events(events)
 
+        if self._debug is not None:
+            self._debug.maybe_pause(tick, events)
+
     # -----------------------------------------------------------------------
     # NE-WAZA BRANCH
     # -----------------------------------------------------------------------
@@ -729,6 +741,7 @@ class Match:
                     f"{edge.target_id} ({edge.target_location.value}, "
                     f"{edge.grip_type_v2.name} @ {edge.depth_level.name})"
                 ),
+                data={"edge_id": id(edge)},
             ))
         if new_edges:
             self.position = Position.GRIPPING
@@ -1743,7 +1756,10 @@ class Match:
         for ev in events:
             if ev.data.get("silent"):
                 continue
-            print(f"t{ev.tick:03d}: {ev.description}")
+            suffix = ""
+            if self._debug is not None:
+                suffix = self._debug.annotate_event(ev)
+            print(f"t{ev.tick:03d}: {ev.description}{suffix}")
 
     def _print_header(self) -> None:
         a = self.fighter_a.identity
