@@ -751,6 +751,17 @@ Imamura & Johnson (2003) identified the two variables that distinguish black bel
 
 Kuzushi direction: ushiro-migi (right-back corner). But note the pre-loading: skilled execution first loads uke forward, then reaps backward when uke's defensive response weights the heel.
 
+**Execution quality within the signature (HAJ-55 / Part 4.2.1).** Daigo (2016) names two Japanese variants — calf-contact and thigh-contact — and reports a ~52% / 48% split in competition footage. Earlier drafts of this spec treated them as separate throw entries. They are not. They are the same throw executed at different *quality* levels of the same signature. Thigh-to-thigh contact with torso closure is the coach-canonical execution; heel-to-calf at arm's length is the common novice error. Both fire — the signature match still crosses the commit threshold across the whole range — but the execution_quality score (Part 4.2.1) varies continuously between them, and downstream systems read the difference.
+
+Two new sub-dimensions feed the body-part match and therefore execution_quality:
+
+- `reaping_leg_contact_point` — where on uke's leg the reaping leg lands. High quality at thigh-to-thigh (leg enters between uke's legs and sweeps up the back of the thigh); low quality at heel-to-calf (leg kicks from distance and catches the lower shin or heel). Continuous.
+- `torso_closure` — horizontal distance between tori's chest and uke's chest at kake. High quality at chest-to-chest; low quality at arm's length. Continuous.
+
+The two are correlated — close torso closure tends to produce high contact — but they are separable because tori can be close with the reaping leg still misaligned, or far with a long leg that catches the thigh. The engine derives both from horizontal CoM-to-CoM distance and the template's `contact_quality_profile` (Part 5.2 calibration fields below).
+
+A throw in the heel-to-calf-plus-arm's-length corner fires with a low eq, lands weaker (Part 4.2.1 point 1), scores lower (point 2), and leaves tori more exposed to osoto-gaeshi (point 3). A throw in the thigh-to-thigh-plus-chest-to-chest corner fires with high eq, hits harder, scores cleaner, and tori's recovery window is tight.
+
 ```
 Throw: O-soto-gari (right-sided canonical)
 Classification: couple
@@ -770,9 +781,15 @@ force_application_requirement:
 body_part_requirement:
   tori_supporting_foot: "left"   # planted alongside uke's right foot
   tori_attacking_limb: "right_leg"
-  contact_point_on_uke: "right_thigh" OR "right_calf"   # Daigo variants, ~52% calf
+  contact_point_on_uke: "right_thigh"   # ideal; calf/heel contact reduces execution_quality
   contact_height_range: (knee, mid_thigh)
   required_contact_state: uke_right_foot.weight_fraction > 0.6 AND weight_on_heel
+
+  contact_quality_profile:      # HAJ-55 — feeds execution_quality, not commit gate
+    ideal_torso_closure_m:       0.45   # chest-to-chest — reaping contact quality = 1.0
+    max_torso_closure_m:         1.10   # arm's-length — closure quality = 0.0
+    ideal_reaping_contact_m:     0.50   # contact point at thigh
+    max_reaping_contact_m:       1.20   # contact point at heel/calf (quality = 0.0)
 
 uke_posture_requirement:
   trunk_sagittal_range: (-10°, +5°)   # upright or slightly back-leaning — NOT forward
@@ -780,7 +797,7 @@ uke_posture_requirement:
   com_height_range: MEDIUM_HIGH       # not jigotai
   base_state: WEIGHT_ON_REAPED_LEG_HEEL
 
-commit_threshold: 0.50
+commit_threshold: 0.50          # fires across the whole contact-quality range
 
 sukashi_vulnerability: 0.35           # low — osoto-sukashi exists but is rare
 counter_vulnerability: 0.65           # osoto-gaeshi (redirection counter) is common
@@ -791,7 +808,9 @@ failure_outcome:
   tertiary (if uke quick-read, low composure): STANCE_RESET with ko-uchi-gari follow-up window
 ```
 
-Note on head-impact safety: Murayama et al. (2020) measured peak impulsive force on uke's head at 204.82 ± 19.95 kg·m·s⁻¹ for O-soto-gari — the highest of common throws. For simulation this means a landed O-soto-gari should have higher probability of Ippon scoring (uke's upper back hits cleanly) but also higher probability of referee intervention in edge cases where uke's ukemi (breakfall) fails.
+**Calibration targets (Phase 3, not committed by this sub-section).** Thigh-to-thigh + chest-to-chest O-soto-gari should land around `execution_quality ≈ 0.85`; heel-to-calf + arm's-length around `≈ 0.25`. Mixed corners interpolate. The specific curve — linear falloff, sigmoid, or a floor — is calibration work; the spec commits only that both dimensions feed execution_quality continuously and that contact-point is *never* a hard gate.
+
+Note on head-impact safety: Murayama et al. (2020) measured peak impulsive force on uke's head at 204.82 ± 19.95 kg·m·s⁻¹ for O-soto-gari — the highest of common throws. For simulation this means a landed O-soto-gari should have higher probability of Ippon scoring (uke's upper back hits cleanly) but also higher probability of referee intervention in edge cases where uke's ukemi (breakfall) fails. The eq-gated landing severity layer (Part 4.2.1 point 2) mediates between these: only high-eq throws reach the ippon-eligible ceiling.
 
 ---
 

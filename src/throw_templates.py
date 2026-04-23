@@ -170,6 +170,28 @@ class TimingWindow:
 
 
 @dataclass(frozen=True)
+class ContactQualityProfile:
+    """Part 5.2 / HAJ-55 — continuous contact-quality dimensions feeding
+    execution_quality (Part 4.2.1), not the commit gate.
+
+    Two sub-scores are derived from horizontal CoM-to-CoM distance at kake:
+      - torso_closure quality: 1.0 at ≤ `ideal_torso_closure_m`, linear
+        falloff to 0.0 at `max_torso_closure_m`.
+      - reaping_leg_contact quality: 1.0 at ≤ `ideal_reaping_contact_m`,
+        linear falloff to 0.0 at `max_reaping_contact_m`.
+
+    Both are appended to the Couple body-parts check list, so the signature
+    still fires across the whole range — what varies is the body-parts
+    score, and therefore execution_quality. Contact-point is *never* a
+    hard gate.
+    """
+    ideal_torso_closure_m:   float
+    max_torso_closure_m:     float
+    ideal_reaping_contact_m: float
+    max_reaping_contact_m:   float
+
+
+@dataclass(frozen=True)
 class CoupleBodyPartRequirement:
     """Part 4.3 — Couple throw body-parts dimension.
 
@@ -177,12 +199,16 @@ class CoupleBodyPartRequirement:
     delivers the reap/sweep; `contact_point_on_uke` is where the attacking limb
     lands; `contact_height_range` bounds that contact vertically (meters above
     the mat). `timing_window` is populated only for ashi-waza variants.
+    `contact_quality` is populated (Part 5.2, HAJ-55) for throws whose body
+    dimension should score continuously on torso-closure / contact-point
+    instead of binary-at-threshold.
     """
     tori_supporting_foot: str
     tori_attacking_limb:  str
     contact_point_on_uke: BodyPart
     contact_height_range: tuple[float, float]
-    timing_window: Optional[TimingWindow] = None
+    timing_window:   Optional[TimingWindow]          = None
+    contact_quality: Optional[ContactQualityProfile] = None
 
 
 @dataclass(frozen=True)

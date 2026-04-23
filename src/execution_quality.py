@@ -129,9 +129,9 @@ THROW_QUALITY_NARRATION: dict[ThrowID, dict[QualityBand, str]] = {
         QualityBand.LOW:  "hips never arrived — uke steps out of the sweep",
     },
     ThrowID.O_SOTO_GARI: {
-        QualityBand.HIGH: "reaping leg lines up with the calf, uke dropped flat",
-        QualityBand.MED:  "heel-to-calf contact, uke pitches but posts a hand",
-        QualityBand.LOW:  "sweep bounces off the loaded leg, uke stays upright",
+        QualityBand.HIGH: "thigh-to-thigh contact at chest closure, uke dropped flat",
+        QualityBand.MED:  "calf contact at mid-range, uke pitches but posts a hand",
+        QualityBand.LOW:  "heel-to-calf at arm's length, sweep glances — uke stays up",
     },
     ThrowID.SEOI_NAGE: {
         QualityBand.HIGH: "uke loaded across the shoulders and airborne",

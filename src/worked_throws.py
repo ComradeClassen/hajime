@@ -26,7 +26,7 @@ from throw_templates import (
     CoupleThrow, LeverThrow, ThrowTemplate,
     KuzushiRequirement, GripRequirement, ForceRequirement, ForceKind,
     CoupleBodyPartRequirement, LeverBodyPartRequirement,
-    UkePostureRequirement, TimingWindow,
+    UkePostureRequirement, TimingWindow, ContactQualityProfile,
     CoupleAxis, SupportRequirement, UkeBaseState,
     FailureOutcome, FailureSpec,
 )
@@ -111,6 +111,15 @@ O_SOTO_GARI: CoupleThrow = CoupleThrow(
         tori_attacking_limb="right_leg",
         contact_point_on_uke=BodyPart.RIGHT_THIGH,
         contact_height_range=(0.35, 0.65),       # knee to mid-thigh
+        # HAJ-55 — contact-point + torso-closure feed execution_quality.
+        # Ideal: thigh-to-thigh (≤0.50 m) + chest-to-chest (≤0.45 m).
+        # Max  : heel-to-calf reach (≥1.20 m) + arm's length (≥1.10 m).
+        contact_quality=ContactQualityProfile(
+            ideal_torso_closure_m=0.45,
+            max_torso_closure_m=1.10,
+            ideal_reaping_contact_m=0.50,
+            max_reaping_contact_m=1.20,
+        ),
     ),
     uke_posture_requirement=UkePostureRequirement(
         trunk_sagittal_range=(math.radians(-10), math.radians(5)),

@@ -319,7 +319,53 @@ def _match_couple_body_parts(
             return 0.0
         checks.append(1.0)
 
+    # Part 5.2 / HAJ-55 — continuous contact-point and torso-closure quality.
+    # These never gate the body-parts dimension to zero; they modulate it so
+    # a heel-to-calf arm's-length execution produces a low-but-non-zero
+    # body-parts score, which in turn lowers execution_quality downstream.
+    if req.contact_quality is not None:
+        closure_q, reaping_q = _contact_quality_scores(
+            req.contact_quality, attacker, defender,
+        )
+        checks.append(closure_q)
+        checks.append(reaping_q)
+
     return sum(checks) / len(checks) if checks else 0.0
+
+
+def _contact_quality_scores(
+    profile, attacker: "Judoka", defender: "Judoka",
+) -> tuple[float, float]:
+    """Derive (torso_closure_quality, reaping_leg_contact_quality) in [0,1]
+    from horizontal CoM-to-CoM distance at kake.
+
+    Both are linear: 1.0 at ≤ ideal, 0.0 at ≥ max, linear in between. The
+    two thresholds differ — reaping-contact quality falls off over a wider
+    range than closure quality because tori's extended leg can reach the
+    thigh from a bit further than chest-to-chest closure allows.
+    """
+    ax, ay = attacker.state.body_state.com_position
+    dx, dy = defender.state.body_state.com_position
+    dist = hypot(dx - ax, dy - ay)
+    closure_q = _linear_falloff(
+        dist, profile.ideal_torso_closure_m, profile.max_torso_closure_m,
+    )
+    reaping_q = _linear_falloff(
+        dist, profile.ideal_reaping_contact_m, profile.max_reaping_contact_m,
+    )
+    return closure_q, reaping_q
+
+
+def _linear_falloff(value: float, ideal: float, maximum: float) -> float:
+    """1.0 at value ≤ ideal; 0.0 at value ≥ maximum; linear in between."""
+    if value <= ideal:
+        return 1.0
+    if value >= maximum:
+        return 0.0
+    span = maximum - ideal
+    if span <= 1e-9:
+        return 0.0
+    return 1.0 - (value - ideal) / span
 
 
 def _match_lever_body_parts(
