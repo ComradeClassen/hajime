@@ -254,6 +254,7 @@ def counter_fire_probability(
     attacker_vulnerability: float,
     *,
     defensive_desperation: bool = False,
+    tori_execution_quality: Optional[float] = None,
 ) -> float:
     """Per-tick probability the defender actually commits the counter.
 
@@ -266,6 +267,12 @@ def counter_fire_probability(
     willing to fire a risky counter: the base probability is multiplied
     by CW_FIRE_PROB_MULT (>1). This amplifies the normal composure/iq
     gates without bypassing them entirely.
+
+    HAJ-62 (Part 4.2.1 point 3) — a low-quality committed throw leaves
+    tori more exploitable: `tori_execution_quality` (only meaningful for
+    GO_NO_SEN / SEN_NO_SEN against an in-progress attempt) multiplies the
+    base probability by counter_vulnerability_multiplier(eq). Passing None
+    preserves legacy behaviour (no eq-aware adjustment).
     """
     if window == CounterWindow.NONE:
         return 0.0
@@ -280,6 +287,11 @@ def counter_fire_probability(
     if defensive_desperation:
         from defensive_desperation import CW_FIRE_PROB_MULT
         base *= CW_FIRE_PROB_MULT
+    if tori_execution_quality is not None and window in (
+        CounterWindow.SEN_NO_SEN, CounterWindow.GO_NO_SEN,
+    ):
+        from execution_quality import counter_vulnerability_multiplier
+        base *= counter_vulnerability_multiplier(tori_execution_quality)
     return min(1.0, base)
 
 

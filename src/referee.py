@@ -45,6 +45,10 @@ class ThrowLanding:
     net_score: float          # attack_strength − defender_resistance + noise
     window_quality: float     # 0 = forced attempt; 1 = perfect kuzushi window
     control_maintained: bool
+    # Part 4.2.1 — execution quality at kake time. Gates IPPON/WAZA_ARI/
+    # NO_SCORE alongside landing position. Default 1.0 preserves legacy
+    # caller behaviour for tests that don't wire execution_quality.
+    execution_quality: float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -182,16 +186,22 @@ class Referee:
     # personality. The match applies the score; the referee just makes the call.
     # -----------------------------------------------------------------------
     def score_throw(self, landing: ThrowLanding, tick: int) -> ScoreResult:
-        """Determine IPPON or WAZA_ARI based on landing quality and personality.
+        """Determine IPPON / WAZA_ARI / NO_SCORE based on landing quality,
+        execution quality (Part 4.2.1), and referee personality.
 
-        NOTE: Called only when the match engine has determined a throw scored
-        (resolve_throw returned IPPON or WAZA_ARI). The referee decides the
-        precise level — confirms IPPON or downgrades to WAZA_ARI — but never
-        strips a scored throw to NO_SCORE. That gate lives in resolve_throw().
+        Called after resolve_throw returned IPPON or WAZA_ARI on raw net.
+        The referee's job:
+          - Confirm IPPON if landing profile is clean AND eq ≥ IPPON_MIN_EQ.
+          - Else award WAZA_ARI if eq ≥ WAZA_ARI_MIN_EQ.
+          - Else NO_SCORE: tori hit the net-score threshold on raw power but
+            the execution wasn't clean enough — uke recovers.
         """
+        from execution_quality import IPPON_MIN_EQ, WAZA_ARI_MIN_EQ
+
         net  = landing.net_score
         wq   = landing.window_quality
         ctrl = landing.control_maintained
+        eq   = landing.execution_quality
 
         # Landing profile: FORWARD_ROTATIONAL and HIGH_FORWARD_ROTATIONAL produce
         # the cleanest flat-back landings and are required for IPPON confirmation.
@@ -221,13 +231,20 @@ class Referee:
         # Referee inconsistency noise in net-score units (~0.3 std dev)
         effective_net += random.gauss(0, 0.3)
 
-        if effective_net >= ippon_net_threshold and clean_profile and ctrl:
+        # Part 4.2.1 — execution quality gates the award level.
+        if eq < WAZA_ARI_MIN_EQ:
+            award = "NO_SCORE"
+        elif (eq >= IPPON_MIN_EQ
+              and effective_net >= ippon_net_threshold
+              and clean_profile and ctrl):
             award = "IPPON"
         else:
             award = "WAZA_ARI"
 
-        # Technique quality for composure effects: 0 at waza-ari floor, 1 at net=6.5
-        raw_quality = min(1.0, max(0.0, (net - 1.5) / 5.0))
+        # Technique quality for composure effects: 0 at waza-ari floor, 1 at net=6.5.
+        # Multiplied by eq so a low-quality waza-ari drops the defender's composure
+        # less than a clean one.
+        raw_quality = min(1.0, max(0.0, (net - 1.5) / 5.0)) * eq
 
         return ScoreResult(
             award=award,

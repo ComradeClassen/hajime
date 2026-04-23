@@ -50,7 +50,23 @@
       "Bash(python -m pytest tests/ -q -p no:cacheprovider -s)",
       "Bash(python -m pytest tests/test_grips.py tests/test_body_state.py tests/test_force_model.py tests/test_backfilled_throws.py -q -s)",
       "Bash(python -m pytest tests/test_grips.py -v --no-header)",
-      "Bash(python -m pytest tests/test_grips.py)"
+      "Bash(python -m pytest tests/test_grips.py)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(python -c \"import sys; print\\(sys.version\\); print\\(sys.path\\)\")",
+      "Bash(python -m unittest discover tests)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, 'src'\\); sys.path.insert\\(0, 'tests'\\); import test_throw_templates\")",
+      "Bash(pip install *)",
+      "Bash(python -m pytest tests/ --tb=short)",
+      "Bash(python -m pytest tests/test_throw_templates.py --tb=short)",
+      "Bash(python -m pytest tests/test_throw_templates.py -p no:cacheprovider)",
+      "Bash(python -s -m pytest tests/test_throw_templates.py -s)",
+      "Bash(python -m pytest tests/test_throw_templates.py --capture=no)",
+      "Bash(python -m pytest tests/ --capture=no --tb=short)",
+      "Bash(python -m pytest tests/ --capture=no --tb=short -q)",
+      "Bash(python -m pytest tests/ --capture=no --tb=line)",
+      "Bash(python -m pytest tests/ --capture=no --tb=short --no-header)",
+      "Bash(python tests/test_execution_quality.py)"
     ]
   }
 }

@@ -50,6 +50,10 @@ from counter_windows import (
 )
 from defensive_desperation import DefensivePressureTracker
 from compromised_state import is_desperation_state
+from execution_quality import (
+    compute_execution_quality, commit_threshold_for, band_for,
+    force_transfer_multiplier, narration_for,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +158,10 @@ class _ThrowInProgress:
     compression_n:  int
     schedule:       dict[int, list[SubEvent]]
     commit_actual:  float                          # signature match at commit time
+    # Part 4.2.1 — execution quality at commit time. Counter-window fire
+    # probability reads this for in-progress attempts; kake recomputes a
+    # fresh eq from the updated signature match when resolving.
+    commit_execution_quality: float = 0.0
     last_sub_event: Optional[SubEvent] = None      # most recent emitted — drives Part 6.2 window region
 
     def offset(self, current_tick: int) -> int:
@@ -174,6 +182,7 @@ def resolve_throw(
     stance_matchup: StanceMatchup,
     window_quality: float = 0.0,
     is_forced: bool = False,
+    execution_quality: float = 1.0,
 ) -> tuple[str, float]:
     """Resolve one throw attempt.
 
@@ -181,13 +190,20 @@ def resolve_throw(
         (outcome, net_score) where outcome is 'IPPON' | 'WAZA_ARI' | 'STUFFED' | 'FAILED'
         and net_score is the raw computed value.
 
-    The formula (unchanged from Session 1, now with window_quality bonus):
+    `execution_quality` ∈ [0, 1] (Part 4.2.1) modulates force transfer: the
+    attack_strength is multiplied by force_transfer_multiplier(eq). A
+    barely-committed throw (eq→0) still delivers force at the FLOOR level;
+    a clean finish (eq=1) delivers 100%. The default 1.0 preserves legacy
+    call-site behaviour for tests that don't wire eq.
+
+    The formula:
         1. Throw effectiveness from attacker's side
         2. Stance matchup modifier
         3. Attacker body condition
-        4. Defender resistance
-        5. Gaussian noise
-        6. Threshold comparison
+        4. Execution-quality force scaling (Part 4.2.1 point 1)
+        5. Defender resistance
+        6. Gaussian noise
+        7. Threshold comparison
     """
     profile = attacker.capability.throw_profiles.get(throw_id)
     if profile is None:
@@ -236,6 +252,12 @@ def resolve_throw(
 
     # Window quality bonus: a clean kuzushi window boosts the attack
     attack_strength += window_quality * 2.0
+
+    # Part 4.2.1 — execution quality scales force transfer (kake delivery).
+    # Newton 3 preserved: the reaction forces on tori are computed in the
+    # per-tick force model from the same delivered magnitudes, so scaling
+    # the delivery also scales the reaction.
+    attack_strength *= force_transfer_multiplier(execution_quality)
 
     # Forced attempt penalty
     if is_forced:
@@ -945,6 +967,8 @@ class Match:
         self._defensive_pressure[defender.identity.name].record_opponent_commit(tick)
 
         actual = actual_signature_match(throw_id, attacker, defender, self.grip_graph)
+        commit_threshold = commit_threshold_for(throw_id)
+        eq = compute_execution_quality(actual, commit_threshold)
         n = compression_n_for(attacker, throw_id)
         schedule = sub_event_schedule(n)
         throw_name = THROW_REGISTRY[throw_id].name
@@ -979,13 +1003,15 @@ class Match:
         events: list[Event] = [Event(
             tick=tick, event_type="THROW_ENTRY",
             description=(
-                f"[throw] {attacker.identity.name} commits — {throw_name}."
-                f"{tag_suffix}"
+                f"[throw] {attacker.identity.name} commits — {throw_name} "
+                f"(eq={eq:.2f}).{tag_suffix}"
             ),
             data={
                 "throw_id": throw_id.name,
                 "compression_n": n,
                 "actual_match": actual,
+                "commit_threshold": commit_threshold,
+                "execution_quality": eq,
                 "offensive_desperation": offensive_desperation,
                 "defensive_desperation": defensive_desperation,
                 "gate_bypass_reason":    gate_bypass_reason,
@@ -1016,6 +1042,7 @@ class Match:
             compression_n=n,
             schedule=schedule,
             commit_actual=actual,
+            commit_execution_quality=eq,
         )
         return events
 
@@ -1101,17 +1128,24 @@ class Match:
         """Execute the KAKE_COMMIT resolution: resolve_throw + apply result.
         Factored out of _resolve_commit_throw so both N==1 and multi-tick
         paths share the same landing logic.
+
+        Part 4.2.1 — eq is recomputed from the *kake-time* signature match so
+        a multi-tick attempt that degrades between commit and kake reflects
+        the worse execution in force transfer and landing severity.
         """
         matchup = self._compute_stance_matchup()
         window_q = max(0.0, actual - 0.5) * 2.0   # 0.5→0.0, 1.0→1.0
         is_forced = actual < 0.5
+        commit_threshold = commit_threshold_for(throw_id)
+        eq = compute_execution_quality(actual, commit_threshold)
         outcome, net = resolve_throw(
             attacker, defender, throw_id, matchup,
             window_quality=window_q, is_forced=is_forced,
+            execution_quality=eq,
         )
         return list(self._apply_throw_result(
             attacker, defender, throw_id, outcome, net, window_q, tick,
-            is_forced=is_forced,
+            is_forced=is_forced, execution_quality=eq,
         ))
 
     def _should_abort_attempt(
@@ -1232,9 +1266,11 @@ class Match:
             return None
 
         vuln = attacker_vulnerability_for(effective_throw_id)
+        tori_eq = tip.commit_execution_quality if tip is not None else None
         p = counter_fire_probability(
             defender, perceived, vuln,
             defensive_desperation=def_desp,
+            tori_execution_quality=tori_eq,
         )
         # Part 6.3 — per-state counter-vulnerability bonus. When tori is
         # currently in a named compromised state, uke's fire probability
@@ -1399,11 +1435,16 @@ class Match:
         window_quality: float,
         tick: int,
         is_forced: bool = False,
+        execution_quality: float = 1.0,
     ) -> list[Event]:
         events: list[Event] = []
         a_name = attacker.identity.name
         d_name = defender.identity.name
         throw_name = THROW_REGISTRY[throw_id].name
+
+        # Part 4.2.1 — quality band drives the narration tag on landing lines.
+        band = band_for(execution_quality)
+        band_prose = narration_for(throw_id, band)
 
         # Build landing for referee
         td = THROW_DEFS.get(throw_id)
@@ -1412,6 +1453,7 @@ class Match:
             net_score=net,
             window_quality=window_quality,
             control_maintained=(outcome in ("IPPON", "WAZA_ARI")),
+            execution_quality=execution_quality,
         )
 
         # Apply throw fatigue to attacker
@@ -1435,8 +1477,11 @@ class Match:
                     tick=tick,
                     event_type="THROW_LANDING",
                     description=(
-                        f"[score] {a_name} → {throw_name} → IPPON."
+                        f"[score] {a_name} → {throw_name} → IPPON "
+                        f"— {band_prose}."
                     ),
+                    data={"execution_quality": execution_quality,
+                          "quality_band": band.name},
                 ))
                 events.append(self.referee.announce_ippon(a_name, tick))
                 events.append(self.referee.announce_matte(MatteReason.SCORING, tick))
@@ -1449,8 +1494,10 @@ class Match:
                     event_type="THROW_LANDING",
                     description=(
                         f"[score] {a_name} → {throw_name} → waza-ari "
-                        f"({wa_count}/2)."
+                        f"({wa_count}/2) — {band_prose}."
                     ),
+                    data={"execution_quality": execution_quality,
+                          "quality_band": band.name},
                 ))
                 events.append(self.referee.announce_waza_ari(a_name, wa_count, tick))
                 # Composure hit on defender
@@ -1480,8 +1527,11 @@ class Match:
                     event_type="THROW_LANDING",
                     description=(
                         f"[throw] {a_name} → {throw_name} → no score "
-                        f"(ref downgraded)."
+                        f"(ref downgraded, eq={execution_quality:.2f}) "
+                        f"— {band_prose}."
                     ),
+                    data={"execution_quality": execution_quality,
+                          "quality_band": band.name},
                 ))
 
         elif outcome == "STUFFED":
