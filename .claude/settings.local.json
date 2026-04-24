@@ -68,7 +68,17 @@
       "Bash(python -m pytest tests/ --capture=no --tb=short --no-header)",
       "Bash(python tests/test_execution_quality.py)",
       "Bash(python tests/test_o_soto_contact_quality.py)",
-      "Bash(python tests/test_hip_engagement.py)"
+      "Bash(python tests/test_hip_engagement.py)",
+      "Bash(python -m pytest tests/ -x -q --no-header)",
+      "Bash(python -m pytest tests/ -x --no-header -p no:cacheprovider)",
+      "Bash(python -m pytest tests/test_force_model.py --no-header -p no:cacheprovider)",
+      "Bash(python -m pytest tests/test_force_model.py -s --no-header)",
+      "Bash(python -m pytest tests/ -s --no-header)",
+      "Bash(python -m pytest tests/ -s --no-header --tb=short)",
+      "Bash(python -m pytest tests/ -s --no-header --tb=short -r a)",
+      "Bash(grep -E \"passed|failed|error|=====$\")",
+      "Bash(python -m pytest tests/ -s --no-header -v)",
+      "Bash(tee /tmp/pytest2.log)"
     ]
   }
 }
