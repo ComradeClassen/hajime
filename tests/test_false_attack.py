@@ -30,14 +30,20 @@ from contextlib import redirect_stdout
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from action_selection import (
-    _should_fire_false_attack, _select_false_attack_throw,
+    _should_fire_clock_reset, _select_false_attack_throw,
     select_actions,
     FALSE_ATTACK_CLOCK_MIN, FALSE_ATTACK_CLOCK_MAX,
     FALSE_ATTACK_MIN_FIGHT_IQ, FALSE_ATTACK_TENDENCY_KEY,
     FALSE_ATTACK_TENDENCY_THRESHOLD, FALSE_ATTACK_PREFERENCES,
     REASON_INTENTIONAL_FALSE_ATTACK, COMMIT_THRESHOLD,
 )
+# HAJ-49 tests renamed _should_fire_false_attack → _should_fire_clock_reset
+# under HAJ-67's motivation refactor. The predicate is the same: CLOCK_RESET
+# is the original HAJ-49 motivation. Alias so existing test bodies keep
+# reading cleanly without rewrites.
+_should_fire_false_attack = _should_fire_clock_reset
 from actions import Action, ActionKind, commit_throw
+from commit_motivation import CommitMotivation
 from body_state import place_judoka
 from enums import (
     BodyArchetype, BeltRank, BodyPart, DominantSide,
@@ -117,13 +123,17 @@ def test_action_intentional_false_attack_defaults_false() -> None:
 
 
 def test_action_intentional_false_attack_carries_through_commit_throw() -> None:
+    # HAJ-67 — the bool flag became a CommitMotivation enum; the shim
+    # property `intentional_false_attack` returns True iff motivation is
+    # non-None. Verify both the enum and the shim.
     a = commit_throw(
         ThrowID.TAI_OTOSHI,
-        intentional_false_attack=True,
+        commit_motivation=CommitMotivation.CLOCK_RESET,
         gate_bypass_reason=REASON_INTENTIONAL_FALSE_ATTACK,
         gate_bypass_kind="false_attack",
     )
     assert a.kind == ActionKind.COMMIT_THROW
+    assert a.commit_motivation == CommitMotivation.CLOCK_RESET
     assert a.intentional_false_attack is True
     assert a.gate_bypass_reason == REASON_INTENTIONAL_FALSE_ATTACK
 
@@ -171,11 +181,26 @@ def test_should_fire_false_attack_default_tendency_fires_at_neutral() -> None:
     assert _should_fire_false_attack(j, kumi_kata_clock=20) is True
 
 
-def test_should_fire_false_attack_rejects_no_drop_vocabulary() -> None:
+def test_no_drop_vocabulary_blocks_motivation_dispatch() -> None:
     """A fighter whose vocabulary contains none of the drop-variant
-    preferences can't fake — there's nothing appropriate to throw."""
-    j = _composed_judoka(vocab=[ThrowID.UCHI_MATA, ThrowID.HARAI_GOSHI])
-    assert _should_fire_false_attack(j, kumi_kata_clock=20) is False
+    preferences can't fake — the upstream dispatcher
+    `_select_non_scoring_motivation` short-circuits on the vocab check
+    before any predicate runs. Use the dispatcher directly (the
+    CLOCK_RESET predicate itself no longer checks vocab under HAJ-67 —
+    it moved up to the dispatcher level since all four motivations
+    share the same vocab requirement)."""
+    from action_selection import _select_non_scoring_motivation
+    tori = _composed_judoka(vocab=[ThrowID.UCHI_MATA, ThrowID.HARAI_GOSHI])
+    uke  = _composed_judoka(name="uke")
+    place_judoka(tori, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(uke,  com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+    g = _gripped_graph(tori, uke)
+    result = _select_non_scoring_motivation(
+        tori, uke, g, random.Random(1),
+        kumi_kata_clock=20, opponent_kumi_kata_clock=0,
+        perceived_by_throw={},
+    )
+    assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -254,10 +279,11 @@ def test_select_actions_does_not_false_attack_outside_window() -> None:
 # ---------------------------------------------------------------------------
 # Log line — motivation surfaces on the [throw] commit event
 # ---------------------------------------------------------------------------
-def test_commit_log_line_tags_intentional_false_attack() -> None:
-    """The commit line must include 'intentional false attack; clock reset'
-    so a reader can distinguish this from both normal commits and
-    offensive-desperation commits."""
+def test_commit_log_line_tags_commit_motivation() -> None:
+    """HAJ-67 — the THROW_ENTRY commit line must tag the specific
+    motivation ("commit motivation: clock_reset") so readers and log
+    parsers can distinguish among the four non-scoring motivations and
+    from both normal commits and offensive-desperation commits."""
     from match import Match
     from referee import build_suzuki
     tori = _composed_judoka(name="Gaba")
@@ -268,20 +294,19 @@ def test_commit_log_line_tags_intentional_false_attack() -> None:
         fighter_a=tori, fighter_b=uke, referee=build_suzuki(),
         stream="debug", seed=1,
     )
-    # Directly resolve a false-attack commit via the match API; this is
-    # the exact path select_actions would feed into.
+    # Directly resolve a non-scoring-motivation commit via the match API.
     evts = m._resolve_commit_throw(
         tori, uke, ThrowID.TAI_OTOSHI, tick=20,
-        intentional_false_attack=True,
+        commit_motivation=CommitMotivation.CLOCK_RESET,
         gate_bypass_reason=REASON_INTENTIONAL_FALSE_ATTACK,
         gate_bypass_kind="false_attack",
     )
     entry = next((e for e in evts if e.event_type == "THROW_ENTRY"), None)
     assert entry is not None
-    assert "intentional false attack; clock reset" in entry.description
-    # The event data also carries the flag so downstream consumers can
-    # classify without re-parsing the description.
-    assert entry.data["intentional_false_attack"] is True
+    assert "commit motivation: clock_reset" in entry.description
+    # The event data also carries the motivation enum name so downstream
+    # consumers can classify without re-parsing the description.
+    assert entry.data["commit_motivation"] == CommitMotivation.CLOCK_RESET.name
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +338,7 @@ def test_failed_false_attack_routes_to_tactical_drop_reset() -> None:
     # also set it, but calling the full commit path here would consume
     # the flag before our assertion could fire (N=1 throws resolve in the
     # same tick). Test the failure path in isolation.
-    m._commit_false_attack[tori.identity.name] = True
+    m._commit_motivation[tori.identity.name] = CommitMotivation.CLOCK_RESET
     events = m._resolve_failed_commit(
         tori, uke, ThrowID.TAI_OTOSHI, "Tai-otoshi", net=-1.0, tick=20,
     )
@@ -340,7 +365,7 @@ def test_failed_false_attack_negligible_composure_drop() -> None:
         fighter_a=tori, fighter_b=uke, referee=build_suzuki(),
         stream="debug", seed=1,
     )
-    m._commit_false_attack[tori.identity.name] = True
+    m._commit_motivation[tori.identity.name] = CommitMotivation.CLOCK_RESET
     pre = tori.state.composure_current
     m._resolve_failed_commit(
         tori, uke, ThrowID.TAI_OTOSHI, "Tai-otoshi", net=-1.0, tick=20,
@@ -445,7 +470,7 @@ def test_tactical_drop_reset_produces_compact_prose() -> None:
         fighter_a=tori, fighter_b=uke, referee=build_suzuki(),
         stream="debug", seed=1,
     )
-    m._commit_false_attack[tori.identity.name] = True
+    m._commit_motivation[tori.identity.name] = CommitMotivation.CLOCK_RESET
     events = m._resolve_failed_commit(
         tori, uke, ThrowID.TAI_OTOSHI, "Tai-otoshi", net=-1.0, tick=20,
     )

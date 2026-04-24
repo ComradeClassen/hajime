@@ -55,6 +55,10 @@ from execution_quality import (
     compute_execution_quality, commit_threshold_for, band_for,
     force_transfer_multiplier, narration_for,
 )
+from commit_motivation import (
+    CommitMotivation, debug_tag_for as motivation_debug_tag,
+    narration_for as motivation_narration_for,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -478,11 +482,13 @@ class Match:
         # when the throw was actually decided on.
         self._commit_kumi_kata_snapshot: dict[str, int] = {}
 
-        # HAJ-49 — per-fighter flag recording whether the current commit
-        # was an intentional false attack. Set in _resolve_commit_throw,
-        # consumed in _resolve_failed_commit to override the outcome to
-        # TACTICAL_DROP_RESET. Cleared when the attempt resolves.
-        self._commit_false_attack: dict[str, bool] = {}
+        # HAJ-49 / HAJ-67 — per-fighter commit motivation snapshot. None
+        # for normal and desperation commits; one of CommitMotivation's
+        # four values for non-scoring commits. Set in _resolve_commit_throw,
+        # consumed in _resolve_failed_commit to force TACTICAL_DROP_RESET
+        # and pick the motivation-specific prose template. Cleared when
+        # the attempt resolves.
+        self._commit_motivation: dict[str, Optional[CommitMotivation]] = {}
 
         # For MatchState snapshots
         self._a_score: dict = {"waza_ari": 0, "ippon": False}
@@ -591,12 +597,18 @@ class Match:
             defensive_desperation=self._defensive_desperation_active[
                 self.fighter_a.identity.name
             ],
+            opponent_kumi_kata_clock=self.kumi_kata_clock[
+                self.fighter_b.identity.name
+            ],
         )
         actions_b = select_actions(
             self.fighter_b, self.fighter_a, self.grip_graph,
             self.kumi_kata_clock[self.fighter_b.identity.name],
             defensive_desperation=self._defensive_desperation_active[
                 self.fighter_b.identity.name
+            ],
+            opponent_kumi_kata_clock=self.kumi_kata_clock[
+                self.fighter_a.identity.name
             ],
         )
         # A fighter mid-attempt must not re-commit — strip any COMMIT_THROW
@@ -674,7 +686,7 @@ class Match:
                     defensive_desperation=act.defensive_desperation,
                     gate_bypass_reason=act.gate_bypass_reason,
                     gate_bypass_kind=act.gate_bypass_kind,
-                    intentional_false_attack=act.intentional_false_attack,
+                    commit_motivation=act.commit_motivation,
                 )
                 events.extend(commit_events)
                 if self.match_over:
@@ -1055,7 +1067,7 @@ class Match:
         defensive_desperation: bool = False,
         gate_bypass_reason: Optional[str] = None,
         gate_bypass_kind: Optional[str] = None,
-        intentional_false_attack: bool = False,
+        commit_motivation: Optional["CommitMotivation"] = None,
     ) -> list[Event]:
         """Entry point for a COMMIT_THROW action.
 
@@ -1097,26 +1109,30 @@ class Match:
         # elite throw still has a [throw] commit line preceding its [score].
         collapse_n1 = n <= 1
 
-        # HAJ-49 — stash the commit-time motivation so _resolve_failed_commit
-        # can route the outcome correctly (intentional false attack → forced
-        # TACTICAL_DROP_RESET regardless of which dimension scored worst).
-        self._commit_false_attack[attacker.identity.name] = intentional_false_attack
+        # HAJ-49 / HAJ-67 — stash the commit-time motivation so
+        # _resolve_failed_commit can route the outcome to TACTICAL_DROP_RESET
+        # and render the motivation-specific compact prose. Stored keyed
+        # by attacker name so it survives the multi-tick attempt window.
+        self._commit_motivation[attacker.identity.name] = commit_motivation
 
-        # HAJ-35 / HAJ-49 — surface commit-time motivation + grip-gate-bypass
-        # on the [throw] line. Before HAJ-35, desperation was only visible on
-        # failures; now every commit declares its state. HAJ-49 adds the
-        # intentional-false-attack tag "clock reset" so the log makes the
-        # distinct motivation unmistakable.
+        # HAJ-35 / HAJ-49 / HAJ-67 — surface commit-time motivation +
+        # grip-gate-bypass on the [throw] line. Normal commits have no tag;
+        # offensive desperation keeps its legacy tag; non-scoring motivations
+        # surface via `commit_motivation: <name>` so downstream log-parsing
+        # and the 20-match QA can count each motivation distinctly.
         tags: list[str] = []
         if offensive_desperation:
             tags.append("offensive desperation")
         if defensive_desperation:
             tags.append("defensive desperation")
-        if intentional_false_attack:
-            tags.append("intentional false attack; clock reset")
+        if commit_motivation is not None:
+            tags.append(
+                f"commit motivation: {motivation_debug_tag(commit_motivation)}"
+            )
         elif gate_bypass_reason is not None:
             # Genuine gate-bypass reason only surfaces when the commit isn't
-            # already tagged as a false attack (which shares the bypass slot).
+            # already tagged as a non-scoring motivation (which shares the
+            # bypass slot but is more informative on its own).
             tags.append(f"gate bypassed: {gate_bypass_reason}")
         tag_suffix = f"  ({'; '.join(tags)})" if tags else ""
         events: list[Event] = [Event(
@@ -1135,7 +1151,9 @@ class Match:
                 "defensive_desperation": defensive_desperation,
                 "gate_bypass_reason":    gate_bypass_reason,
                 "gate_bypass_kind":      gate_bypass_kind,
-                "intentional_false_attack": intentional_false_attack,
+                "commit_motivation": (
+                    commit_motivation.name if commit_motivation else None
+                ),
             },
         )]
 
@@ -1655,13 +1673,15 @@ class Match:
                 ))
 
         elif outcome == "STUFFED":
-            # HAJ-49 — a STUFFED result on an intentional false attack
-            # collapses to the FAILED path: the point of the pathway is the
-            # cheap failure. Don't set the ne-waza window (there was nothing
-            # to stuff) and don't apply the heavy -0.30 stuffed composure hit.
-            # TACTICAL_DROP_RESET override inside _resolve_failed_commit
-            # supplies the correct compromised state and the lighter drop.
-            if self._commit_false_attack.get(a_name, False):
+            # HAJ-49 / HAJ-67 — a STUFFED result on any non-scoring
+            # motivation (CLOCK_RESET / GRIP_ESCAPE / SHIDO_FARMING /
+            # STAMINA_DESPERATION) collapses to the FAILED path: the point
+            # of the pathway is the cheap failure. Don't set the ne-waza
+            # window (there was nothing to stuff) and don't apply the
+            # heavy -0.30 stuffed composure hit. TACTICAL_DROP_RESET
+            # override inside _resolve_failed_commit supplies the correct
+            # compromised state and the lighter drop.
+            if self._commit_motivation.get(a_name) is not None:
                 events.extend(self._resolve_failed_commit(
                     attacker, defender, throw_id, throw_name, net, tick,
                 ))
@@ -1691,10 +1711,11 @@ class Match:
                 attacker, defender, throw_id, throw_name, net, tick,
             ))
 
-        # HAJ-49 — janitor: clear the false-attack flag for this attacker.
-        # _resolve_failed_commit pops it on failure; this covers IPPON /
-        # WAZA_ARI / no-score landings where the flag wasn't consumed.
-        self._commit_false_attack.pop(a_name, None)
+        # HAJ-49 / HAJ-67 — janitor: clear the motivation snapshot for this
+        # attacker. _resolve_failed_commit pops it on failure; this covers
+        # IPPON / WAZA_ARI / no-score landings where the snapshot wasn't
+        # consumed.
+        self._commit_motivation.pop(a_name, None)
 
         return events
 
@@ -1740,13 +1761,13 @@ class Match:
             throw_id=throw_id,
         )
 
-        # HAJ-49 — intentional false attack forces the outcome to
-        # TACTICAL_DROP_RESET even if the discriminator didn't fire (e.g. a
-        # commit that coincidentally produced above-floor signature). The
-        # motivation label wins here because the ladder explicitly chose
-        # the fake, and the log tag should match the failure routing.
-        false_attack = self._commit_false_attack.pop(a_name, False)
-        if false_attack and resolution.outcome != FailureOutcome.TACTICAL_DROP_RESET:
+        # HAJ-49 / HAJ-67 — any non-None commit motivation forces the
+        # outcome to TACTICAL_DROP_RESET even if the discriminator didn't
+        # fire (e.g. a commit that coincidentally produced above-floor
+        # signature). The motivation label wins here because the ladder
+        # explicitly chose the fake, and the log prose should match.
+        motivation = self._commit_motivation.pop(a_name, None)
+        if motivation is not None and resolution.outcome != FailureOutcome.TACTICAL_DROP_RESET:
             resolution = FailureResolution(
                 outcome=FailureOutcome.TACTICAL_DROP_RESET,
                 recovery_ticks=RECOVERY_TICKS_BY_OUTCOME[
@@ -1791,6 +1812,7 @@ class Match:
 
         events.extend(self._format_failure_events(
             attacker, defender, throw_name, resolution, desperation, tick,
+            motivation=motivation,
         ))
         return events
 
@@ -1805,6 +1827,7 @@ class Match:
     def _format_failure_events(
         self, attacker: Judoka, defender: Judoka, throw_name: str,
         resolution, desperation: bool, tick: int,
+        motivation: Optional["CommitMotivation"] = None,
     ) -> list[Event]:
         from throw_templates import FailureOutcome
         a_name = attacker.identity.name
@@ -1817,6 +1840,7 @@ class Match:
             "failed_dimension": resolution.failed_dimension,
             "dimension_score":  resolution.dimension_score,
             "desperation":      desperation,
+            "commit_motivation": motivation.name if motivation else None,
         }
         desp_tag = "; desperation" if desperation else ""
 
@@ -1838,17 +1862,20 @@ class Match:
                 ),
             ]
 
-        # HAJ-50 — compact register for a tactical drop reset. The generic
-        # "failed (tag; recovery N tick(s))" line overstates the event —
-        # nothing failed, tori briefly dipped and is already rising. Emit
-        # a short two-beat line instead so a reader's eye slides past it
-        # the way tori's tactical drop slides past uke's reading.
+        # HAJ-50 / HAJ-67 — compact register for a tactical drop reset.
+        # Each non-scoring motivation has its own two-beat template so a
+        # reader can tell at a glance why tori faked (reset the clock,
+        # escape a grip war, farm a shido, or collapse from exhaustion).
+        # When the discriminator routed us here without a motivation label
+        # (a desperation commit that happened to fire on a drop variant
+        # with near-zero signature), fall back to the CLOCK_RESET prose —
+        # that's the original HAJ-50 compact register.
         if outcome == FailureOutcome.TACTICAL_DROP_RESET:
+            effective_motivation = motivation or CommitMotivation.CLOCK_RESET
             return [Event(
                 tick=tick, event_type="FAILED",
-                description=(
-                    f"[throw] {a_name} drops on {throw_name}. Nothing "
-                    f"there. Back up."
+                description=motivation_narration_for(
+                    effective_motivation, tori=a_name, throw=throw_name,
                 ),
                 data=data,
             )]

@@ -22,6 +22,7 @@ from enums import (
 from throws import THROW_DEFS, ThrowID
 from grip_presence_gate import evaluate_gate, GateResult, REASON_OK
 from compromised_state import is_desperation_state
+from commit_motivation import CommitMotivation
 
 if TYPE_CHECKING:
     from judoka import Judoka
@@ -37,32 +38,68 @@ PROBE_MAGNITUDE_N:            float = 120.0 # default-rung probing force
 # Side-effect: match feeds us the grasper's kumi-kata clock; it's not
 # visible on the Judoka itself because it belongs to the Match.
 
-# HAJ-49 — intentional false-attack pathway.
-# A third commit motivation alongside normal-signature-clears-threshold and
-# offensive-desperation. A fighter with enough composure to not be panicked
-# but whose kumi-kata clock has drifted into the pre-shido zone may fire a
-# deliberately low-commitment drop variant to reset the clock and earn a
-# brief post-stuffed breathing window. See physics-substrate.md Part 3.3.1.
+# HAJ-49 / HAJ-67 — non-scoring commit motivations.
+#
+# Four motivations fire the same low-signature drop-variant commit path but
+# for different tactical reasons. Each has its own gate predicates and a
+# per-tick probability scalar so multiple motivations don't cumulatively
+# fire every eligible tick. See src/commit_motivation.py for the enum and
+# narration templates; physics-substrate.md Part 3.3.1 for the spec text.
+#
+# Priority order when two motivations' gates both pass: CLOCK_RESET first
+# (widest disposition coverage), then STAMINA_DESPERATION, GRIP_ESCAPE,
+# SHIDO_FARMING. The first matching motivation wins.
+
+# -- CLOCK_RESET (HAJ-49 legacy; gating unchanged) --
 FALSE_ATTACK_CLOCK_MIN: int = 18   # earliest clock tick the tactical fake fires
 FALSE_ATTACK_CLOCK_MAX: int = 29   # latest — strictly below imminent-shido (29) so
                                     # desperation (which fires at 29) takes precedence
 FALSE_ATTACK_MIN_FIGHT_IQ: int = 4  # white/yellow belts don't game the clock; they panic
 FALSE_ATTACK_TENDENCY_KEY: str = "false_attack_tendency"  # Identity.style_dna key
 FALSE_ATTACK_TENDENCY_THRESHOLD: float = 0.40
-FALSE_ATTACK_TENDENCY_DEFAULT:   float = 0.50  # neutral baseline when the key is absent
-# Per-tick probability gate. A high-tendency fighter with ~11 ticks in the
-# [18, 29) window doesn't fake every single tick — that would fully suppress
-# offensive desperation from ever surfacing. Scale tendency by this constant
-# so a tendency=0.7 fighter fakes ~7% of eligible ticks (~55% cumulatively
-# over the window), leaving meaningful room for the desperation pathway to
-# fire when the window expires without a fake committing.
-FALSE_ATTACK_PER_TICK_SCALE: float = 0.10
+FALSE_ATTACK_TENDENCY_DEFAULT:   float = 0.50
+FALSE_ATTACK_PER_TICK_SCALE:     float = 0.10
 
-# Priority order of drop-variant throws for a false attack, most preferred
-# first. These are the lowest-commitment entries in standard vocabularies:
-# fast recovery-to-stance is the whole point of the pathway, so we prefer
-# shin-block (TAI_OTOSHI), foot-sweep (KO_UCHI_GARI), drop-seoi, and
-# inner-reap (O_UCHI_GARI) over hip-fulcrum or high-amplitude throws.
+# -- GRIP_ESCAPE --
+# Fires when tori is losing the grip war, tori's own grips are shallow or
+# missing, and composure has slipped below a moderate-panic threshold. The
+# tactical fake is cover to reset the dyad.
+# Calibration note: grip-delta values stay moderate in real exchanges
+# because both fighters typically own 2 grips at similar depths. 0.30
+# keeps the "opponent dominant" intent while remaining reachable.
+GRIP_ESCAPE_DELTA_THRESHOLD:  float = 0.30
+GRIP_ESCAPE_COMPOSURE_FRAC:   float = 0.60   # a little looser — composure slips before it shatters
+GRIP_ESCAPE_PER_TICK_PROB:    float = 0.15
+
+# -- SHIDO_FARMING --
+# Fires when the opponent has been passive (their kumi-kata clock climbing)
+# and tori has no real scoring opportunity. Tori throws a pose-attack to
+# nudge the referee toward shido against uke. Style-biased.
+# Calibration note: opp clock at ~10 ticks already represents a meaningful
+# stretch of uke not attacking relative to match tempo.
+SHIDO_FARMING_OPP_CLOCK:        int   = 7
+SHIDO_FARMING_NO_SCORING_MAX:   float = 0.40
+SHIDO_FARMING_TENDENCY_KEY:     str   = "shido_farming_tendency"
+SHIDO_FARMING_TENDENCY_THRESHOLD: float = 0.45
+SHIDO_FARMING_TENDENCY_DEFAULT:   float = 0.30
+SHIDO_FARMING_PER_TICK_PROB:    float = 0.10
+
+# -- STAMINA_DESPERATION --
+# Fires when tori is cardio-cooked, has eaten at least one shido, and can't
+# physically generate kuzushi this tick (hand/grip output is low). A tired,
+# already-penalized fighter will fall into anything to buy a breather.
+# Calibration note: 0.40 cardio puts tori in the bottom third. Below that,
+# the fighter is visibly gassed — real judo condition for this motivation.
+STAMINA_DESPERATION_CARDIO_MAX:  float = 0.50
+STAMINA_DESPERATION_MIN_SHIDOS:  int   = 1
+STAMINA_DESPERATION_HAND_FAT_MIN: float = 0.40
+STAMINA_DESPERATION_PER_TICK_PROB: float = 0.20
+
+# Priority order of drop-variant throws for any non-scoring motivation, most
+# preferred first. Lowest-commitment entries in standard vocabularies: fast
+# recovery-to-stance is the whole point, so shin-block (TAI_OTOSHI),
+# foot-sweep (KO_UCHI_GARI), drop-seoi, and inner-reap (O_UCHI_GARI) over
+# hip-fulcrum or high-amplitude throws.
 FALSE_ATTACK_PREFERENCES: tuple[ThrowID, ...] = (
     ThrowID.TAI_OTOSHI,
     ThrowID.KO_UCHI_GARI,
@@ -85,6 +122,7 @@ def select_actions(
     kumi_kata_clock: int,
     rng: random.Random | None = None,
     defensive_desperation: bool = False,
+    opponent_kumi_kata_clock: int = 0,
 ) -> list[Action]:
     """Return the judoka's chosen actions for this tick.
 
@@ -120,6 +158,7 @@ def select_actions(
         offensive_desperation=offensive_desperation,
         defensive_desperation=defensive_desperation,
         kumi_kata_clock=kumi_kata_clock,
+        opponent_kumi_kata_clock=opponent_kumi_kata_clock,
     )
     if commit is not None:
         return [commit]
@@ -205,26 +244,29 @@ def _try_commit(
     offensive_desperation: bool = False,
     defensive_desperation: bool = False,
     kumi_kata_clock: int = 0,
+    opponent_kumi_kata_clock: int = 0,
 ) -> Optional[Action]:
     """If there's a throw whose *perceived* signature clears the commit
     threshold AND the formal grip-presence gate allows it (or is bypassed
-    by desperation), return a COMMIT_THROW Action for it. Otherwise None.
+    by desperation), return a COMMIT_THROW Action for it. Otherwise, try
+    each of the four non-scoring motivation pathways (HAJ-67).
 
-    Three commit pathways in priority order (HAJ-49):
-
+    Pathway priority (first match wins):
       1. Normal signature-clears-threshold commit — the classical path.
-      2. Offensive desperation — panicked or imminent-shido (Part 6.3).
-      3. Intentional false attack — composed fighter, clock in pre-shido
-         zone, picks a drop variant to reset the clock on purpose.
+      2. Offensive desperation — handled via the grip-presence gate bypass
+         inside the main ranked-candidates loop.
+      3. CLOCK_RESET         — HAJ-49 legacy; kumi-kata clock in pre-shido zone.
+      4. STAMINA_DESPERATION — cooked fighter, already penalized, can't drive.
+      5. GRIP_ESCAPE         — grip war lost, composure slipping.
+      6. SHIDO_FARMING       — pressure a passive opponent into their own shido.
 
-    Normal commit is tried first; desperation is resolved by the
-    grip-presence gate inside the main loop (gate bypass is how its bypass
-    semantics are wired). The intentional false attack is a separate branch
-    consulted only when no normal commit is available AND desperation isn't
-    firing.
+    Perceived-signature cache (dict[ThrowID, float]) is built once from the
+    ranked candidates and shared across motivation predicates so we don't
+    recompute the same scores four times per tick.
 
-    The returned Action carries the motivation metadata so Match can
-    surface it on the commit log line.
+    The returned Action carries the motivation label so Match can surface
+    it on the commit log line and the failure-outcome router can route to
+    TACTICAL_DROP_RESET (HAJ-50).
     """
     from perception import actual_signature_match, perceive
 
@@ -236,6 +278,7 @@ def _try_commit(
 
     # Rank candidates by perceived signature; we'll walk in descending order
     # and pick the first that clears both the threshold AND the grip gate.
+    perceived_by_throw: dict[ThrowID, float] = {}
     ranked: list[tuple[float, ThrowID]] = []
     for tid in candidates:
         td = THROW_DEFS.get(tid)
@@ -248,6 +291,7 @@ def _try_commit(
         # Small bonus for signature throws — tokui-waza bias.
         if tid in judoka.capability.signature_throws:
             perceived += 0.05
+        perceived_by_throw[tid] = perceived
         ranked.append((perceived, tid))
     ranked.sort(key=lambda pair: pair[0], reverse=True)
 
@@ -270,49 +314,76 @@ def _try_commit(
             gate_bypass_kind=gate.bypass_kind,
         )
 
-    # HAJ-49 — intentional false attack. Falls through only when the normal
-    # pathway found nothing committable and offensive desperation isn't
-    # firing. The commit resets the kumi-kata clock (in _resolve_commit_throw)
-    # and routes to TACTICAL_DROP_RESET on failure — fast recovery, minimal
-    # counter exposure. That is the whole point.
-    if (not offensive_desperation
-            and not defensive_desperation
-            and _should_fire_false_attack(judoka, kumi_kata_clock, rng)):
-        tid = _select_false_attack_throw(judoka, graph)
-        if tid is not None:
-            return commit_throw(
-                tid,
-                intentional_false_attack=True,
-                gate_bypass_reason=REASON_INTENTIONAL_FALSE_ATTACK,
-                gate_bypass_kind="false_attack",
-            )
+    # HAJ-67 — non-scoring motivation dispatch. Skipped when either
+    # desperation flag is already firing; those have higher precedence.
+    if offensive_desperation or defensive_desperation:
+        return None
+
+    motivation = _select_non_scoring_motivation(
+        judoka, opponent, graph, rng,
+        kumi_kata_clock=kumi_kata_clock,
+        opponent_kumi_kata_clock=opponent_kumi_kata_clock,
+        perceived_by_throw=perceived_by_throw,
+    )
+    if motivation is None:
+        return None
+
+    tid = _select_false_attack_throw(judoka, graph)
+    if tid is None:
+        return None
+    return commit_throw(
+        tid,
+        commit_motivation=motivation,
+        gate_bypass_reason=REASON_INTENTIONAL_FALSE_ATTACK,
+        gate_bypass_kind="false_attack",
+    )
+
+
+# ---------------------------------------------------------------------------
+# HAJ-67 — non-scoring commit motivation: dispatcher + per-motivation gates
+# ---------------------------------------------------------------------------
+def _select_non_scoring_motivation(
+    judoka: "Judoka",
+    opponent: "Judoka",
+    graph: "GripGraph",
+    rng: random.Random,
+    *,
+    kumi_kata_clock: int,
+    opponent_kumi_kata_clock: int,
+    perceived_by_throw: dict[ThrowID, float],
+) -> Optional[CommitMotivation]:
+    """Dispatch to the first non-scoring motivation whose gate fires.
+
+    Each predicate is self-contained and performs its own hard gates plus
+    per-tick probability roll. Priority order: CLOCK_RESET, then
+    STAMINA_DESPERATION, GRIP_ESCAPE, SHIDO_FARMING.
+    """
+    # All four motivations pick from drop-variant preferences; if the
+    # fighter has none, skip the whole dispatch.
+    if not any(tid in judoka.capability.throw_vocabulary
+               for tid in FALSE_ATTACK_PREFERENCES):
+        return None
+
+    if _should_fire_clock_reset(judoka, kumi_kata_clock, rng):
+        return CommitMotivation.CLOCK_RESET
+    if _should_fire_stamina_desperation(judoka, rng):
+        return CommitMotivation.STAMINA_DESPERATION
+    if _should_fire_grip_escape(judoka, opponent, graph, rng):
+        return CommitMotivation.GRIP_ESCAPE
+    if _should_fire_shido_farming(
+        judoka, opponent_kumi_kata_clock, perceived_by_throw, rng,
+    ):
+        return CommitMotivation.SHIDO_FARMING
     return None
 
 
-# ---------------------------------------------------------------------------
-# HAJ-49 — intentional false attack: helpers
-# ---------------------------------------------------------------------------
-def _should_fire_false_attack(
+def _should_fire_clock_reset(
     judoka: "Judoka", kumi_kata_clock: int,
     rng: Optional[random.Random] = None,
 ) -> bool:
-    """Gate for the intentional-false-attack pathway.
-
-    Four hard gates (all must hold) plus a per-tick probability roll:
-      - clock is in the [MIN, MAX) pre-shido zone (18..28 inclusive by default)
-      - fighter has fight_iq >= threshold (whites/yellows panic, don't fake)
-      - style_dna[false_attack_tendency] >= threshold (tactical disposition —
-        French INSEP / modern European competition styles favor this;
-        classical Kodokan ura-schools lean less on it)
-      - fighter has at least one drop-variant throw in their vocabulary
-      - probabilistic firing: per-tick probability = tendency × scale, so
-        a high-tendency fighter doesn't fake every eligible tick — they
-        pick their moment. This leaves room for offensive desperation to
-        fire when the window elapses without a fake.
-
-    `rng` is optional — when None the probability roll is skipped and the
-    function returns True whenever the hard gates pass. This keeps unit
-    tests deterministic without bolting in a seed.
+    """CLOCK_RESET — HAJ-49 legacy. Fighter with composure and style-dna
+    disposition fires a tactical fake in the pre-shido window to reset
+    their own kumi-kata clock.
     """
     if not (FALSE_ATTACK_CLOCK_MIN <= kumi_kata_clock < FALSE_ATTACK_CLOCK_MAX):
         return False
@@ -323,12 +394,88 @@ def _should_fire_false_attack(
     )
     if tendency < FALSE_ATTACK_TENDENCY_THRESHOLD:
         return False
-    if not any(tid in judoka.capability.throw_vocabulary
-               for tid in FALSE_ATTACK_PREFERENCES):
-        return False
     if rng is None:
         return True
     return rng.random() < tendency * FALSE_ATTACK_PER_TICK_SCALE
+
+
+def _should_fire_stamina_desperation(
+    judoka: "Judoka", rng: Optional[random.Random] = None,
+) -> bool:
+    """STAMINA_DESPERATION — tori is cardio-cooked, has eaten at least one
+    shido, and can't drive force through grips (proxy: hand fatigue above
+    threshold). A cooked, penalized fighter falls into anything to buy
+    time on the mat.
+    """
+    if judoka.state.cardio_current > STAMINA_DESPERATION_CARDIO_MAX:
+        return False
+    if judoka.state.shidos < STAMINA_DESPERATION_MIN_SHIDOS:
+        return False
+    if _avg_hand_fatigue(judoka) < STAMINA_DESPERATION_HAND_FAT_MIN:
+        return False
+    if rng is None:
+        return True
+    return rng.random() < STAMINA_DESPERATION_PER_TICK_PROB
+
+
+def _should_fire_grip_escape(
+    judoka: "Judoka", opponent: "Judoka", graph: "GripGraph",
+    rng: Optional[random.Random] = None,
+) -> bool:
+    """GRIP_ESCAPE — opponent is dominant in the grip war, tori's own
+    grips are shallow/few, and composure has slipped. The tactical fake
+    is cover to rip off the dyad and try to reset grips.
+    """
+    # Opponent grip dominance.
+    delta_opp_over_tori = graph.compute_grip_delta(opponent, judoka)
+    if delta_opp_over_tori < GRIP_ESCAPE_DELTA_THRESHOLD:
+        return False
+    # Tori's own grip integrity compromised: no edge deeper than POCKET.
+    own_edges = graph.edges_owned_by(judoka.identity.name)
+    deepest = max(
+        (e.depth_level for e in own_edges),
+        default=GripDepth.SLIPPING,
+        key=lambda d: d.modifier(),
+    )
+    if deepest.modifier() > GripDepth.POCKET.modifier():
+        return False
+    # Composure below escape threshold.
+    ceiling = max(1.0, float(judoka.capability.composure_ceiling))
+    composure_frac = judoka.state.composure_current / ceiling
+    if composure_frac >= GRIP_ESCAPE_COMPOSURE_FRAC:
+        return False
+    if rng is None:
+        return True
+    return rng.random() < GRIP_ESCAPE_PER_TICK_PROB
+
+
+def _should_fire_shido_farming(
+    judoka: "Judoka", opponent_kumi_kata_clock: int,
+    perceived_by_throw: dict[ThrowID, float],
+    rng: Optional[random.Random] = None,
+) -> bool:
+    """SHIDO_FARMING — opponent has been passive (their kumi-kata clock is
+    elevated), tori has no real scoring opportunity, and tori's style
+    tolerates grinding the referee for the opposing shido. Tori poses an
+    attack to keep themselves above the passivity bar while forcing uke
+    to either escalate or eat a shido of their own.
+    """
+    if opponent_kumi_kata_clock < SHIDO_FARMING_OPP_CLOCK:
+        return False
+    # No meaningful scoring opportunity: best-perceived signature is below
+    # the "could-almost-score" threshold.
+    if perceived_by_throw:
+        best = max(perceived_by_throw.values())
+        if best >= SHIDO_FARMING_NO_SCORING_MAX:
+            return False
+    tendency = judoka.identity.style_dna.get(
+        SHIDO_FARMING_TENDENCY_KEY, SHIDO_FARMING_TENDENCY_DEFAULT,
+    )
+    if tendency < SHIDO_FARMING_TENDENCY_THRESHOLD:
+        return False
+    if rng is None:
+        return True
+    return rng.random() < SHIDO_FARMING_PER_TICK_PROB
 
 
 def _select_false_attack_throw(

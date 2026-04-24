@@ -28,6 +28,7 @@ from throws import ThrowID
 
 if TYPE_CHECKING:
     from grip_graph import GripEdge
+    from commit_motivation import CommitMotivation
 
 
 # ---------------------------------------------------------------------------
@@ -109,11 +110,19 @@ class Action:
     defensive_desperation: bool = False
     gate_bypass_reason: Optional[str] = None             # non-None only when the gate was bypassed
     gate_bypass_kind: Optional[str] = None               # "offensive" | "defensive" | None
-    # HAJ-49 — third commit motivation. True when the commit is a deliberately
-    # low-signature tactical feint to reset the kumi-kata passivity clock
-    # (and earn a post-stuffed breathing window). Mutually exclusive with
-    # offensive_desperation: the ladder chooses one pathway per tick.
-    intentional_false_attack: bool = False
+    # HAJ-67 — non-scoring commit motivation (CLOCK_RESET, GRIP_ESCAPE,
+    # SHIDO_FARMING, STAMINA_DESPERATION). None for normal and desperation
+    # commits. See src/commit_motivation.py. Replaces the HAJ-49
+    # `intentional_false_attack: bool` (the legacy flag collapses to
+    # `commit_motivation == CommitMotivation.CLOCK_RESET`).
+    commit_motivation: Optional["CommitMotivation"] = None
+
+    @property
+    def intentional_false_attack(self) -> bool:
+        """HAJ-49 compatibility shim — any non-scoring motivation counts
+        as an intentional false attack from the physics/failure-routing
+        perspective. The specific motivation is on `commit_motivation`."""
+        return self.commit_motivation is not None
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +169,7 @@ def commit_throw(
     defensive_desperation: bool = False,
     gate_bypass_reason: Optional[str] = None,
     gate_bypass_kind: Optional[str] = None,
-    intentional_false_attack: bool = False,
+    commit_motivation: Optional["CommitMotivation"] = None,
 ) -> Action:
     return Action(
         kind=ActionKind.COMMIT_THROW, throw_id=throw_id,
@@ -168,5 +177,5 @@ def commit_throw(
         defensive_desperation=defensive_desperation,
         gate_bypass_reason=gate_bypass_reason,
         gate_bypass_kind=gate_bypass_kind,
-        intentional_false_attack=intentional_false_attack,
+        commit_motivation=commit_motivation,
     )

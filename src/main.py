@@ -159,9 +159,14 @@ def build_sato() -> Judoka:
         arm_reach_cm=183,
         hip_height_cm=96,
         nationality="Japanese",
-        # HAJ-49 — Sato is more aggressive and trained on an attritional
-        # modern-European template; he games the clock with tactical fakes.
-        style_dna={"false_attack_tendency": 0.70},
+        # HAJ-49 / HAJ-67 — Sato is aggressive and trained on an attritional
+        # modern-European template. He games his own clock with tactical
+        # fakes (CLOCK_RESET) and will grind a passive opponent for shido
+        # calls rather than force a scoring attempt (SHIDO_FARMING).
+        style_dna={
+            "false_attack_tendency":  0.70,
+            "shido_farming_tendency": 0.60,
+        },
     )
 
     capability = Capability(
@@ -253,6 +258,80 @@ def build_kimura() -> Judoka:
 
 
 # ===========================================================================
+# BUILD RENARD — HAJ-67 motivation-QA fighter
+# Small-frame, cardio-poor grinder with weak hands. Paired against Sato
+# (attritional uchi-mata specialist) this produces a matchup where Renard
+# routinely ends up grip-dominated, cardio-depleted, and penalized — the
+# conditions that trigger GRIP_ESCAPE and STAMINA_DESPERATION. style_dna
+# carries both non-scoring-motivation keys so they're eligible to fire.
+# ===========================================================================
+def build_renard() -> Judoka:
+    identity = Identity(
+        name="Renard",
+        age=30,
+        weight_class="-73kg",
+        height_cm=170,
+        body_archetype=BodyArchetype.GROUND_SPECIALIST,
+        belt_rank=BeltRank.BROWN,
+        dominant_side=DominantSide.RIGHT,
+        personality_facets={
+            "aggressive": 5,
+            "technical": 6,
+            "confident": 4,   # low — composure slips under pressure
+            "loyal_to_plan": 5,
+        },
+        arm_reach_cm=168,   # short — loses the engagement reach race
+        hip_height_cm=90,
+        nationality="French",
+        style_dna={
+            # Eligible for all four non-scoring motivations; physical
+            # state (cardio, composure, grips) does the gating.
+            "false_attack_tendency":  0.50,
+            "shido_farming_tendency": 0.55,
+        },
+    )
+    capability = Capability(
+        # Hands + core intentionally weak — loses grip wars and tires fast.
+        right_hand=5, left_hand=4,
+        right_forearm=5, left_forearm=4,
+        right_bicep=5, left_bicep=5,
+        right_shoulder=5, left_shoulder=5,
+        right_leg=6, left_leg=6,
+        right_foot=6, left_foot=6,
+        core=5, lower_back=5, neck=5,
+        # CARDIO BOTTOMED — this drives STAMINA_DESPERATION under any
+        # sustained exchange.
+        cardio_capacity=3, cardio_efficiency=3,
+        composure_ceiling=5,   # low ceiling → easier to slip under 55%
+        fight_iq=6,
+        ne_waza_skill=7,
+        right_hip=6, left_hip=6,
+        right_thigh=6, left_thigh=6,
+        right_knee=6, left_knee=6,
+        right_wrist=5, left_wrist=5,
+        head=5,
+        throw_vocabulary=[
+            ThrowID.TAI_OTOSHI,
+            ThrowID.KO_UCHI_GARI,
+            ThrowID.SUMI_GAESHI,
+            ThrowID.SEOI_NAGE,
+            ThrowID.O_UCHI_GARI,
+        ],
+        throw_profiles={
+            ThrowID.TAI_OTOSHI:   JudokaThrowProfile(ThrowID.TAI_OTOSHI,   5, 3),
+            ThrowID.KO_UCHI_GARI: JudokaThrowProfile(ThrowID.KO_UCHI_GARI, 6, 4),
+            ThrowID.SUMI_GAESHI:  JudokaThrowProfile(ThrowID.SUMI_GAESHI,  6, 6),
+            ThrowID.SEOI_NAGE:    JudokaThrowProfile(ThrowID.SEOI_NAGE,    4, 2),
+            ThrowID.O_UCHI_GARI:  JudokaThrowProfile(ThrowID.O_UCHI_GARI,  5, 4),
+        },
+        signature_throws=[ThrowID.TAI_OTOSHI, ThrowID.KO_UCHI_GARI],
+        signature_combos=[],
+    )
+    return Judoka(identity=identity, capability=capability,
+                  state=State.fresh(capability, identity))
+
+
+# ===========================================================================
 # MATCHUPS
 # ===========================================================================
 MATCHUPS = {
@@ -263,6 +342,11 @@ MATCHUPS = {
     "2": (
         "Yamamoto (WHITE) vs Kimura (WHITE)",
         build_yamamoto, build_kimura,
+    ),
+    "3": (
+        "Renard (BROWN, small/cardio-poor) vs Sato (BLACK_1) "
+        "— HAJ-67 motivation QA",
+        build_renard, build_sato,
     ),
 }
 
