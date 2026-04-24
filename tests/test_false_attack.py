@@ -288,8 +288,11 @@ def test_commit_log_line_tags_intentional_false_attack() -> None:
 # Failure outcome — TACTICAL_DROP_RESET override
 # ---------------------------------------------------------------------------
 def test_tactical_drop_reset_has_fast_recovery() -> None:
-    """The whole point of the state: cheap, fast recovery to stance."""
-    assert RECOVERY_TICKS_BY_OUTCOME[FailureOutcome.TACTICAL_DROP_RESET] == 2
+    """The whole point of the state: cheap, fast recovery to stance.
+    HAJ-50 reduces this to the minimum — 1 tick — because tori's CoM was
+    never committed and there is nothing to recover from, only a tempo
+    cost to absorb."""
+    assert RECOVERY_TICKS_BY_OUTCOME[FailureOutcome.TACTICAL_DROP_RESET] == 1
 
 
 def test_failed_false_attack_routes_to_tactical_drop_reset() -> None:
@@ -317,15 +320,16 @@ def test_failed_false_attack_routes_to_tactical_drop_reset() -> None:
     failed = next((e for e in events if e.event_type == "FAILED"), None)
     assert failed is not None
     assert failed.data["outcome"] == FailureOutcome.TACTICAL_DROP_RESET.name
-    assert failed.data["recovery_ticks"] == 2
+    assert failed.data["recovery_ticks"] == 1
     # And the compromised state is tagged on the fighter so counter-window
     # lookups see the lighter vulnerability.
     assert m._compromised_states[tori.identity.name] == FailureOutcome.TACTICAL_DROP_RESET
 
 
-def test_failed_false_attack_light_composure_drop() -> None:
-    """A planned cost shouldn't punish composure as hard as a real failure
-    (0.10 baseline). HAJ-49 uses 0.03 for intentional false attacks."""
+def test_failed_false_attack_negligible_composure_drop() -> None:
+    """A tactical drop is a planned tempo cost, not a failure. HAJ-50
+    reduces the composure hit to near-zero (~0.005) — the fighter is
+    meant to emerge from a false attack mentally unaffected."""
     from match import Match
     from referee import build_suzuki
     tori = _composed_judoka(name="Gaba")
@@ -343,7 +347,118 @@ def test_failed_false_attack_light_composure_drop() -> None:
     )
     post = tori.state.composure_current
     drop = pre - post
-    assert 0.02 <= drop <= 0.06, f"expected ~0.03 composure drop, got {drop}"
+    # Allow a small float-fuzz range around the 0.005 constant.
+    assert 0.0 <= drop <= 0.01, (
+        f"expected near-zero composure drop (~0.005), got {drop}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# HAJ-50 — signature-based discriminator + tuning + prose
+# ---------------------------------------------------------------------------
+def test_low_signature_drop_routes_to_tactical_drop_reset_without_flag() -> None:
+    """HAJ-50 discriminator: even WITHOUT the intentional_false_attack
+    flag, a drop-variant commit whose kuzushi + force signature is below
+    the floor routes to TACTICAL_DROP_RESET. Physics doesn't care about
+    motivation labels — a drop with no kuzushi is mechanically the same
+    thing whether tori planned the fake or stumbled into it."""
+    from failure_resolution import select_failure_outcome
+    from grip_graph import GripGraph
+    from worked_throws import TAI_OTOSHI
+    tori = _composed_judoka(name="Gaba")
+    uke  = _composed_judoka(name="Kyo")
+    place_judoka(tori, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(uke,  com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+    # Empty grip graph + stationary uke → kuzushi=0, force=0.
+    g = GripGraph()
+    resolution = select_failure_outcome(
+        TAI_OTOSHI, tori, uke, g, throw_id=ThrowID.TAI_OTOSHI,
+    )
+    assert resolution.outcome == FailureOutcome.TACTICAL_DROP_RESET
+    assert resolution.recovery_ticks == 1
+
+
+def test_real_commit_drop_does_not_route_to_tactical_drop_reset() -> None:
+    """A genuine drop-variant commit with real kuzushi + force grips
+    routes through the FailureSpec as before — it was a real attempt
+    that simply failed, not a feint."""
+    from failure_resolution import select_failure_outcome
+    from worked_throws import TAI_OTOSHI
+    tori = _composed_judoka(name="Gaba")
+    uke  = _composed_judoka(name="Kyo")
+    place_judoka(tori, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(uke,  com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+    g = _gripped_graph(tori, uke)
+    # Flip grips into DRIVING mode so force-application dim is non-zero
+    # and give uke a real velocity → kuzushi dim above floor.
+    for e in g.edges:
+        e.mode = GripMode.DRIVING
+        e.depth_level = GripDepth.DEEP
+    uke.state.body_state.com_velocity = (-0.8, 0.0)
+    resolution = select_failure_outcome(
+        TAI_OTOSHI, tori, uke, g, throw_id=ThrowID.TAI_OTOSHI,
+        rng=random.Random(1),
+    )
+    assert resolution.outcome != FailureOutcome.TACTICAL_DROP_RESET
+
+
+def test_non_drop_throw_never_routes_to_tactical_drop_reset() -> None:
+    """Only drop-variant throws can land in TACTICAL_DROP_RESET via the
+    discriminator. An Uchi-mata with no signature would fall through the
+    normal FailureSpec path — it's not a drop at all."""
+    from failure_resolution import select_failure_outcome
+    from grip_graph import GripGraph
+    from worked_throws import UCHI_MATA
+    tori = _composed_judoka(name="Gaba")
+    uke  = _composed_judoka(name="Kyo")
+    place_judoka(tori, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(uke,  com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+    g = GripGraph()
+    resolution = select_failure_outcome(
+        UCHI_MATA, tori, uke, g, throw_id=ThrowID.UCHI_MATA,
+        rng=random.Random(1),
+    )
+    assert resolution.outcome != FailureOutcome.TACTICAL_DROP_RESET
+
+
+def test_tactical_drop_reset_config_has_no_counter_bonuses() -> None:
+    """HAJ-50 clears the counter_bonuses dict on TACTICAL_DROP_RESET. Uke
+    cannot score osaekomi transitions against a tori who is already
+    rising; there is no scoop-under for Ura-nage against an uncommitted
+    body. The state carries no exploitable bonus."""
+    from compromised_state import COMPROMISED_STATE_CONFIGS
+    cfg = COMPROMISED_STATE_CONFIGS[FailureOutcome.TACTICAL_DROP_RESET]
+    assert cfg.counter_bonuses == {}
+
+
+def test_tactical_drop_reset_produces_compact_prose() -> None:
+    """HAJ-50 — the log line for a tactical drop must be the compact
+    two-beat register, not the drawn-out '(tag; recovery N tick(s))'
+    narration the generic failure path produces."""
+    from match import Match
+    from referee import build_suzuki
+    tori = _composed_judoka(name="Gaba")
+    uke  = _composed_judoka(name="Kyo")
+    place_judoka(tori, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(uke,  com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+    m = Match(
+        fighter_a=tori, fighter_b=uke, referee=build_suzuki(),
+        stream="debug", seed=1,
+    )
+    m._commit_false_attack[tori.identity.name] = True
+    events = m._resolve_failed_commit(
+        tori, uke, ThrowID.TAI_OTOSHI, "Tai-otoshi", net=-1.0, tick=20,
+    )
+    failed = next((e for e in events if e.event_type == "FAILED"), None)
+    assert failed is not None
+    desc = failed.description
+    assert "Nothing there" in desc, (
+        f"expected compact 'Nothing there' register, got: {desc!r}"
+    )
+    assert "Back up" in desc
+    # The verbose recovery-tick parenthetical should NOT appear.
+    assert "recovery" not in desc
+    assert "tick" not in desc
 
 
 # ---------------------------------------------------------------------------

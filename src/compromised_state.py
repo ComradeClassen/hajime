@@ -174,19 +174,20 @@ def _configs() -> dict[FailureOutcome, CompromisedStateConfig]:
             },
         ),
 
-        # HAJ-49 — tactical drop reset. Tori dropped low enough to sell the
-        # false-attack entry (half-hip, shin brush, or one-knee dip) but the
-        # commitment is shallow — CoM barely dips, both feet stay nearly
-        # weighted, upper body posture returns almost immediately. Counter
-        # window is minimal because tori is already retreating into stance.
-        # This is the point of the pathway: the cost is cheap.
+        # HAJ-49 / HAJ-50 — tactical drop reset. Tori's CoM was never over
+        # the fulcrum and the knee contact was a feint, not a committed
+        # drop. The physical signature is essentially "dipped briefly, now
+        # rising". Counter-bonuses are EMPTY (HAJ-50): uke cannot score an
+        # osaekomi transition against a tori who is already standing back
+        # up, and there is no loaded body to scoop under for Ura-nage. The
+        # only real cost is one tick of no-offense (recovery, set in
+        # failure_resolution.RECOVERY_TICKS_BY_OUTCOME) and the grip-graph
+        # edge-fatigue roll that runs every tick regardless.
         FailureOutcome.TACTICAL_DROP_RESET: CompromisedStateConfig(
-            com_height_delta=-0.10,
+            com_height_delta=-0.05,
             weight_fraction_left=0.55,
             weight_fraction_right=0.45,
-            counter_bonuses={
-                ThrowID.KO_UCHI_GARI: 0.10,
-            },
+            counter_bonuses={},
         ),
 
         # Non-compromised outcomes — no body-state reconfig, no counter bonus.

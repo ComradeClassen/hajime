@@ -51,9 +51,11 @@ RECOVERY_TICKS_BY_OUTCOME: dict[FailureOutcome, int] = {
     FailureOutcome.TORI_STUCK_WITH_UKE_ON_BACK:      4,
     FailureOutcome.TORI_ON_KNEE_UKE_STANDING:        3,
     FailureOutcome.TORI_ON_BOTH_KNEES_UKE_STANDING:  5,
-    # HAJ-49 — tactical drop reset is cheap by design; 2 ticks puts tori
-    # back in stance before uke can meaningfully exploit the entry.
-    FailureOutcome.TACTICAL_DROP_RESET:              2,
+    # HAJ-49 / HAJ-50 — tactical drop reset is cheap by design; 1 tick puts
+    # tori back in stance before uke can even read the entry. HAJ-50 drops
+    # this from 2 to 1 — tori's CoM was never committed, there is nothing
+    # to recover from, only a tempo cost to absorb.
+    FailureOutcome.TACTICAL_DROP_RESET:              1,
     FailureOutcome.STANCE_RESET:                     0,
     FailureOutcome.PARTIAL_THROW:                    0,
     FailureOutcome.UKE_VOLUNTARY_NEWAZA:             0,
@@ -71,6 +73,34 @@ RECOVERY_TICKS_BY_OUTCOME: dict[FailureOutcome, int] = {
 COUNTER_READINESS_GATE: float = 0.50
 FATIGUED_UKE_THRESHOLD: float = 0.60   # leg fatigue above which uke resets rather than counters
 PANICKED_UKE_THRESHOLD: float = 0.30   # composure-fraction below which uke resets
+
+# HAJ-50 — signature-based discriminator for drop-variant throws.
+# A genuine drop commitment (drop-Seoi, drop-Tai-otoshi, drop-Ko-uchi) produces
+# non-trivial kuzushi and force-application dimensions: tori really tried to
+# load uke over the fulcrum. A tactical drop produces near-zero across those
+# dimensions: tori's CoM was never over the fulcrum and there was no real
+# force transfer. When a drop-variant throw fails with signature below this
+# floor, route to TACTICAL_DROP_RESET regardless of the template's FailureSpec
+# — physics doesn't care about motivation labels.
+TACTICAL_DROP_SIGNATURE_FLOOR: float = 0.20
+
+# Throws considered "drop variants" for the purposes of the discriminator.
+# Kept as a module-level tuple rather than importing from action_selection so
+# the two systems can drift apart if their semantics diverge.
+_DROP_VARIANT_THROWS = None   # lazy-resolved to avoid circular ThrowID import timing
+
+
+def _drop_variant_ids() -> tuple:
+    global _DROP_VARIANT_THROWS
+    if _DROP_VARIANT_THROWS is None:
+        from throws import ThrowID
+        _DROP_VARIANT_THROWS = (
+            ThrowID.TAI_OTOSHI,
+            ThrowID.KO_UCHI_GARI,
+            ThrowID.SEOI_NAGE,
+            ThrowID.O_UCHI_GARI,
+        )
+    return _DROP_VARIANT_THROWS
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +123,7 @@ def select_failure_outcome(
     defender: "Judoka",
     graph: "GripGraph",
     rng: random.Random | None = None,
+    throw_id=None,
 ) -> FailureResolution:
     """Pick a FailureOutcome for a failed commit attempt.
 
@@ -106,6 +137,13 @@ def select_failure_outcome(
       3. Uke readiness — a sharp, composed uke with high fight_iq has a real
          chance of firing the secondary (clean counter) branch.
 
+    HAJ-50 adds a pre-stage discriminator: if `throw_id` names a drop-variant
+    throw AND the commit-time signature dimensions (kuzushi + force) are
+    below TACTICAL_DROP_SIGNATURE_FLOOR, route directly to
+    TACTICAL_DROP_RESET. Physically the CoM was never over the fulcrum — the
+    "drop" was a feint, not a committed attempt, regardless of the motivation
+    label the ladder attached.
+
     The outcome is stochastic. Pass `rng` for deterministic tests.
     """
     r = rng if rng is not None else random
@@ -114,6 +152,22 @@ def select_failure_outcome(
     dim_scores = _dimension_scores(throw, attacker, defender, graph)
     worst_dim = min(dim_scores, key=dim_scores.get)
     worst_score = dim_scores[worst_dim]
+
+    # HAJ-50 pre-stage — tactical-drop discriminator. A drop-variant throw
+    # whose force + kuzushi signature at commit is below the floor is
+    # physically indistinguishable from a tactical fake. Skip the
+    # full FailureSpec routing and go straight to TACTICAL_DROP_RESET.
+    if throw_id is not None and throw_id in _drop_variant_ids():
+        commit_signature = dim_scores["kuzushi"] + dim_scores["force"]
+        if commit_signature < TACTICAL_DROP_SIGNATURE_FLOOR:
+            return FailureResolution(
+                outcome=FailureOutcome.TACTICAL_DROP_RESET,
+                recovery_ticks=RECOVERY_TICKS_BY_OUTCOME[
+                    FailureOutcome.TACTICAL_DROP_RESET
+                ],
+                failed_dimension=worst_dim,
+                dimension_score=worst_score,
+            )
 
     # 2. Uke resource gate — is uke fit enough to exploit the failure?
     uke_fatigue    = _avg_leg_fatigue(defender)

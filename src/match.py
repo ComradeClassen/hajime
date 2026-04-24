@@ -1731,20 +1731,22 @@ class Match:
             DESPERATION_COMPOSURE_DROP,
         )
         from throw_templates import FailureOutcome
+        # HAJ-50 — pass throw_id so the signature-based tactical-drop
+        # discriminator can fire for low-signature drop-variant commits
+        # (e.g. a desperation commit that happened to fire on TAI_OTOSHI
+        # with near-zero kuzushi). Physics doesn't care about motivation.
         resolution = select_failure_outcome(
             template, attacker, defender, self.grip_graph,
+            throw_id=throw_id,
         )
 
-        # HAJ-49 — intentional false attack overrides the outcome selection.
-        # The FailureSpec on the template would normally route to the usual
-        # compromised states (TORI_ON_BOTH_KNEES_UKE_STANDING on drop-seoi,
-        # TORI_COMPROMISED_FORWARD_LEAN on tai-otoshi, etc.), but when tori
-        # deliberately chose the low-commitment entry to reset the clock,
-        # the correct landing is TACTICAL_DROP_RESET: 2-tick recovery,
-        # minimal counter exposure. The composure drop is also lighter
-        # because this is a planned cost, not a failure.
+        # HAJ-49 — intentional false attack forces the outcome to
+        # TACTICAL_DROP_RESET even if the discriminator didn't fire (e.g. a
+        # commit that coincidentally produced above-floor signature). The
+        # motivation label wins here because the ladder explicitly chose
+        # the fake, and the log tag should match the failure routing.
         false_attack = self._commit_false_attack.pop(a_name, False)
-        if false_attack:
+        if false_attack and resolution.outcome != FailureOutcome.TACTICAL_DROP_RESET:
             resolution = FailureResolution(
                 outcome=FailureOutcome.TACTICAL_DROP_RESET,
                 recovery_ticks=RECOVERY_TICKS_BY_OUTCOME[
@@ -1759,9 +1761,13 @@ class Match:
         # stack an extra composure drop on top of the base failure cost.
         # We consult the snapshot taken at commit-start, not the current
         # clock (which was reset to 0 when the attack registered).
+        # HAJ-50 — desperation overlay does NOT fire on a TACTICAL_DROP_RESET
+        # outcome (whether label-driven or signature-driven): there's
+        # nothing to extend recovery on and no composure to bleed.
         snapshot_clock = self._commit_kumi_kata_snapshot.pop(a_name, 0)
+        is_tactical_drop = resolution.outcome == FailureOutcome.TACTICAL_DROP_RESET
         desperation = (
-            not false_attack
+            not is_tactical_drop
             and is_desperation_state(attacker, snapshot_clock)
         )
         if desperation:
@@ -1770,9 +1776,12 @@ class Match:
                 resolution, attacker,
                 composure_drop=0.10 + DESPERATION_COMPOSURE_DROP,
             )
-        elif false_attack:
-            # Lighter composure hit: tori planned this cost.
-            apply_failure_resolution(resolution, attacker, composure_drop=0.03)
+        elif is_tactical_drop:
+            # HAJ-50 — near-zero composure hit on the outcome itself.
+            # Whether tori labelled this as an intentional fake or
+            # stumbled into one via a low-signature commit, the cost is
+            # a single tick of no-offense and nothing else.
+            apply_failure_resolution(resolution, attacker, composure_drop=0.005)
         else:
             apply_failure_resolution(resolution, attacker)
 
@@ -1828,6 +1837,21 @@ class Match:
                     data={**data, "counter_thrower": d_name},
                 ),
             ]
+
+        # HAJ-50 — compact register for a tactical drop reset. The generic
+        # "failed (tag; recovery N tick(s))" line overstates the event —
+        # nothing failed, tori briefly dipped and is already rising. Emit
+        # a short two-beat line instead so a reader's eye slides past it
+        # the way tori's tactical drop slides past uke's reading.
+        if outcome == FailureOutcome.TACTICAL_DROP_RESET:
+            return [Event(
+                tick=tick, event_type="FAILED",
+                description=(
+                    f"[throw] {a_name} drops on {throw_name}. Nothing "
+                    f"there. Back up."
+                ),
+                data=data,
+            )]
 
         tag = _FAILURE_TAGS.get(outcome, outcome.name.lower())
         return [Event(
