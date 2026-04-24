@@ -89,6 +89,12 @@ class Identity:
     # Personality facets: 0–10 scale between two poles
     personality_facets: dict[str, int] = field(default_factory=dict)
 
+    # Tokui-waza (得意技) — the throws this judoka has trained into their
+    # identity. Read by grip-configuration modulators (Parts 4.3 / 4.4
+    # "force application modulators"): whether a grip configuration helps
+    # or hurts depends on which throws a judoka is built to fire.
+    tokui_waza: list[ThrowID] = field(default_factory=list)
+
     # -----------------------------------------------------------------------
     # Cultural / physical layer (v0.4 additions) — declared now, read Ring 2+
     # -----------------------------------------------------------------------

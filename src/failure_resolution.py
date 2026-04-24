@@ -175,7 +175,7 @@ def _dimension_scores(
 ) -> dict[str, float]:
     return {
         "kuzushi": match_kuzushi_vector(throw, attacker, defender),
-        "force":   match_force_application(throw, attacker, graph),
+        "force":   match_force_application(throw, attacker, defender, graph),
         "body":    match_body_parts(throw, attacker, defender),
         "posture": match_uke_posture(throw, defender),
     }

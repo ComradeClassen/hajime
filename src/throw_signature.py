@@ -31,7 +31,7 @@ from __future__ import annotations
 from math import acos, hypot, pi
 from typing import TYPE_CHECKING
 
-from enums import GripDepth, GripMode
+from enums import GripDepth, GripMode, DominantSide
 from force_envelope import FORCE_ENVELOPES, delivered_pull_force
 from throw_templates import (
     ThrowClassification, CoupleThrow, LeverThrow, ThrowTemplate,
@@ -39,6 +39,17 @@ from throw_templates import (
     LeverBodyPartRequirement, UkePostureRequirement, SupportRequirement,
     SignatureWeights,
 )
+
+
+# ---------------------------------------------------------------------------
+# FORCE-APPLICATION MODULATORS (Parts 4.3 / 4.4) — calibration targets.
+# Bidirectional effect: grip configuration on the attacker's dominant hand
+# either grants a Lever the lift channel (engaged) or starves it (free),
+# and uke's absence of grips removes the structural resistance a Couple
+# throw's torque has to overcome.
+# ---------------------------------------------------------------------------
+DOMINANT_HAND_FREE_LEVER_PENALTY: float = 0.40  # 0.3–0.5 band; start mid
+UKE_UNGRIPPED_COUPLE_BONUS:       float = 0.30  # ~0.3 per ticket
 
 if TYPE_CHECKING:
     from judoka import Judoka
@@ -194,7 +205,8 @@ def _displacement_past_recoverable(defender: "Judoka") -> float:
 # DIMENSION 2 — FORCE APPLICATION (Part 4.2 dimension 2)
 # ---------------------------------------------------------------------------
 def match_force_application(
-    throw: ThrowTemplate, attacker: "Judoka", graph: "GripGraph",
+    throw: ThrowTemplate, attacker: "Judoka", defender: "Judoka",
+    graph: "GripGraph",
 ) -> float:
     """Score the attacker's current grips against the throw's force-application
     dimension. Reads from the grip graph (edges, depths, modes) rather than
@@ -205,6 +217,18 @@ def match_force_application(
         of the accepted grip types, depth ≥ min_depth, current mode matches.
       - The sum of delivered pull force across driving grips meets the throw's
         force floor (min_torque_nm for Couple, min_lift_force_n for Lever).
+
+    Two bidirectional modulators on top of the averaged base score (Parts
+    4.3 / 4.4, "force application modulators"; calibration targets):
+
+      - Lever throws with `requires_dominant_hand_grip=True`: if tori's
+        dominant hand is not GRIPPING_UKE on a required grip type, subtract
+        DOMINANT_HAND_FREE_LEVER_PENALTY — the lift channel is missing.
+      - Couple throws against an uke with zero grips in GRIPPING_UKE state:
+        add UKE_UNGRIPPED_COUPLE_BONUS — uke has surrendered the structural
+        resistance the torque has to overcome.
+
+    The final score is clamped to [0, 1].
     """
     attacker_edges = graph.edges_owned_by(attacker.identity.name)
     grip_req_tuple = throw.force_grips
@@ -236,7 +260,78 @@ def match_force_application(
         floor = max(1.0, float(throw.min_lift_force_n))
     force_score = min(1.0, delivered / floor)
 
-    return 0.5 * grip_score + 0.5 * force_score
+    score = 0.5 * grip_score + 0.5 * force_score
+
+    # --- Modulators ------------------------------------------------------
+    if throw.classification == ThrowClassification.LEVER:
+        if getattr(throw, "requires_dominant_hand_grip", False):
+            if not _dominant_hand_gripping_required_type(
+                throw, attacker, attacker_edges,
+            ):
+                score -= DOMINANT_HAND_FREE_LEVER_PENALTY
+    else:  # Couple
+        if _uke_has_no_grips(defender, graph):
+            score += UKE_UNGRIPPED_COUPLE_BONUS
+
+    return max(0.0, min(1.0, score))
+
+
+def _dominant_hand_gripping_required_type(
+    throw: "LeverThrow", attacker: "Judoka", attacker_edges: list["GripEdge"],
+) -> bool:
+    """True when tori's dominant hand currently holds a grip on uke whose
+    grip_type_v2 is accepted by the throw's dominant-hand GripRequirement,
+    AND the hand's body-part ContactState is GRIPPING_UKE.
+
+    The dominant hand is the grasping hand for tsurite (the lifting hand).
+    For a right-dominant attacker this is `right_hand`; left-dominant mirrors.
+    The check reads both the grip edge (grasper_part + grip type) and the
+    body-part ContactState — ContactState is the canonical source of truth
+    for "is this hand on uke's gi right now?" per Part 1.6 / 2.7.
+    """
+    from body_state import ContactState as _ContactState
+
+    dom_key = (
+        "right_hand" if attacker.identity.dominant_side == DominantSide.RIGHT
+        else "left_hand"
+    )
+
+    # Find the GripRequirement targeting the dominant hand. If the throw's
+    # force_grips doesn't name the dominant hand, nothing to modulate —
+    # treat as satisfied so no penalty applies.
+    dom_req: "GripRequirement | None" = None
+    for req in throw.force_grips:
+        if req.hand == dom_key:
+            dom_req = req
+            break
+    if dom_req is None:
+        return True
+
+    # ContactState gate — the hand must actually be on uke. A stripped grip
+    # or a reaching hand does not count as engaged.
+    hand_state = attacker.state.body.get(dom_key)
+    if hand_state is None or hand_state.contact_state != _ContactState.GRIPPING_UKE:
+        return False
+
+    # Edge-level gate — there must be an edge from the dominant hand whose
+    # grip_type_v2 is one of the accepted types for the requirement. Depth
+    # and mode are intentionally NOT checked here: the modulator asks the
+    # narrower question "is the hand in play on the right kind of grip?"
+    # — depth and mode already inform the base grip_score above.
+    for edge in attacker_edges:
+        if edge.grasper_part.value != dom_key:
+            continue
+        if edge.grip_type_v2 in dom_req.grip_type:
+            return True
+    return False
+
+
+def _uke_has_no_grips(defender: "Judoka", graph: "GripGraph") -> bool:
+    """True when uke currently owns zero grip edges on tori. Reads the grip
+    graph rather than uke's hand ContactStates so it agrees with the edge
+    list the rest of the signature machinery reads from.
+    """
+    return not graph.edges_owned_by(defender.identity.name)
 
 
 def _grip_requirement_met(
@@ -490,7 +585,7 @@ def signature_match(
     if b == 0.0 and _has_hard_body_gate(throw):
         return 0.0
     k = match_kuzushi_vector(throw, attacker, defender)
-    f = match_force_application(throw, attacker, graph)
+    f = match_force_application(throw, attacker, defender, graph)
     p = match_uke_posture(throw, defender)
     score = w.kuzushi * k + w.force * f + w.body * b + w.posture * p
     # Floating-point hygiene at the boundaries.

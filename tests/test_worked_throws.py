@@ -115,9 +115,19 @@ def test_uchi_mata_below_threshold_without_grips_or_kuzushi() -> None:
     """A Couple throw *can* fire on imperfect kuzushi (spec 4.3), but it
     cannot fire with neither kuzushi nor grips — force + kuzushi dimensions
     both zeroed collapses the weighted sum below the commit threshold.
+
+    Seat a token uke-owned edge so the Part 4.3 ungripped-uke force-dim
+    bonus does not confound the test — the question here is about tori's
+    inputs, not uke's grip state.
     """
     t, s = _pair()
     g = GripGraph()
+    g.add_edge(GripEdge(
+        grasper_id=s.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=t.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.POCKET,
+        strength=0.5, established_tick=0, mode=GripMode.CONNECTIVE,
+    ))
     score = signature_match(UCHI_MATA, t, s, g)
     assert score < UCHI_MATA.commit_threshold
 

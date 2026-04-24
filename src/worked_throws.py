@@ -221,6 +221,9 @@ SEOI_NAGE_MOROTE: LeverThrow = LeverThrow(
         secondary=FailureOutcome.TORI_BENT_FORWARD_LOADED,
         tertiary=FailureOutcome.STANCE_RESET,
     ),
+    # Shoulder-fulcrum lift cannot be driven without tsurite on the lapel
+    # or collar — the lift channel IS the dominant hand.
+    requires_dominant_hand_grip=True,
 )
 
 
@@ -341,6 +344,9 @@ O_GOSHI: LeverThrow = LeverThrow(
         secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
         tertiary=FailureOutcome.STANCE_RESET,
     ),
+    # Hip-fulcrum lift — tsurite on belt/lapel carries uke's weight over
+    # the sacrum. Dominant hand free collapses the lift channel.
+    requires_dominant_hand_grip=True,
 )
 
 
@@ -398,6 +404,9 @@ TAI_OTOSHI: LeverThrow = LeverThrow(
         secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
         tertiary=FailureOutcome.STANCE_RESET,
     ),
+    # Pure rotational Lever — tsurite on lapel rotates uke over the shin
+    # block. Without the dominant hand the pull-around vector is lost.
+    requires_dominant_hand_grip=True,
 )
 
 
@@ -604,6 +613,8 @@ HARAI_GOSHI_CLASSICAL: LeverThrow = LeverThrow(
         secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
         tertiary=FailureOutcome.STANCE_RESET,
     ),
+    # Hip-fulcrum Lever — same lift-channel requirement as O-goshi.
+    requires_dominant_hand_grip=True,
 )
 
 
@@ -716,6 +727,9 @@ O_GURUMA: LeverThrow = LeverThrow(
         secondary=FailureOutcome.KAESHI_WAZA_GENERIC,
         tertiary=FailureOutcome.STANCE_RESET,
     ),
+    # Extended-leg fulcrum with maximum moment arm — tsurite loads uke
+    # over the extended leg. No lift channel without the dominant hand.
+    requires_dominant_hand_grip=True,
 )
 
 

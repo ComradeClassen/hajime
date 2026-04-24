@@ -268,10 +268,13 @@ def test_kuzushi_aligned_with_uke_velocity_flag_ignores_direction() -> None:
 # Dimension 2 — force application
 # ---------------------------------------------------------------------------
 def test_force_zero_without_grips() -> None:
-    t, _ = _pair()
+    t, s = _pair()
     g = GripGraph()
-    throw = _uchi_mata_couple()
-    assert match_force_application(throw, t, g) == 0.0
+    # Use a Lever template so the Couple "uke-ungripped" bonus (Part 4.3
+    # force-application modulator) doesn't apply; this tests the base
+    # computation in isolation.
+    throw = _seoi_lever()
+    assert match_force_application(throw, t, s, g) == 0.0
 
 
 def test_force_scores_both_components_with_deep_driving_grips() -> None:
@@ -279,7 +282,7 @@ def test_force_scores_both_components_with_deep_driving_grips() -> None:
     g = GripGraph()
     _seat_deep_grips(g, t, s)
     throw = _uchi_mata_couple()
-    score = match_force_application(throw, t, g)
+    score = match_force_application(throw, t, s, g)
     # Grip-presence component is 1.0; delivered force floors are tuned to be
     # well met by 2×DEEP DRIVING grips on an athletic attacker.
     assert score >= 0.75
@@ -289,11 +292,19 @@ def test_force_zero_when_grips_are_connective_not_driving() -> None:
     t, s = _pair()
     g = GripGraph()
     _seat_deep_grips(g, t, s)
+    # Seat a token uke-owned edge so the Couple "uke-ungripped" bonus
+    # (Part 4.3 force-application modulator) doesn't perturb the zero.
+    g.add_edge(GripEdge(
+        grasper_id=s.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=t.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.POCKET,
+        strength=0.5, established_tick=0, mode=GripMode.CONNECTIVE,
+    ))
     for e in g.edges:
         e.mode = GripMode.CONNECTIVE
     throw = _uchi_mata_couple()
     # Grip-presence fails (mode mismatch) AND delivered DRIVING force is zero.
-    assert match_force_application(throw, t, g) == 0.0
+    assert match_force_application(throw, t, s, g) == 0.0
 
 
 # ---------------------------------------------------------------------------

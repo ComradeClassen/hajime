@@ -558,6 +558,8 @@ CoupleThrow:
 
 Commit thresholds for Couple are deliberately lower than Lever because the throw works *with* uke's motion rather than against it. A partial signature match — uke moving in roughly the right direction with decent force coupled — is enough for a skilled judoka to commit.
 
+**Force application modulators (Couple).** A Couple throw fires *against* uke's resistance to torque; when uke surrenders resistance, the torque lands more cleanly. The force-application dimension is therefore additively modulated on top of the grip-presence + delivered-force base: when uke currently owns zero grip edges on tori (i.e. zero hands in `GRIPPING_UKE` state), tori's `force_application` score receives a `UKE_UNGRIPPED_COUPLE_BONUS` of ~0.3 (clamped to the [0, 1] ceiling). Uke with no hands engaged is structurally open — no hikite to stiffen, no tsurite to post on tori's shoulder — and the couple's rotational authority flows more directly into uke's CoM. The exact magnitude is a calibration target; the *coupling* (uke's grip presence bidirectionally modulates tori's force-dim) is committed.
+
 ### 4.4 The Lever throw template
 
 ```
@@ -599,6 +601,8 @@ LeverThrow:
 **Commit rule for Lever throws.** Signature check at Step 10. Tori commits on perceived match exceeding `commit_threshold`. Execution requires three conditions to all hold during the kake tick(s): actual match exceeds threshold, `uke_com_over_fulcrum` is true, `min_lift_force` can be sustained. If any condition fails mid-kake, the throw stalls — tori holds uke partially lifted without completing rotation. Tori then either re-commits (costs another tick of driving force, extending exposure to counter) or releases and eats compromised state.
 
 Lever throw thresholds are higher because Lever throws cannot exploit imperfect conditions — you cannot lift a partially-resisting opponent over your hip. Real kuzushi is mandatory. The higher threshold reflects that mechanical demand.
+
+**Force application modulators (Lever).** Lever throws with a lift channel — hip-fulcrum, shoulder-fulcrum, extended-leg-fulcrum — physically require tori's dominant hand on a qualifying grip (tsurite on lapel, collar, or belt) to drive the lift. The Lever template therefore carries a `requires_dominant_hand_grip: bool` flag, and when True the force-application dimension is subtractively modulated: if tori's dominant hand is not in `GRIPPING_UKE` ContactState on one of the accepted grip types for that hand's `GripRequirement`, tori's `force_application` score loses a `DOMINANT_HAND_FREE_LEVER_PENALTY` of ~0.4 (calibration target in the 0.3–0.5 band, clamped to the [0, 1] floor). The dominant hand is resolved per-judoka from `Identity.dominant_side` — left-dominant judoka mirror the hand assignment. Sacrifice-style Lever throws that finish on body weight (foot-on-belt Tomoe-nage) leave the flag False; their lift channel doesn't run through the dominant hand in the same way. Combined with the Couple modulator above, grip configuration becomes a **bidirectional** force-transfer modulator: the same grip map that empowers a Lever for tori starves a Couple (because uke is also gripping *back*), while an ungripped uke boosts the Couple channel but contributes nothing to the Lever's requirement on tori.
 
 ### 4.5 Failure outcomes — open-ended, not binary
 

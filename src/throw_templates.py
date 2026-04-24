@@ -364,6 +364,14 @@ class LeverThrow:
     failure_outcome:           FailureSpec
     weights: Optional[SignatureWeights] = None
 
+    # Part 4.4 — force application modulator. True means the throw physically
+    # requires tori's dominant hand on a qualifying grip (the lift/rotation
+    # hand) to drive the lever. When True, a force-dim penalty applies if the
+    # dominant hand is not GRIPPING_UKE on an accepted grip type. Hip-fulcrum
+    # and shoulder-fulcrum lifts set this True; foot-on-belt sacrifice throws
+    # (Tomoe-nage) leave it False — body weight finishes the arc.
+    requires_dominant_hand_grip: bool = False
+
     classification: ThrowClassification = field(
         default=ThrowClassification.LEVER, init=False,
     )
