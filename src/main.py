@@ -389,17 +389,21 @@ def _run_one_match(
 def _interactive_loop(
     ref_builder, debug_factory=None, seed_for_next=None, stream="both",
 ) -> None:
+    # Derive the quit key from the matchup count so adding new matchups
+    # doesn't collide with the exit option (HAJ-67 added matchup 3,
+    # which previously was the hardcoded quit slot).
+    quit_key = str(len(MATCHUPS) + 1)
     while True:
         print()
         print("Choose a matchup:")
         for key, (label, _, _) in MATCHUPS.items():
             print(f"  [{key}] {label}")
-        print("  [3] Quit")
+        print(f"  [{quit_key}] Quit")
         try:
             choice = input("> ").strip()
         except EOFError:
             break
-        if choice == "3" or choice.lower() in ("q", "quit", "exit"):
+        if choice == quit_key or choice.lower() in ("q", "quit", "exit"):
             break
         if choice not in MATCHUPS:
             print(f"Unknown option: {choice!r}")
