@@ -351,6 +351,22 @@ For v0.1, the action-selection logic lives inside the `Judoka` class as a hardco
 
 Higher fight_iq narrows the gap between "signature detected" and "action taken to close gap" and improves perception accuracy in step 2.
 
+### 3.3.1 Commit motivations — three distinct pathways (HAJ-49)
+
+The priority ladder's commit rungs (2 and 5) together cover three mutually-exclusive *commit motivations*, each producing a COMMIT_THROW with different downstream semantics. A reader of the match log should be able to tell them apart at a glance; a downstream system (Ring 2+ coach memory, match analytics) should be able to count them separately.
+
+**1. Normal commit — signature clears threshold.** The classical path. A throw's perceived signature match (Part 3.5) exceeds the fighter's commit threshold, the grip-presence gate passes (Part 2.6 / HAJ-36), and the fighter commits. This is the commit that represents real judo — tori saw the opening and took it.
+
+**2. Offensive desperation — panicked or imminent-shido.** Triggered inside the grip-presence gate, not the signature check. Two sub-triggers (OR semantics): composure has collapsed below 30% AND the kumi-kata clock is near shido (≥22 ticks); OR the kumi-kata clock has reached 29 (one tick from passivity shido). Either way, the grip-presence gate is bypassed and *any* throw whose signature is non-trivially perceptible will fire. This represents a fighter out of tactical choices — they'll throw anything.
+
+**3. Intentional false attack — tactical clock reset.** The third pathway added in HAJ-49. Fires when the kumi-kata clock is in the pre-shido zone [18, 29), the fighter has the composure and fight_iq to not be desperate, and their cultural / style disposition (`Identity.style_dna["false_attack_tendency"]`) supports using the tactic. The fighter selects a drop-variant throw (two-knee drop Seoi-nage, drop Tai-otoshi, drop Ko-uchi) specifically because these have the fastest recovery-to-stance — and commits. The commit itself resets the kumi-kata clock (Part 2.6) and the post-stuffed Matte earns a brief breathing window. This is real judo: the tactic is named and taught, particularly in modern European competition schools (French INSEP lineage).
+
+Per-tick firing is probabilistic, scaled by tendency — a high-tendency fighter doesn't fake every eligible tick, they pick their moment. This probabilistic gate matters: a deterministic per-tick trigger would fully suppress the offensive-desperation pathway from ever surfacing (the fighter would fake at tick 18 every cycle and never reach 29).
+
+The failure outcome for an intentional false attack is not the compromised state the template's FailureSpec would normally route to (two-knee-drop Seoi-nage would otherwise land in `TORI_ON_BOTH_KNEES_UKE_STANDING` with 5 tick recovery). Instead, HAJ-49 adds a new `TACTICAL_DROP_RESET` compromised state (Part 6.3): shallow CoM drop, both feet near-weighted, 2-tick recovery, minimal counter-window vulnerability. This is the mechanical representation of a planned cost: the entry was shallow, tori is already recovering, and uke has little to exploit. A failed false attack also takes a lighter composure hit (−0.03 rather than the baseline −0.10) because tori planned this cost rather than suffering it.
+
+The commit log line surfaces the motivation so all three are distinguishable: a normal commit has no tag, offensive desperation tags as `(offensive desperation; gate bypassed: …)`, and an intentional false attack tags as `(intentional false attack; clock reset)`.
+
 ### 3.4 The tick update — 12 steps in order
 
 Every tick, both judoka have chosen their actions. The update proceeds in strict order:
@@ -1139,6 +1155,12 @@ When a throw fails, tori does not reset to neutral. Tori enters a specific compr
 - Origin: failed foot sweep due to timing window miss (too early — foot still planted).
 - Counter vulnerabilities: modest. Uke can counter with a direct foot sweep of their own (timing advantage: uke knows tori just missed), apply a direct attack while tori rebalances, or simply accept the reset.
 - Recovery: 1 tick. This is the lightest compromised state because the foot sweep's own force commitment is low.
+
+**TACTICAL_DROP_RESET (HAJ-49).**
+- Configuration: shallow CoM drop (≈ 0.10 m), both feet near-weighted (0.55 / 0.45), upper-body posture unchanged. Not structurally compromised — tori is already returning to stance as the state resolves.
+- Origin: a failed intentional-false-attack commit (Part 3.3.1). Tori chose a drop-variant throw specifically to reset the kumi-kata passivity clock, not because the signature was satisfied. The "failure" is by design.
+- Counter vulnerabilities: minimal. A small bonus for uke's Ko-uchi-gari (the tactical fake flashes uke's lead foot briefly); nothing else. An uke who reads the fake correctly can still punish, but the geometry doesn't expose tori the way a genuine failed commit does.
+- Recovery: 2 ticks. The second-lightest compromised state, just above `TORI_SWEEP_BOUNCES_OFF`. Fast recovery-to-stance is the whole point of the pathway — tori is paying this cost to reset the clock, not to land a throw.
 
 **TORI_DESPERATION_STATE.**
 - Configuration: any throw attempt that failed while tori's composure was low and kumi-kata clock was near expiry. Compound compromised state combining the primary failure state with additional penalties: composure drops further, next attempt's perception error widens, stun_ticks may increment.

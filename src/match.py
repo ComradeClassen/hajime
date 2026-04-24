@@ -129,6 +129,7 @@ def _failure_display_tables() -> tuple[dict, dict]:
         FailureOutcome.TORI_ON_KNEE_UKE_STANDING:       "on one knee, uke standing",
         FailureOutcome.TORI_ON_BOTH_KNEES_UKE_STANDING: "on both knees, uke standing",
         FailureOutcome.TORI_SWEEP_BOUNCES_OFF:          "sweep bounces off",
+        FailureOutcome.TACTICAL_DROP_RESET:             "tactical drop, clock reset",
         FailureOutcome.PARTIAL_THROW:                   "partial throw, no score",
         FailureOutcome.STANCE_RESET:                    "stance reset",
         FailureOutcome.UKE_VOLUNTARY_NEWAZA:            "uke pulls guard to ne-waza",
@@ -477,6 +478,12 @@ class Match:
         # when the throw was actually decided on.
         self._commit_kumi_kata_snapshot: dict[str, int] = {}
 
+        # HAJ-49 — per-fighter flag recording whether the current commit
+        # was an intentional false attack. Set in _resolve_commit_throw,
+        # consumed in _resolve_failed_commit to override the outcome to
+        # TACTICAL_DROP_RESET. Cleared when the attempt resolves.
+        self._commit_false_attack: dict[str, bool] = {}
+
         # For MatchState snapshots
         self._a_score: dict = {"waza_ari": 0, "ippon": False}
         self._b_score: dict = {"waza_ari": 0, "ippon": False}
@@ -667,6 +674,7 @@ class Match:
                     defensive_desperation=act.defensive_desperation,
                     gate_bypass_reason=act.gate_bypass_reason,
                     gate_bypass_kind=act.gate_bypass_kind,
+                    intentional_false_attack=act.intentional_false_attack,
                 )
                 events.extend(commit_events)
                 if self.match_over:
@@ -1047,6 +1055,7 @@ class Match:
         defensive_desperation: bool = False,
         gate_bypass_reason: Optional[str] = None,
         gate_bypass_kind: Optional[str] = None,
+        intentional_false_attack: bool = False,
     ) -> list[Event]:
         """Entry point for a COMMIT_THROW action.
 
@@ -1088,16 +1097,26 @@ class Match:
         # elite throw still has a [throw] commit line preceding its [score].
         collapse_n1 = n <= 1
 
-        # HAJ-35 — surface the commit-time desperation + grip-gate-bypass
-        # status directly on the [throw] line. Before this, desperation was
-        # only visible on *failures*; a successful desperation throw looked
-        # like any other commit. Now every commit declares its state.
+        # HAJ-49 — stash the commit-time motivation so _resolve_failed_commit
+        # can route the outcome correctly (intentional false attack → forced
+        # TACTICAL_DROP_RESET regardless of which dimension scored worst).
+        self._commit_false_attack[attacker.identity.name] = intentional_false_attack
+
+        # HAJ-35 / HAJ-49 — surface commit-time motivation + grip-gate-bypass
+        # on the [throw] line. Before HAJ-35, desperation was only visible on
+        # failures; now every commit declares its state. HAJ-49 adds the
+        # intentional-false-attack tag "clock reset" so the log makes the
+        # distinct motivation unmistakable.
         tags: list[str] = []
         if offensive_desperation:
             tags.append("offensive desperation")
         if defensive_desperation:
             tags.append("defensive desperation")
-        if gate_bypass_reason is not None:
+        if intentional_false_attack:
+            tags.append("intentional false attack; clock reset")
+        elif gate_bypass_reason is not None:
+            # Genuine gate-bypass reason only surfaces when the commit isn't
+            # already tagged as a false attack (which shares the bypass slot).
             tags.append(f"gate bypassed: {gate_bypass_reason}")
         tag_suffix = f"  ({'; '.join(tags)})" if tags else ""
         events: list[Event] = [Event(
@@ -1116,6 +1135,7 @@ class Match:
                 "defensive_desperation": defensive_desperation,
                 "gate_bypass_reason":    gate_bypass_reason,
                 "gate_bypass_kind":      gate_bypass_kind,
+                "intentional_false_attack": intentional_false_attack,
             },
         )]
 
@@ -1635,30 +1655,46 @@ class Match:
                 ))
 
         elif outcome == "STUFFED":
-            self._stuffed_throw_tick = tick
-            events.append(Event(
-                tick=tick,
-                event_type="STUFFED",
-                description=(
-                    f"[throw] {a_name} stuffed on {throw_name} — "
-                    f"{d_name} defends. Ne-waza window open."
-                ),
-            ))
-            # Composure hit on attacker for being stuffed
-            attacker.state.composure_current = max(
-                0.0,
-                attacker.state.composure_current - 0.3
-            )
-            # Roll for ne-waza commitment
-            stuffed_events = self._resolve_newaza_transition(
-                attacker, defender, tick
-            )
-            events.extend(stuffed_events)
+            # HAJ-49 — a STUFFED result on an intentional false attack
+            # collapses to the FAILED path: the point of the pathway is the
+            # cheap failure. Don't set the ne-waza window (there was nothing
+            # to stuff) and don't apply the heavy -0.30 stuffed composure hit.
+            # TACTICAL_DROP_RESET override inside _resolve_failed_commit
+            # supplies the correct compromised state and the lighter drop.
+            if self._commit_false_attack.get(a_name, False):
+                events.extend(self._resolve_failed_commit(
+                    attacker, defender, throw_id, throw_name, net, tick,
+                ))
+            else:
+                self._stuffed_throw_tick = tick
+                events.append(Event(
+                    tick=tick,
+                    event_type="STUFFED",
+                    description=(
+                        f"[throw] {a_name} stuffed on {throw_name} — "
+                        f"{d_name} defends. Ne-waza window open."
+                    ),
+                ))
+                # Composure hit on attacker for being stuffed
+                attacker.state.composure_current = max(
+                    0.0,
+                    attacker.state.composure_current - 0.3
+                )
+                # Roll for ne-waza commitment
+                stuffed_events = self._resolve_newaza_transition(
+                    attacker, defender, tick
+                )
+                events.extend(stuffed_events)
 
         else:  # FAILED
             events.extend(self._resolve_failed_commit(
                 attacker, defender, throw_id, throw_name, net, tick,
             ))
+
+        # HAJ-49 — janitor: clear the false-attack flag for this attacker.
+        # _resolve_failed_commit pops it on failure; this covers IPPON /
+        # WAZA_ARI / no-score landings where the flag wasn't consumed.
+        self._commit_false_attack.pop(a_name, None)
 
         return events
 
@@ -1688,14 +1724,35 @@ class Match:
 
         from failure_resolution import (
             select_failure_outcome, apply_failure_resolution,
+            FailureResolution, RECOVERY_TICKS_BY_OUTCOME,
         )
         from compromised_state import (
             is_desperation_state, apply_desperation_overlay,
             DESPERATION_COMPOSURE_DROP,
         )
+        from throw_templates import FailureOutcome
         resolution = select_failure_outcome(
             template, attacker, defender, self.grip_graph,
         )
+
+        # HAJ-49 — intentional false attack overrides the outcome selection.
+        # The FailureSpec on the template would normally route to the usual
+        # compromised states (TORI_ON_BOTH_KNEES_UKE_STANDING on drop-seoi,
+        # TORI_COMPROMISED_FORWARD_LEAN on tai-otoshi, etc.), but when tori
+        # deliberately chose the low-commitment entry to reset the clock,
+        # the correct landing is TACTICAL_DROP_RESET: 2-tick recovery,
+        # minimal counter exposure. The composure drop is also lighter
+        # because this is a planned cost, not a failure.
+        false_attack = self._commit_false_attack.pop(a_name, False)
+        if false_attack:
+            resolution = FailureResolution(
+                outcome=FailureOutcome.TACTICAL_DROP_RESET,
+                recovery_ticks=RECOVERY_TICKS_BY_OUTCOME[
+                    FailureOutcome.TACTICAL_DROP_RESET
+                ],
+                failed_dimension=resolution.failed_dimension,
+                dimension_score=resolution.dimension_score,
+            )
 
         # Part 6.3 — desperation overlay: tori was panicked AND near
         # kumi-kata shido at commit time. Extend recovery by +2 ticks and
@@ -1703,13 +1760,19 @@ class Match:
         # We consult the snapshot taken at commit-start, not the current
         # clock (which was reset to 0 when the attack registered).
         snapshot_clock = self._commit_kumi_kata_snapshot.pop(a_name, 0)
-        desperation = is_desperation_state(attacker, snapshot_clock)
+        desperation = (
+            not false_attack
+            and is_desperation_state(attacker, snapshot_clock)
+        )
         if desperation:
             resolution = apply_desperation_overlay(resolution)
             apply_failure_resolution(
                 resolution, attacker,
                 composure_drop=0.10 + DESPERATION_COMPOSURE_DROP,
             )
+        elif false_attack:
+            # Lighter composure hit: tori planned this cost.
+            apply_failure_resolution(resolution, attacker, composure_drop=0.03)
         else:
             apply_failure_resolution(resolution, attacker)
 

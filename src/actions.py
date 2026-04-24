@@ -109,6 +109,11 @@ class Action:
     defensive_desperation: bool = False
     gate_bypass_reason: Optional[str] = None             # non-None only when the gate was bypassed
     gate_bypass_kind: Optional[str] = None               # "offensive" | "defensive" | None
+    # HAJ-49 — third commit motivation. True when the commit is a deliberately
+    # low-signature tactical feint to reset the kumi-kata passivity clock
+    # (and earn a post-stuffed breathing window). Mutually exclusive with
+    # offensive_desperation: the ladder chooses one pathway per tick.
+    intentional_false_attack: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +160,7 @@ def commit_throw(
     defensive_desperation: bool = False,
     gate_bypass_reason: Optional[str] = None,
     gate_bypass_kind: Optional[str] = None,
+    intentional_false_attack: bool = False,
 ) -> Action:
     return Action(
         kind=ActionKind.COMMIT_THROW, throw_id=throw_id,
@@ -162,4 +168,5 @@ def commit_throw(
         defensive_desperation=defensive_desperation,
         gate_bypass_reason=gate_bypass_reason,
         gate_bypass_kind=gate_bypass_kind,
+        intentional_false_attack=intentional_false_attack,
     )

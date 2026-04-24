@@ -174,6 +174,21 @@ def _configs() -> dict[FailureOutcome, CompromisedStateConfig]:
             },
         ),
 
+        # HAJ-49 — tactical drop reset. Tori dropped low enough to sell the
+        # false-attack entry (half-hip, shin brush, or one-knee dip) but the
+        # commitment is shallow — CoM barely dips, both feet stay nearly
+        # weighted, upper body posture returns almost immediately. Counter
+        # window is minimal because tori is already retreating into stance.
+        # This is the point of the pathway: the cost is cheap.
+        FailureOutcome.TACTICAL_DROP_RESET: CompromisedStateConfig(
+            com_height_delta=-0.10,
+            weight_fraction_left=0.55,
+            weight_fraction_right=0.45,
+            counter_bonuses={
+                ThrowID.KO_UCHI_GARI: 0.10,
+            },
+        ),
+
         # Non-compromised outcomes — no body-state reconfig, no counter bonus.
         FailureOutcome.STANCE_RESET:         CompromisedStateConfig(),
         FailureOutcome.PARTIAL_THROW:        CompromisedStateConfig(),

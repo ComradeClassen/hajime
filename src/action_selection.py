@@ -37,6 +37,43 @@ PROBE_MAGNITUDE_N:            float = 120.0 # default-rung probing force
 # Side-effect: match feeds us the grasper's kumi-kata clock; it's not
 # visible on the Judoka itself because it belongs to the Match.
 
+# HAJ-49 — intentional false-attack pathway.
+# A third commit motivation alongside normal-signature-clears-threshold and
+# offensive-desperation. A fighter with enough composure to not be panicked
+# but whose kumi-kata clock has drifted into the pre-shido zone may fire a
+# deliberately low-commitment drop variant to reset the clock and earn a
+# brief post-stuffed breathing window. See physics-substrate.md Part 3.3.1.
+FALSE_ATTACK_CLOCK_MIN: int = 18   # earliest clock tick the tactical fake fires
+FALSE_ATTACK_CLOCK_MAX: int = 29   # latest — strictly below imminent-shido (29) so
+                                    # desperation (which fires at 29) takes precedence
+FALSE_ATTACK_MIN_FIGHT_IQ: int = 4  # white/yellow belts don't game the clock; they panic
+FALSE_ATTACK_TENDENCY_KEY: str = "false_attack_tendency"  # Identity.style_dna key
+FALSE_ATTACK_TENDENCY_THRESHOLD: float = 0.40
+FALSE_ATTACK_TENDENCY_DEFAULT:   float = 0.50  # neutral baseline when the key is absent
+# Per-tick probability gate. A high-tendency fighter with ~11 ticks in the
+# [18, 29) window doesn't fake every single tick — that would fully suppress
+# offensive desperation from ever surfacing. Scale tendency by this constant
+# so a tendency=0.7 fighter fakes ~7% of eligible ticks (~55% cumulatively
+# over the window), leaving meaningful room for the desperation pathway to
+# fire when the window expires without a fake committing.
+FALSE_ATTACK_PER_TICK_SCALE: float = 0.10
+
+# Priority order of drop-variant throws for a false attack, most preferred
+# first. These are the lowest-commitment entries in standard vocabularies:
+# fast recovery-to-stance is the whole point of the pathway, so we prefer
+# shin-block (TAI_OTOSHI), foot-sweep (KO_UCHI_GARI), drop-seoi, and
+# inner-reap (O_UCHI_GARI) over hip-fulcrum or high-amplitude throws.
+FALSE_ATTACK_PREFERENCES: tuple[ThrowID, ...] = (
+    ThrowID.TAI_OTOSHI,
+    ThrowID.KO_UCHI_GARI,
+    ThrowID.SEOI_NAGE,
+    ThrowID.O_UCHI_GARI,
+)
+
+# Gate-bypass reason string for the commit log — read by match.py into the
+# same tag-suffix pipeline the desperation path already uses.
+REASON_INTENTIONAL_FALSE_ATTACK: str = "intentional_false_attack"
+
 
 # ---------------------------------------------------------------------------
 # TOP-LEVEL ENTRY POINT
@@ -82,6 +119,7 @@ def select_actions(
         judoka, opponent, graph, r,
         offensive_desperation=offensive_desperation,
         defensive_desperation=defensive_desperation,
+        kumi_kata_clock=kumi_kata_clock,
     )
     if commit is not None:
         return [commit]
@@ -166,13 +204,27 @@ def _try_commit(
     *,
     offensive_desperation: bool = False,
     defensive_desperation: bool = False,
+    kumi_kata_clock: int = 0,
 ) -> Optional[Action]:
     """If there's a throw whose *perceived* signature clears the commit
     threshold AND the formal grip-presence gate allows it (or is bypassed
     by desperation), return a COMMIT_THROW Action for it. Otherwise None.
 
-    The returned Action carries the desperation / gate-bypass metadata so
-    Match can surface it in the log.
+    Three commit pathways in priority order (HAJ-49):
+
+      1. Normal signature-clears-threshold commit — the classical path.
+      2. Offensive desperation — panicked or imminent-shido (Part 6.3).
+      3. Intentional false attack — composed fighter, clock in pre-shido
+         zone, picks a drop variant to reset the clock on purpose.
+
+    Normal commit is tried first; desperation is resolved by the
+    grip-presence gate inside the main loop (gate bypass is how its bypass
+    semantics are wired). The intentional false attack is a separate branch
+    consulted only when no normal commit is available AND desperation isn't
+    firing.
+
+    The returned Action carries the motivation metadata so Match can
+    surface it on the commit log line.
     """
     from perception import actual_signature_match, perceive
 
@@ -217,6 +269,88 @@ def _try_commit(
             gate_bypass_reason=gate.reason if gate.bypassed else None,
             gate_bypass_kind=gate.bypass_kind,
         )
+
+    # HAJ-49 — intentional false attack. Falls through only when the normal
+    # pathway found nothing committable and offensive desperation isn't
+    # firing. The commit resets the kumi-kata clock (in _resolve_commit_throw)
+    # and routes to TACTICAL_DROP_RESET on failure — fast recovery, minimal
+    # counter exposure. That is the whole point.
+    if (not offensive_desperation
+            and not defensive_desperation
+            and _should_fire_false_attack(judoka, kumi_kata_clock, rng)):
+        tid = _select_false_attack_throw(judoka, graph)
+        if tid is not None:
+            return commit_throw(
+                tid,
+                intentional_false_attack=True,
+                gate_bypass_reason=REASON_INTENTIONAL_FALSE_ATTACK,
+                gate_bypass_kind="false_attack",
+            )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# HAJ-49 — intentional false attack: helpers
+# ---------------------------------------------------------------------------
+def _should_fire_false_attack(
+    judoka: "Judoka", kumi_kata_clock: int,
+    rng: Optional[random.Random] = None,
+) -> bool:
+    """Gate for the intentional-false-attack pathway.
+
+    Four hard gates (all must hold) plus a per-tick probability roll:
+      - clock is in the [MIN, MAX) pre-shido zone (18..28 inclusive by default)
+      - fighter has fight_iq >= threshold (whites/yellows panic, don't fake)
+      - style_dna[false_attack_tendency] >= threshold (tactical disposition —
+        French INSEP / modern European competition styles favor this;
+        classical Kodokan ura-schools lean less on it)
+      - fighter has at least one drop-variant throw in their vocabulary
+      - probabilistic firing: per-tick probability = tendency × scale, so
+        a high-tendency fighter doesn't fake every eligible tick — they
+        pick their moment. This leaves room for offensive desperation to
+        fire when the window elapses without a fake.
+
+    `rng` is optional — when None the probability roll is skipped and the
+    function returns True whenever the hard gates pass. This keeps unit
+    tests deterministic without bolting in a seed.
+    """
+    if not (FALSE_ATTACK_CLOCK_MIN <= kumi_kata_clock < FALSE_ATTACK_CLOCK_MAX):
+        return False
+    if judoka.capability.fight_iq < FALSE_ATTACK_MIN_FIGHT_IQ:
+        return False
+    tendency = judoka.identity.style_dna.get(
+        FALSE_ATTACK_TENDENCY_KEY, FALSE_ATTACK_TENDENCY_DEFAULT,
+    )
+    if tendency < FALSE_ATTACK_TENDENCY_THRESHOLD:
+        return False
+    if not any(tid in judoka.capability.throw_vocabulary
+               for tid in FALSE_ATTACK_PREFERENCES):
+        return False
+    if rng is None:
+        return True
+    return rng.random() < tendency * FALSE_ATTACK_PER_TICK_SCALE
+
+
+def _select_false_attack_throw(
+    judoka: "Judoka", graph: "GripGraph",
+) -> Optional[ThrowID]:
+    """Pick the most-preferred drop variant that's (a) in the fighter's
+    vocabulary, (b) has a registered THROW_DEFS entry, and (c) passes
+    minimal grip-presence: at least one owned edge exists (the `not
+    own_edges` rung 1 check already enforced this upstream, but being
+    explicit here keeps the helper self-contained).
+
+    Returns None if no candidate qualifies — caller falls through.
+    """
+    own_edges = graph.edges_owned_by(judoka.identity.name)
+    if not own_edges:
+        return None
+    for tid in FALSE_ATTACK_PREFERENCES:
+        if tid not in judoka.capability.throw_vocabulary:
+            continue
+        if tid not in THROW_DEFS:
+            continue
+        return tid
     return None
 
 

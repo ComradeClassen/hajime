@@ -60,6 +60,10 @@ def build_tanaka() -> Judoka:
         arm_reach_cm=190,
         hip_height_cm=101,
         nationality="Japanese",
+        # HAJ-49 — style_dna hook. Tanaka is classical Kodokan-lineage; he
+        # leans on clean kuzushi rather than feint-for-clock-reset. Neutral
+        # baseline keeps the pathway observable without dominating.
+        style_dna={"false_attack_tendency": 0.45},
     )
 
     capability = Capability(
@@ -155,6 +159,9 @@ def build_sato() -> Judoka:
         arm_reach_cm=183,
         hip_height_cm=96,
         nationality="Japanese",
+        # HAJ-49 — Sato is more aggressive and trained on an attritional
+        # modern-European template; he games the clock with tactical fakes.
+        style_dna={"false_attack_tendency": 0.70},
     )
 
     capability = Capability(

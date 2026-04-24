@@ -51,6 +51,9 @@ RECOVERY_TICKS_BY_OUTCOME: dict[FailureOutcome, int] = {
     FailureOutcome.TORI_STUCK_WITH_UKE_ON_BACK:      4,
     FailureOutcome.TORI_ON_KNEE_UKE_STANDING:        3,
     FailureOutcome.TORI_ON_BOTH_KNEES_UKE_STANDING:  5,
+    # HAJ-49 — tactical drop reset is cheap by design; 2 ticks puts tori
+    # back in stance before uke can meaningfully exploit the entry.
+    FailureOutcome.TACTICAL_DROP_RESET:              2,
     FailureOutcome.STANCE_RESET:                     0,
     FailureOutcome.PARTIAL_THROW:                    0,
     FailureOutcome.UKE_VOLUNTARY_NEWAZA:             0,

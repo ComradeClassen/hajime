@@ -90,6 +90,11 @@ class FailureOutcome(Enum):
     TORI_ON_KNEE_UKE_STANDING        = auto()
     TORI_ON_BOTH_KNEES_UKE_STANDING  = auto()
     TORI_SWEEP_BOUNCES_OFF           = auto()
+    # HAJ-49 — tactical drop reset. Tori chose to fire a low-commitment
+    # drop variant specifically to reset the kumi-kata passivity clock
+    # and earn a brief post-stuffed breathing window. Not a failure of
+    # execution; a deliberate cost paid for a tempo benefit.
+    TACTICAL_DROP_RESET              = auto()
     # Generic 4.5 outcomes
     PARTIAL_THROW                    = auto()
     STANCE_RESET                     = auto()
