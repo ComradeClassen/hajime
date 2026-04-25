@@ -1,4 +1,4 @@
-# The Cultural Layer — Design Note v0.1
+# The Cultural Layer — Design Note v0.2
 ### National Styles, Inherited DNA, and Emergent Dojo Identity
 
 *This document specifies the cultural and lineage layer of Hajime. It is
@@ -319,6 +319,176 @@ shift their training lineage closer to the dojo's norm.
 
 ---
 
+## The Six Cultural Inputs
+
+The Six Cultural Inputs are the canonical lever set. No additional
+levers; no replacements. Adding a seventh would be a meaningful
+design change requiring its own treatment.
+
+Each lever has a primary axis it most strongly affects. Each also
+cross-affects other axes secondarily — these mappings name the
+primary effect, the one the player most directly senses moving when
+they pull the lever. The exact culture-vector dimensions are defined
+in the existing doc body above; primary-axis names below are
+advisory shorthand, not the underlying schema.
+
+### 1. Session content
+
+**Primary axis:** intensity / seriousness.
+
+What goes into a class — heavy randori vs. structured drilling,
+conditioning emphasis, technique-level focus, ne-waza time, kata
+work. Aggregates to a pattern over weeks of sessions, not from any
+single class.
+
+**Cadence:** fast. Each session held updates the pattern; the vector
+responds within weeks of sustained change.
+
+**Secondary axes:** tradition fidelity (kata-heavy programs read
+traditional), competition orientation (situational sparring
+frequency).
+
+### 2. Pricing
+
+**Primary axis:** accessibility / exclusivity.
+
+Per-class fee, monthly membership rate, scholarship policy. Higher
+prices filter for committed students and class background; lower
+prices filter for hobbyist commitment and broader demographic.
+Settable explicitly; effects flow through who shows up.
+
+**Cadence:** slow. Pricing change is instantaneous; the cultural
+effect arrives over months as new students are filtered in or out.
+
+**Secondary axes:** formality (high prices often correlate with
+formal presentation), competition orientation (some high-priced
+dojos are competition specialists).
+
+### 3. Father's-style lineage
+
+**Primary axis:** tradition-fidelity / experimentation.
+
+How actively the dojo leans into the inherited lineage versus
+departing from it. This is not the lineage itself — see
+`lineage-system.md` for that. This is how often the lineage gets
+invoked in sessions, in promotion ceremonies, in dialogue, in the
+public-facing identity. Closely tied to lineage drift mode (preserve
+/ extend / refuse).
+
+**Cadence:** medium. Continuous accumulation of moments where the
+lineage is or isn't invoked.
+
+**Secondary axes:** formality (a strict lineage often carries
+formality), competition orientation (lineages have inherited
+postures).
+
+### 4. Atmospheric choice
+
+**Primary axis:** formality / informality.
+
+How class is conducted — bowing protocols, speech patterns, dress
+code, address (sensei / coach / first name), quiet vs. social
+warm-ups, mat etiquette enforcement. Partially settable (the player
+can declare "this is how class begins"), partially emergent from how
+the player handles individual moments.
+
+**Cadence:** medium. Changes when set, then stays; students adjust
+over weeks.
+
+**Secondary axes:** tradition fidelity, intensity (formal atmospheres
+often correlate with serious work).
+
+### 5. Promotion philosophy
+
+**Primary axis:** standards-strictness / generosity.
+
+How readily ranks are conferred. Strict philosophies promote on hard
+criteria (specific match results, demonstrated technique mastery,
+time-in-rank thresholds); generous philosophies promote on
+participation, growth, and coach judgment. Settable as default
+policy and adjusted per-decision.
+
+**Cadence:** slow, episodic. Promotion moments are infrequent — the
+lever pulls hard when it pulls, then quiet for stretches.
+
+**Secondary axes:** competition orientation (strict standards often
+track tournament results), pedagogical depth.
+
+### 6. Competition readiness pattern
+
+**Primary axis:** competition-orientation / pedagogical-orientation.
+
+How frequently students compete, how the dojo prepares them, how
+much the calendar shapes itself around tournament cycles. Aggregates
+from the player's tournament scheduling, the intensity of
+competition prep, and how seriously losses and wins are processed in
+the dojo afterward.
+
+**Cadence:** medium. Competitions are episodic but prep cycles fill
+weeks before and after.
+
+**Secondary axes:** intensity (competition-heavy dojos run harder
+sessions), formality during prep periods.
+
+---
+
+## Aggregation
+
+The culture vector is real-valued and continuous, not a set of
+discrete cultural states. Inputs aggregate into the vector through
+sustained pattern, not isolated decision.
+
+**Inertia matters.** A single high-intensity session does not shift
+the dojo's intensity reading. Six months of sustained high-intensity
+sessions does. This is what makes the cultural feedback loop a loop
+— change requires effort and time, both for the player to enact and
+for students to perceive. A coach who tries to shift the dojo's
+culture by single dramatic gestures will find the vector barely
+moves; a coach who sustains a different pattern over weeks finds the
+vector tracking their effort.
+
+**Inertia varies by lever.** Session content responds fast (weekly).
+Pricing responds slow (months). Promotion philosophy responds
+episodically. The player will learn over time which levers are heavy
+and which are light.
+
+When a successor character takes over through a succession event,
+they inherit the current vector position, not the lever positions
+per se. To move the vector, they have to re-pull the levers in their
+preferred direction over sustained time. Institutional inertia is
+real; this is the cultural-layer side of the same point made in
+`dojo-as-institution.md`.
+
+---
+
+## Connection Points
+
+**Lineage bias.** The active lineage biases the culture vector but
+does not constrain it. A competition-heavy lineage tilts the dojo
+toward competition orientation as a starting condition; the player
+can deliberately drift away through sustained lever-pulling against
+that bias. See `lineage-system.md` for the bias mechanism.
+
+**Reputation derivation.** The community's perception of the dojo
+derives from the culture vector plus history. A dojo with a
+sustained competition-orientation reading and tournament wins reads
+as "a competition dojo" externally; one with sustained
+pedagogical-orientation reading and broad accessibility reads as "a
+teaching dojo." Reputation lags the vector — communities update
+their read slowly. See `dojo-as-institution.md` for reputation
+mechanics.
+
+**Student-inner-lives readout.** Students sense the aggregate vector,
+not individual lever positions. Cultural fit and self-selection
+happen at the vector level — a student doesn't react to "the coach
+raised prices last month," they react to "this place feels
+exclusive" once that pattern has compounded into a vector reading.
+This abstracts player decisions into the texture students respond
+to. The student-inner-lives mechanic (Ring 2 Phase 3) reads the
+vector each time it surfaces a student state update.
+
+---
+
 ## How This Layer Grows Ring by Ring
 
 ### Ring 1 — Not involved
@@ -388,6 +558,61 @@ See `data-model.md` v0.3 for the full spec. Summary:
 
 ---
 
-*Document version: April 14, 2026 (v0.1).
+## Open Questions and Handoffs
+
+This update commits to:
+
+- The Six Cultural Inputs as the canonical and complete lever set.
+- A primary-axis mapping per input (revisable).
+- Sustained-pattern inertia as the rule for vector movement.
+- Lever-cadence variation (fast / medium / slow / episodic).
+- Vector-level abstraction for the student-inner-lives readout
+  (students react to the aggregate, not to individual lever
+  positions).
+
+This update does not commit to:
+
+- The exact culture vector dimensions and their math — those are in
+  the existing `cultural-layer.md` body.
+- Specific calibration of inertia constants per lever — calibration
+  territory once playing.
+- The schema for tracking session content patterns or promotion
+  philosophy as data — implementation territory.
+- The exact mapping from culture vector to reputation reading —
+  defer to `dojo-as-institution.md` once that doc gets its own
+  reputation expansion.
+
+Sibling design notes that touch this:
+
+- `lineage-system.md` — lineage biases the vector; "father's-style
+  lineage" lever is the active-use channel.
+- `dojo-as-institution.md` — the levers belong to the institution,
+  not the coach; reputation derives from the vector.
+- `career-mode-and-narrative-events.md` — Cultural moment events
+  trigger off vector-threshold crossings; Ambient texture events
+  draw on current vector state for flavor.
+- `data-model.md` — the culture vector and student "preferred
+  culture" vectors live there as data.
+
+Linear references:
+
+- HAJ-109 — Design question: culture & psychology (this update
+  partially resolves the High-priority Design & Triage ticket;
+  vector dimensions and student-inner-lives details remain in the
+  existing doc body).
+- HAJ-104 — Design question: lifecycle (lifecycle gates affected by
+  cultural fit).
+- HAJ-110 — Design question: rankings (promotion philosophy lever
+  defined here).
+- HAJ-108 — Design question: session composition (session content
+  lever defined here).
+- HAJ-119 — Three-class break-even economy (pricing lever defined
+  here).
+
+---
+
+*Document version: April 25, 2026 (v0.2).
 Written before any cultural-layer code exists.
+v0.2 lands the Six Cultural Inputs as the canonical lever set,
+folded in from v17 design-questions content.
 Update as each ring implements its cultural systems.*
