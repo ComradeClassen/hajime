@@ -78,7 +78,9 @@
       "Bash(python -m pytest tests/ -s --no-header --tb=short -r a)",
       "Bash(grep -E \"passed|failed|error|=====$\")",
       "Bash(python -m pytest tests/ -s --no-header -v)",
-      "Bash(tee /tmp/pytest2.log)"
+      "Bash(tee /tmp/pytest2.log)",
+      "Bash(git -C C:/Users/jackc/hajime diff --stat hajime-master-doc.md)",
+      "Bash(git -C C:/Users/jackc/hajime diff hajime-master-doc.md)"
     ]
   }
 }
