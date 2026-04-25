@@ -1,0 +1,379 @@
+diff --git a/design-notes/dojo-as-institution.md b/design-notes/dojo-as-institution.md
+index cd55f3e..9bed7f5 100644
+--- a/design-notes/dojo-as-institution.md
++++ b/design-notes/dojo-as-institution.md
+@@ -1,224 +1,149 @@
+-# The Dojo as Institution — Design Note v0.2
+-
+-*Captures the multigenerational, economic, and relational layer of the game. These are the systems that turn Hajime from a match simulator into something deeper — a coaching life simulator with dynastic play.*
+-
+----
+-
+-## The Three Interlocking Systems
+-
+-This document defines three systems that depend on each other. None of them are Ring 1. They are written down now so the data model and architecture choices made today don't accidentally rule them out tomorrow.
+-
+-1. **Tournament Attention Economy** — your time as coach is the scarce resource
+-2. **Multigenerational Lineage** — the dojo persists across sensei generations
+-3. **Dojo Prestige & Economy** — money, reputation, and the kids' class pipeline
+-
+----
+-
+-## SYSTEM 1 — Tournament Attention Economy
+-
+-### The core mechanic
+-
+-You enter multiple judoka in a tournament. Their matches happen on overlapping schedules across multiple mats. **You can only be in one chair at a time.** Before each round, you choose who gets your in-person coaching.
+-
+-### What "being coached" means
+-
+-A judoka with you in their chair gets the full Matte-window experience — your eyes on the fight, your two-instruction interventions, your read.
+-
+-A judoka without you fights alone:
+-- Their Matte moments still happen, but they self-instruct based on personality and fight IQ
+-- Their composure is somewhat lower without your steady presence
+-- They cannot benefit from in-the-moment tactical reads
+-- A high-IQ, high-composure veteran can fight well without you. A young anxious prospect falls apart.
+-
+-This means choosing whom to coach is a *real* tactical decision: the prospect needs you more, but the veteran has the better medal odds.
+-
+-### Long-term consequences
+-
+-Every time you do or don't coach a fighter, it logs to their relationship with you:
+-
+-```
+-relationship_with_sensei: dict
+-    chair_time_received        int     # tournaments where you were in their chair
+-    chair_time_denied          int     # tournaments where you chose someone else
+-    last_chair_time            date
+-    perceived_priority         float   # rolling sense of where they rank
+-    loyalty                    float   # 0–10, slow-moving
+-```
+-
+-Patterns matter:
+-- A judoka consistently passed over starts to feel deprioritized. Loyalty drops.
+-- A judoka who sees you make hard choices fairly stays loyal even when not chosen.
+-- A judoka who only ever gets coached when they're winning suspects you don't believe in them.
+-
+-### The departure event
+-
+-When loyalty drops below a threshold *and* the judoka has another viable option (a rival dojo recruiting them, age and frustration aligning), they leave. This is a real loss:
+-- Their stats leave with them
+-- Their lineage potential leaves with them
+-- They may become a competitor at future tournaments, fighting against your remaining stable
+-- Other judoka in your dojo notice their departure — collective loyalty takes a hit
+-
+-### Mitigation tools (for the coach)
+-
+-- **Honest conversation.** A pre-tournament dialogue where you explain the chair priorities. If your reasoning lands, loyalty hit is reduced.
+-- **Assistant coaches.** Hire a former judoka (yours or external) to coach in chairs you can't fill. Reduces the loyalty hit; quality of in-chair coaching depends on the assistant's stats.
+-- **Rotation policy.** If your overall pattern is fair across a season, individual snubs sting less.
+-
+-### Why this matters
+-
+-Real coaching at high levels is exactly this dilemma. The mechanic captures something true: love is shown by where you spend your hours. The game makes you spend yours.
+-
+----
+-
+-## SYSTEM 2 — Multigenerational Lineage
+-
+-### The core idea
+-
+-A sensei has a finite career. Eventually they retire. The dojo continues. The next sensei is one of their former judoka — chosen by the player, or emergent from who's available, or specified by the retiring sensei in the years before stepping down.
+-
+-The dojo persists. The traits, the wisdom, the prestige, the building, the relationships — all of it carries forward. The player can play one career and stop, or continue across generations and watch the dojo evolve.
+-
+-### How traits pass forward
+-
+-When a former judoka becomes the new sensei, they bring:
+-
+-```
+-inherited_capability:
+-    coaching_iq             # derived from their fight IQ + years studying under previous sensei
+-    personality_facets      # carried whole — they coach the way they fought
+-    signature_techniques    # the throws they were great at become the throws they teach best
+-    relationship_inheritance # which current students already trust them
+-```
+-
+-A new sensei who was a GRIP_FIGHTER teaches grip work better. A former GROUND_SPECIALIST produces dojos that punch above their weight on the mat. The dojo's character drifts as sensei generations change.
+-
+-### The kids' class as pipeline
+-
+-Kids' classes serve three functions:
+-
+-1. **Revenue** — a steady weekly income that keeps the dojo's lights on
+-2. **Talent identification** — every cohort of kids contains future prospects (most don't continue, some do)
+-3. **Trait transmission** — senior judoka who teach kids' classes pass down their own techniques and habits to the next generation
+-
+-A kid taught for years by a great seoi-nage practitioner is more likely to develop seoi-nage as a signature throw when they enter competitive ranks. The dojo builds *style* across generations.
+-
+-### The succession event
+-
+-When the current sensei is in their 60s+ and considering retirement, a multi-year succession arc unfolds:
+-
+-- **Designation** — the sensei begins delegating teaching to a chosen successor
+-- **Co-coaching** — the successor takes some chairs at tournaments, makes some training decisions
+-- **Transition tournament** — usually a moment, maybe a major event, where the successor formally leads
+-- **Retirement ceremony** — the dojo marks the change; alumni return; prestige is re-evaluated
+-
+-The player either keeps playing as the new sensei (continuity), or starts a new game with a fresh dojo and a fresh lineage.
+-
+-### Architectural parallel
+-
+-This is parallel-lives architecture applied to a single institution across time. The dojo is the persistent entity. Lives flow through it. The Legends-browser equivalent is the **dojo history** — a browsable record of every judoka who trained there, every championship won, every sensei who led it. (Conceptually similar to how Player Two thinks about Legends Mode, though the two projects are independent.)
+-
+----
+-
+-## SYSTEM 3 — Dojo Prestige & Economy
+-
+-### Money
+-
+-Income sources:
+-- Kids' class enrollment (steady, requires teachers)
+-- Adult recreational class enrollment (steady, less time-intensive)
+-- Competition team dues (some pay, some on scholarship — your call)
+-- Tournament prize money (volatile, championship-tier only)
+-- Sponsorships (unlocked by prestige, attached to specific star fighters)
+-- Seminar income (former champion sensei can host seminars; income spike + prestige boost)
+-
+-Expenses:
+-- Rent / mortgage on the dojo space
+-- Utilities, mat replacement, equipment maintenance
+-- Coach salaries (you, plus any assistants)
+-- Travel costs for tournaments (national and international)
+-- Medical care for injuries
+-- Scholarships for promising fighters who can't pay
+-
+-Money pressure forces real choices: do you take a sixth weekly kids' class for income (less time for elite prep) or focus on your top three competitors (championship odds, fragile if injuries hit).
+-
+-### Prestige
+-
+-A 0–100 dojo-wide score, slow-moving. Affects:
+-- Quality of incoming recruits (high-prestige dojos attract better prospects)
+-- Sponsorship availability
+-- Sensei's coaching reputation (helps with assistant hiring)
+-- Crowd presence and morale at tournaments (subtle composure modifier for your fighters)
+-
+-Prestige sources:
+-- Tournament results (state, national, international)
+-- Champion alumni (a dojo that produced an Olympic medalist holds that forever)
+-- Sensei's own competitive history (the new sensei's career is now part of the dojo's record)
+-- Famous training partners passing through (occasional events)
+-
+-### The Wall
+-
+-A literal wall in the dojo. Every state champion gets a photo. Every national champion gets a larger photo. Olympic medalists get a permanent display. The Wall is visible in the dojo view (when we get to that ring). It's prestige made physical, and it's something the player builds across generations.
+-
+-This is also where the **prestige memory** lives:
+-- Every champion is recorded with their year, weight class, tournament, and the sensei who coached them
+-- The lineage chain is browsable — "this medalist's sensei was also coached by this earlier sensei, who won bronze in 1998..."
+-- Long-term, the Wall becomes a Legends-browser-style artifact of your dojo's entire history
+-
+----
+-
+-## How These Three Systems Reinforce Each Other
+-
+-The genius (and the discipline required to build it) is in how they interlock:
+-
+-- **Attention Economy** decisions affect **Loyalty**, which affects who **stays in the dojo** long enough to become a future **Sensei**.
+-- **Prestige** affects which **prospects** join, which affects future **champions**, which affects future **prestige**.
+-- **Money** pressure forces tradeoffs between **kids' classes** (revenue + pipeline + slow trait transmission) and **elite focus** (championship odds + immediate prestige).
+-- The **Sensei's own personality** shapes both **how they coach** (instruction reception, training style) and **what traits they pass down** when they later become the dojo's institutional memory.
+-
+-Done well, this isn't a stack of features. It's a single ecosystem where every decision touches multiple variables.
+-
+----
+-
+-## Where Each System Lives in the Build Roadmap
+-
+-This is the part that protects the build queue from the ambition.
+-
+-### Ring 1 (now)
+-- **None of this is built.**
+-- Data model includes hooks (`relationship_with_sensei`, `inherited_capability`) declared but unused.
+-- Identity layer holds enough to allow these systems later — name, age, history, capability — without needing to refactor.
+-
+-### Ring 2
+-- First version of **Attention Economy** — you have 2–3 fighters in a small tournament, you pick one chair per round, the others fight without you.
+-- Loyalty as a tracked but consequence-free variable (we observe how it would move; nothing happens yet).
+-
+-### Ring 3
+-- **Money & Economy** activates. Kids' classes as revenue. Coach salary as expense.
+-- **Prestige** as a tracked variable that affects recruitment.
+-- Loyalty starts having consequences — judoka can leave for rival dojos.
+-
+-### Ring 4
+-- **Multigenerational Lineage** — the first sensei retires. Player chooses successor. Traits pass forward.
+-- Trait transmission through kids' classes.
+-- The Wall becomes a real browsable artifact.
+-
+-### Ring 5+
+-- Full lineage chains spanning 50+ in-game years
+-- Rival dojos with their own histories
+-- A national / international scene that has its own historical record
+-- Olympic cycles
+-- Your dojo's entry in a procedurally-generated history of judo itself
+-
+----
+-
+-## A Note on Ambition vs. Build Queue
+-
+-This document is the most ambitious thing in the Hajime folder. It's also the thing that, if executed, makes Hajime a game that doesn't really exist anywhere else — a martial-arts coaching simulator with multigenerational dynastic play.
+-
+-The discipline isn't to deprioritize this vision — it's to *protect the build queue from it.* When a session is about Phase 1, build Phase 1. The lineage doc is here so it stays *captured* without leaking into work that isn't ready for it yet.
+-
+-The dojo lasts generations. The project does too. Build outward toward this vision over years, ring by ring.
+-
+----
+-
+-*Document version: April 13, 2026. Update as the systems crystallize.*
++# dojo-as-institution.md
++
++## Purpose
++
++This doc establishes what a dojo is in HAJIME at the design level. It is the connective tissue between `lineage-system.md`, `cultural-layer.md`, and `career-mode-and-narrative-events.md` — each of those docs assumes a clear answer to what kind of entity is the dojo, and this is where that answer lives.
++
++This is an expansion / unification of the existing `dojo-as-institution.md`, folding in v17 design-questions content. Diff against the existing file before replacing.
++
++This doc commits to several decisions about the dojo's identity, continuity, and material existence. It does not specify mechanics that belong in sibling docs (cultural levers in `cultural-layer.md`, lineage transmission in `lineage-system.md`, run shape in `career-mode-and-narrative-events.md`).
++
++## The dojo as institution
++
++The central commitment: the dojo is an institution, not a place plus a coach plus a roster.
++
++An institution is an entity with identity, history, reputation, material existence, and continuity across the people who pass through it. The dojo has a name. It was founded on a date. It has a public-facing identity in its community. It owns or rents physical assets and carries financial liabilities. It has accumulated history that a new coach inheriting through succession cannot ignore.
++
++This commitment is what makes succession (`career-mode-and-narrative-events.md`) and cross-run persistence (`lineage-system.md`) coherent. If the dojo were just a place plus a coach, succession would be a reset; if the dojo is an institution, succession is a handoff of an entity that already exists.
++
++It is also what makes the cultural feedback loop legible: students don't join a coach, they join a dojo. The dojo's culture is what they sense, what they self-select toward or away from, and what they shape by their presence. The coach is the dominant cultural lever-puller, but the levers belong to the institution.
++
++## Institutional identity
++
++A dojo carries the following identity data:
++
++- **Name.** A specific name (e.g., "Umana Judo," "Newark Judo Academy," "Tokyo Sho Dojo"). Player-set or authored at founding. Persistent.
++- **Founding date.** The calendar date the institution opened. Used in dialogue and reputation context ("a young dojo," "an old establishment").
++- **Founding lineage.** What lineage the dojo opened with. The institutional version of "what the founder brought into the room." See `lineage-system.md` for lineage as data structure.
++- **History.** Accumulated facts the simulation records: notable matches won, students promoted, antagonists faced, succession events, cultural shifts, championships entered. The institution's memory.
++- **Public-facing identity.** A short stated description of what the dojo is to outsiders — derived from the Cultural Inputs and history but stable enough that the player can read it. Updates with major changes; doesn't churn on every minor decision.
++
++This identity is data on the dojo, not on the coach. A succession event hands the identity forward unchanged unless the new coach explicitly renames or rebrands.
++
++## The physical layer
++
++The physical layer is a set of constraints, not flavor. It shapes what the institution can be:
++
++- **Space.** Square footage (or abstracted equivalent). Determines maximum mat capacity, simultaneous-class capacity, what session compositions are possible. The basement-dojo opening (Personal Checkpoint, Phase 1) is small — caps at probably 4–6 students on the mat at once. A full dojo is dramatically larger.
++- **Equipment.** Mat quality, throw dummies, pull-up bars, video equipment, gi laundry capacity. Constrains session components (some drills require specific equipment) and student perception of seriousness.
++- **Capacity.** A maximum roster size that can train without overcrowding. Lower than total enrolled — students rotate through classes — but a hard ceiling on simultaneous bodies.
++- **Neighborhood.** The dojo's geographic context. Determines who walks past it, what kinds of students are likely to enroll, what kinds of antagonists exist nearby (rival dojo two blocks away vs. nearest competition fifty miles out). Phase 1 abstracts this to a single "neighborhood character" tag; full implementation is post-Phase-1.
++
++The physical layer is not negotiable in-run except through deliberate expansion (Phase 2 territory). Phase 1's basement opens with a fixed physical configuration. The constraints it produces are real — three classes per week at the basement-dojo's capacity is a real scheduling problem, not a tutorial setting.
++
++## The Six Cultural Inputs as institutional levers
++
++The Six Cultural Inputs (defined in detail in `cultural-layer.md`) are levers on the institution, not on the coach:
++
++- Session content
++- Pricing
++- Father's-style lineage (the lineage in active use)
++- Atmospheric choice
++- Promotion philosophy
++- Competition readiness pattern
++
++The coach pulls the levers. The institution is what the levers shape. This distinction matters for two reasons:
++
++1. Succession finds the levers where they were left. A new coach inheriting through succession does not start from neutral lever positions — they inherit the previous coach's pulls. To shift the institution's posture, the new coach must actively pull the levers in different directions over time, against the institutional inertia.
++2. The institution exhibits posture independent of any single decision. The aggregate of lever positions over time produces a recognizable cultural posture that students sense and respond to. A single session-composition tweak does not change the institution; sustained patterns do.
++
++See `cultural-layer.md` for what each lever does and how the culture vector reads from them.
++
++## Reputation in the community
++
++Reputation is the community's perception of the dojo. It is institutional, not coach-bound, and persistent through succession.
++
++Reputation accumulates from history and culture:
++
++- Match results (wins in tournaments, notable upsets) shape competitive reputation.
++- Promotion patterns (do graduates of this dojo go on to teach? to win? to leave the sport?) shape pedagogical reputation.
++- Cultural posture (formal? competitive? accessible?) shapes the kinds of students who present at the door.
++- Visible failures and successes (a student injured, a championship won, a public falling-out) shape generic perception.
++
++A new coach inheriting the dojo through succession inherits its reputation. If the previous coach built a competition-heavy reputation, students seeking a competition home will continue showing up regardless of the new coach's preferences. Shifting reputation takes deliberate sustained action against existing perception.
++
++Reputation surfaces to the player through: which students walk in the door, what dialogue references the dojo as "that place where ____," and how the antagonist regards the dojo as a threat or non-threat.
++
++## Material economy
++
++The institution has financial existence beyond any coach's tenure:
++
++- **Assets.** Mat space (owned or leased), equipment, inventory (gi sales if any), recorded match footage library, brand value as it exists.
++- **Liabilities.** Rent or mortgage, equipment loans, insurance premiums, instructor salaries (if there are assistant coaches paid), debts accrued through difficult periods.
++- **Cash position.** The running balance from `HAJ-119` (three-class break-even economy).
++
++These carry through succession unless the new coach explicitly liquidates or restructures. A new coach inheriting a dojo with debt inherits the debt; they don't get a clean balance sheet by virtue of being new. Conversely, a successor inheriting a dojo with strong cash position and good equipment receives that as a head start.
++
++A successor character may also choose to not take over this institution — they may purchase a different dojo (per `career-mode-and-narrative-events.md`'s succession framing), in which case the original institution closes and its material residue is sold off. The lineage transmits; the material institution does not.
++
++## Continuity through succession
++
++Succession events (defined in `career-mode-and-narrative-events.md`) hand the institution forward when the dojo collapses past a threshold and a new player-character takes over. The continuity rules:
++
++**Persists through succession:**
++
++- Institutional identity (name, founding date, founding lineage, history, public-facing identity)
++- The lineage, with whatever drift the previous coach produced
++- Reputation in the community
++- Physical assets (unless explicitly liquidated)
++- Liabilities (unless explicitly restructured)
++- Rituals (default behavior — see next section)
++- Senior students who survived the collapse (with possible attrition)
++
++**Resets / transforms through succession:**
++
++- The active player-character
++- Junior students who left during collapse
++- Some procedural relationships (the new coach has not yet built rapport)
++- The cash balance (may be near-zero post-collapse, depending on collapse type)
++
++If a successor character chooses to purchase a different dojo instead of inheriting this one, the original institution closes and most of the above is lost — only the lineage carries with the character.
++
++## Rituals as institutional memory
++
++Rituals (defined as part of the lineage bundle in `lineage-system.md`) live in the institution, not in the coach. They are how the institution remembers and transmits its character across student generations within a single coach's career, and across coach changes through succession.
++
++Rituals include: how class begins, how class ends, how promotions are conferred, how visitors are received, how mistakes are addressed, how injury is responded to, how the founding lineage is invoked or named.
++
++Default behavior on succession: rituals continue. The new coach steps into the room and finds students already conducting class openings the way they have always been conducted. To change a ritual, the new coach must deliberately break it — and that break is itself a meaningful event in the simulation (often surfaces as a Cultural moment or Antagonist visit trigger).
++
++This default-preserve behavior is what makes "preserve" the natural lineage-drift mode for a successor character. Active drift requires effort; institutional inertia is real.
++
++## Two scales: basement and full dojo
++
++The basement-dojo (Phase 1, Personal Checkpoint) and a full dojo (Phase 2 and beyond) are the same kind of entity at different scales — not different entities.
++
++The basement has:
++
++- Smaller physical footprint, lower capacity, less equipment.
++- Smaller roster, fewer simultaneous classes possible.
++- Modest reputation by virtue of being new and small (not bad — just unestablished).
++- Tight material economy with the three-class break-even pressure.
++
++But it has all the same components: identity, lineage, levers, reputation, assets, rituals. It is a real institution, fully simulated, just constrained. Phase 1's design intent is that the basement feels like a dojo, not like a tutorial scaffolding for a real dojo to come.
++
++The Phase 2 expansion to a larger dojo is a transition between scales — the same institution growing, with reputation, lineage, rituals, history all carrying through. It is not a new dojo. The basement's history is the new dojo's foundation.
++
++## Open questions and handoffs
++
++This doc commits to:
++
++- The dojo as an institution with persistent identity, history, and material existence
++- Institutional identity data (name, founding date, founding lineage, history, public-facing identity)
++- The physical layer as constraint
++- The Six Cultural Inputs as levers on the institution, not on the coach
++- Reputation as institutional and persistent
++- Material economy with assets and liabilities carrying through succession
++- Continuity rules through succession (what persists, what resets)
++- Rituals as institutional memory with default-preserve behavior
++- Two scales of dojo (basement / full) as the same 
+\ No newline at end of file
