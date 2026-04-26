@@ -433,7 +433,18 @@ def resolve_throw(
 # ===========================================================================
 @runtime_checkable
 class Renderer(Protocol):
-    """Hook for visual / inspection surfaces attached to a running Match."""
+    """Hook for visual / inspection surfaces attached to a running Match.
+
+    Two flavors:
+
+    1. Push-style (default). Match owns the loop and calls update(...)
+       once per tick. Used by passive observers like RecordingRenderer.
+
+    2. Driver-style (HAJ-126). The renderer owns the wall-clock loop so
+       it can implement pause / step / speed scrub. Match.run() detects
+       this via drives_loop() and hands control to run_interactive(...).
+       update(...) is still called from inside Match.step() so events
+       can be buffered for the on-screen ticker."""
 
     def start(self) -> None:
         """Called once before the first tick. Window creation, etc."""
@@ -447,6 +458,11 @@ class Renderer(Protocol):
     def is_open(self) -> bool:
         """Return False when the user has closed the viewer; the Match
         loop reads this each tick and ends gracefully if the window is gone."""
+
+    # NOTE — driver-style hooks (HAJ-126) `drives_loop()` and
+    # `run_interactive(match)` are NOT in the Protocol body so that
+    # @runtime_checkable still accepts push-only renderers like
+    # RecordingRenderer. Match probes them via getattr at run time.
 
 
 # ===========================================================================
@@ -624,6 +640,18 @@ class Match:
     # RUN
     # -----------------------------------------------------------------------
     def run(self) -> None:
+        # HAJ-126 — when an interactive renderer is attached (one that owns
+        # the wall-clock loop for pause/step/scrub), Match hands the loop
+        # off and lets the renderer drive begin/step/end. Non-interactive
+        # renderers and headless runs use the in-line loop below.
+        if self._renderer is not None and self._renderer_drives_loop():
+            self._renderer.start()
+            try:
+                self._renderer.run_interactive(self)
+            finally:
+                self._renderer.stop()
+            return
+
         self._print_header()
         if self._debug is not None:
             self._debug.print_banner()
@@ -631,31 +659,65 @@ class Match:
             self._renderer.start()
 
         try:
-            # Hajime — route through the event emitter so the Hajime call
-            # participates in side-by-side rendering (HAJ-65 extension):
-            # left column gets `t000: …`, right column gets the full-match
-            # clock reading (e.g. `4:00  [ref: ...] Hajime!`).
-            hajime = self.referee.announce_hajime(tick=0)
-            self._print_events([hajime])
-            # HAJ-125 — first frame at tick 0 so the viewer paints the
-            # starting positions before any motion.
-            if self._renderer is not None:
-                self._renderer.update(0, self, [hajime])
-            print()
-
-            for tick in range(1, self.max_ticks + 1):
-                self.ticks_run = tick
-                self._tick(tick)
-                if self.match_over:
-                    break
+            self.begin()
+            while not self.is_done():
+                self.step()
                 if self._debug is not None and self._debug.quit_requested():
                     print("[debug] match aborted by inspector.")
                     break
-
-            self._resolve_match()
+            self.end()
         finally:
             if self._renderer is not None:
                 self._renderer.stop()
+
+    # -----------------------------------------------------------------------
+    # PUBLIC LOOP API (HAJ-126)
+    # External drivers (the pygame viewer's interactive loop) call these
+    # instead of run(). Non-driver renderers and headless runs let run()
+    # call them in sequence.
+    # -----------------------------------------------------------------------
+    def begin(self) -> None:
+        """Pre-loop work: header, banner, Hajime announcement, optional
+        tick-0 paint. Idempotent in the sense that calling it twice is
+        a programming error — the caller owns the loop lifecycle."""
+        self._print_header()
+        if self._debug is not None:
+            self._debug.print_banner()
+        # Hajime — route through the event emitter so the Hajime call
+        # participates in side-by-side rendering (HAJ-65 extension).
+        hajime = self.referee.announce_hajime(tick=0)
+        self._print_events([hajime])
+        # HAJ-125 — first frame at tick 0 so the viewer paints the
+        # starting positions before any motion.
+        if self._renderer is not None:
+            self._renderer.update(0, self, [hajime])
+        print()
+
+    def step(self) -> None:
+        """Advance the match by exactly one tick. Pause/step in the
+        viewer is just "don't call step()" / "call step() once." The
+        per-tick path is unchanged so paused-then-stepped state is
+        identical to running uninterrupted."""
+        if self.is_done():
+            return
+        self.ticks_run += 1
+        self._tick(self.ticks_run)
+
+    def end(self) -> None:
+        """Post-loop resolution: decision/draw fallback, narrative summary."""
+        self._resolve_match()
+
+    def is_done(self) -> bool:
+        """True when the match has ended (score, time-up, or external
+        signal such as the viewer window closing)."""
+        return self.match_over or self.ticks_run >= self.max_ticks
+
+    def _renderer_drives_loop(self) -> bool:
+        """Optional capability check on the renderer protocol. Defaults
+        to False so existing renderers (RecordingRenderer, future
+        non-interactive viewers) continue to receive update() pushes."""
+        drives = getattr(self._renderer, "drives_loop", None)
+        return bool(drives()) if callable(drives) else False
 
     # -----------------------------------------------------------------------
     # TICK — the heart of the match
