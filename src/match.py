@@ -877,9 +877,11 @@ class Match:
         # per-fighter net force (2D) from all driving actions issued this tick.
         net_force_a = self._compute_net_force_on(
             victim=self.fighter_a, attacker=self.fighter_b, attacker_actions=actions_b,
+            tick=tick,
         )
         net_force_b = self._compute_net_force_on(
             victim=self.fighter_b, attacker=self.fighter_a, attacker_actions=actions_a,
+            tick=tick,
         )
 
         # Steps 5-7 — CoM velocity/position + trunk angle updates.
@@ -1214,10 +1216,12 @@ class Match:
         victim: Judoka,
         attacker: Judoka,
         attacker_actions: list[Action],
+        tick: int = 0,
     ) -> tuple[float, float]:
         from force_envelope import (
             FORCE_ENVELOPES, grip_strength as _grip_strength,
         )
+        from kuzushi import pull_kuzushi_event, record_kuzushi_event
         fx = fy = 0.0
         # HAJ-51 — read the current matchup once per call; per-edge multiplier
         # comes from FORCE_ENVELOPES[grip_type].stance_parity below.
@@ -1271,6 +1275,18 @@ class Match:
             dx, dy = act.direction
             fx += dx * delivered
             fy += dy * delivered
+
+            # HAJ-131 — emit a KuzushiEvent into uke's buffer alongside the
+            # continuous physical force above. Only PULL emits in this
+            # ticket; FOOT_ATTACK joins in HAJ-133, PUSH/LIFT/COUPLE/FEINT
+            # are deferred (they don't carry the same kuzushi semantics).
+            if act.kind == ActionKind.PULL:
+                event = pull_kuzushi_event(
+                    attacker=attacker, edge=edge, victim=victim,
+                    pull_direction=act.direction, current_tick=tick,
+                )
+                if event is not None:
+                    record_kuzushi_event(victim, event)
 
         return (fx, fy)
 
