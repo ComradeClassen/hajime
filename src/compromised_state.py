@@ -271,7 +271,9 @@ def counter_bonus_for(
 # DESPERATION OVERLAY (Part 6.3 — TORI_DESPERATION_STATE)
 # ---------------------------------------------------------------------------
 def is_desperation_state(
-    attacker: "Judoka", kumi_kata_clock: int,
+    attacker: "Judoka",
+    kumi_kata_clock: int,
+    jitter: Optional[dict] = None,
 ) -> bool:
     """True when the attacker is in offensive desperation.
 
@@ -286,14 +288,27 @@ def is_desperation_state(
        DESPERATION_IMMINENT_SHIDO_TICKS, one tick before the passivity
        shido actually fires. At that point the fighter will throw
        anything to reset the clock — composure is irrelevant.
+
+    HAJ-47 — `jitter` is an optional per-fighter offset dict applied to
+    the three thresholds. Symmetric fighters with different identities
+    cross the trigger on different ticks, ending the prior behavior
+    where two matched fighters always entered desperation simultaneously.
+    Jitter is computed deterministically Match-side, so a replay with
+    the same seed reproduces the same desperation timing.
     """
+    j_composure = (jitter or {}).get("composure_frac", 0.0)
+    j_clock     = (jitter or {}).get("clock_ticks", 0)
+    j_imminent  = (jitter or {}).get("imminent_ticks", 0)
+
     ceiling = max(1.0, float(attacker.capability.composure_ceiling))
     composure_frac = attacker.state.composure_current / ceiling
     panic_trigger = (
-        composure_frac < DESPERATION_COMPOSURE_FRAC
-        and kumi_kata_clock >= DESPERATION_CLOCK_TICKS
+        composure_frac < DESPERATION_COMPOSURE_FRAC + j_composure
+        and kumi_kata_clock >= DESPERATION_CLOCK_TICKS + j_clock
     )
-    imminent_shido_trigger = kumi_kata_clock >= DESPERATION_IMMINENT_SHIDO_TICKS
+    imminent_shido_trigger = (
+        kumi_kata_clock >= DESPERATION_IMMINENT_SHIDO_TICKS + j_imminent
+    )
     return panic_trigger or imminent_shido_trigger
 
 

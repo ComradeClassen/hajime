@@ -73,11 +73,18 @@ class DefensivePressureTracker:
     Each list is a list of tick indices; entries older than WINDOW_TICKS
     are pruned on access. Composure history is a (tick, composure) list
     so we can compute drop over the window.
+
+    HAJ-47 — `entry_threshold_offset` and `exit_threshold_offset` are
+    small per-fighter biases that nudge the entry/exit thresholds so two
+    symmetric fighters cross the predicate at different ticks. Match
+    seeds these per fighter at construction.
     """
     opp_commit_ticks: list[int] = field(default_factory=list)
     kuzushi_ticks:    list[int] = field(default_factory=list)
     composure_hist:   list[tuple[int, float]] = field(default_factory=list)
     active:           bool = False   # hysteresis state
+    entry_threshold_offset: float = 0.0
+    exit_threshold_offset:  float = 0.0
 
     def record_opponent_commit(self, tick: int) -> None:
         self.opp_commit_ticks.append(tick)
@@ -114,9 +121,11 @@ class DefensivePressureTracker:
     def update(self, tick: int) -> bool:
         """Recompute state with hysteresis; return current active flag."""
         score = self.pressure_score(tick)
-        if self.active and score < EXIT_THRESHOLD:
+        entry = ENTRY_THRESHOLD + self.entry_threshold_offset
+        exit_ = EXIT_THRESHOLD + self.exit_threshold_offset
+        if self.active and score < exit_:
             self.active = False
-        elif not self.active and score >= ENTRY_THRESHOLD:
+        elif not self.active and score >= entry:
             self.active = True
         return self.active
 

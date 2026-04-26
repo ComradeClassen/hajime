@@ -298,18 +298,50 @@ class Referee:
             data={"reason": reason.name},
         )
 
-    def announce_ippon(self, winner_id: str, tick: int = 0) -> Event:
-        return Event(
-            tick=tick,
-            event_type="IPPON_AWARDED",
-            description=f"[ref: {self.name}] Ippon! {winner_id} wins.",
-        )
+    def announce_score(
+        self,
+        outcome: str,
+        scorer_id: str,
+        tick: int = 0,
+        count: Optional[int] = None,
+        source: str = "throw",
+        technique: Optional[str] = None,
+        detail: Optional[str] = None,
+        execution_quality: Optional[float] = None,
+        quality_band: Optional[str] = None,
+    ) -> Event:
+        """HAJ-45 — single unified scoring event covering both throw and pin
+        sources. Replaces the prior `[score]` + `[ref] Waza-ari!` two-line
+        pattern and the matching pin asymmetry."""
+        if outcome == "IPPON":
+            head = f"[ref: {self.name}] Ippon! {scorer_id} wins"
+            event_type = "IPPON_AWARDED"
+        else:  # WAZA_ARI
+            head = (f"[ref: {self.name}] Waza-ari! {scorer_id} "
+                    f"({count}/2)")
+            event_type = "WAZA_ARI_AWARDED"
 
-    def announce_waza_ari(self, scorer_id: str, count: int, tick: int = 0) -> Event:
+        if source == "pin":
+            tail = f" by pin ({detail})." if detail else " by pin."
+        else:  # throw
+            parts = [p for p in (technique, detail) if p]
+            tail = f" — {', '.join(parts)}." if parts else "."
+
+        data: dict = {"outcome": outcome, "scorer": scorer_id, "source": source}
+        if count is not None:
+            data["count"] = count
+        if technique is not None:
+            data["technique"] = technique
+        if execution_quality is not None:
+            data["execution_quality"] = execution_quality
+        if quality_band is not None:
+            data["quality_band"] = quality_band
+
         return Event(
             tick=tick,
-            event_type="WAZA_ARI_AWARDED",
-            description=f"[ref: {self.name}] Waza-ari! {scorer_id} ({count}/2).",
+            event_type=event_type,
+            description=head + tail,
+            data=data,
         )
 
     def announce_osaekomi(self, holder_id: str, tick: int = 0) -> Event:

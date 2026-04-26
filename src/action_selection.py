@@ -131,6 +131,7 @@ def select_actions(
     defensive_desperation: bool = False,
     opponent_kumi_kata_clock: int = 0,
     opponent_in_progress_throw: Optional[ThrowID] = None,
+    desperation_jitter: Optional[dict] = None,
 ) -> list[Action]:
     """Return the judoka's chosen actions for this tick.
 
@@ -175,7 +176,9 @@ def select_actions(
 
     # Rung 2: commit if a throw is perceived available AND the grip-presence
     # gate passes (or desperation bypasses it).
-    offensive_desperation = is_desperation_state(judoka, kumi_kata_clock)
+    offensive_desperation = is_desperation_state(
+        judoka, kumi_kata_clock, jitter=desperation_jitter,
+    )
     commit = _try_commit(
         judoka, opponent, graph, r,
         offensive_desperation=offensive_desperation,

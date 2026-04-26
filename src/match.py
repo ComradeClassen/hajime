@@ -101,6 +101,12 @@ THROW_FATIGUE: dict[str, float] = {
     "FAILED":   0.030,
 }
 
+# HAJ-48 — desperation state ENTER/EXIT lines only emit if the underlying
+# state has persisted for at least this many ticks. Short-lived flicker
+# (state on for one or two ticks around a single failed throw) produces
+# no announcement and therefore no orphan EXIT either.
+STATE_ANNOUNCE_MIN_TICKS: int = 3
+
 # Background fatigue per tick
 CARDIO_DRAIN_PER_TICK: float = 0.002
 HAND_FATIGUE_PER_TICK: float = 0.0003
@@ -502,11 +508,40 @@ class Match:
         self._a_score: dict = {"waza_ari": 0, "ippon": False}
         self._b_score: dict = {"waza_ari": 0, "ippon": False}
 
+        # HAJ-46 — retain scoring events so the end-of-match narrative can
+        # name the decisive technique(s). Cheap: at most a handful of
+        # entries per match.
+        self._scoring_events: list[Event] = []
+
+        # HAJ-47 — per-fighter desperation-trigger jitter. Symmetric fighters
+        # in symmetric states would otherwise enter desperation on the same
+        # tick. A small offset from a stable per-fighter seed (name + match
+        # seed) breaks that symmetry while staying reproducible across
+        # replays. Offsets are intentionally small: they shift entry timing
+        # by a few ticks, not the trigger semantics.
+        seed_basis = self.seed if self.seed is not None else 0
+        self._desperation_jitter: dict[str, dict] = {}
+        for name in (fighter_a.identity.name, fighter_b.identity.name):
+            r = random.Random(f"haj47:{name}:{seed_basis}")
+            self._desperation_jitter[name] = {
+                "composure_frac": r.uniform(-0.05, 0.05),
+                "clock_ticks":    r.randint(-2, 2),
+                "imminent_ticks": r.randint(-1, 1),
+                # Defensive-tracker entry/exit threshold offsets (score units).
+                "def_entry":      r.uniform(-0.5, 0.5),
+                "def_exit":       r.uniform(-0.3, 0.3),
+            }
+
         # HAJ-35 — defensive desperation trackers + last-known state flags
-        # (edge-triggered logging).
+        # (edge-triggered logging). HAJ-47 — each tracker carries a per-
+        # fighter threshold offset so the entry/exit predicate diverges
+        # for two symmetric fighters.
         self._defensive_pressure: dict[str, DefensivePressureTracker] = {
-            fighter_a.identity.name: DefensivePressureTracker(),
-            fighter_b.identity.name: DefensivePressureTracker(),
+            name: DefensivePressureTracker(
+                entry_threshold_offset=self._desperation_jitter[name]["def_entry"],
+                exit_threshold_offset=self._desperation_jitter[name]["def_exit"],
+            )
+            for name in (fighter_a.identity.name, fighter_b.identity.name)
         }
         self._offensive_desperation_active: dict[str, bool] = {
             fighter_a.identity.name: False,
@@ -515,6 +550,19 @@ class Match:
         self._defensive_desperation_active: dict[str, bool] = {
             fighter_a.identity.name: False,
             fighter_b.identity.name: False,
+        }
+        # HAJ-48 — emit-on-confirmed-duration trackers for desperation
+        # state announcements. The underlying flags above always reflect the
+        # mechanic; these only gate the [state] event lines so that flicker
+        # under STATE_ANNOUNCE_MIN_TICKS produces no log noise. Per fighter
+        # per kind: tick the state went active (None when inactive) and
+        # whether ENTER has been announced for the current active phase.
+        names = (fighter_a.identity.name, fighter_b.identity.name)
+        self._desp_state_started: dict[str, dict[str, Optional[int]]] = {
+            n: {"defensive": None, "offensive": None} for n in names
+        }
+        self._desp_enter_announced: dict[str, dict[str, bool]] = {
+            n: {"defensive": False, "offensive": False} for n in names
         }
 
     # -----------------------------------------------------------------------
@@ -616,6 +664,9 @@ class Match:
                 self.fighter_b.identity.name
             ],
             opponent_in_progress_throw=a_opp_throw,
+            desperation_jitter=self._desperation_jitter.get(
+                self.fighter_a.identity.name
+            ),
         )
         actions_b = select_actions(
             self.fighter_b, self.fighter_a, self.grip_graph,
@@ -627,6 +678,9 @@ class Match:
                 self.fighter_a.identity.name
             ],
             opponent_in_progress_throw=b_opp_throw,
+            desperation_jitter=self._desperation_jitter.get(
+                self.fighter_b.identity.name
+            ),
         )
         # A fighter mid-attempt must not re-commit — strip any COMMIT_THROW
         # the ladder re-proposes this tick.
@@ -1581,49 +1635,101 @@ class Match:
             tracker.record_composure(tick, f.state.composure_current)
             was_def_active = self._defensive_desperation_active[name]
             is_def_active = tracker.update(tick)
-            if is_def_active and not was_def_active:
-                br = tracker.breakdown(tick)
-                events.append(Event(
-                    tick=tick, event_type="DEFENSIVE_DESPERATION_ENTER",
-                    description=(
-                        f"[state] {name} enters defensive desperation "
-                        f"(pressure={br['score']:.1f}; "
-                        f"{br['opp_commits']} commits, "
-                        f"{br['kuzushi']} kuzushi, "
-                        f"composure -{br['composure_drop']:.2f} "
-                        f"in {br['window_ticks']} ticks)."
-                    ),
-                    data=br,
-                ))
-            elif (not is_def_active) and was_def_active:
-                events.append(Event(
-                    tick=tick, event_type="DEFENSIVE_DESPERATION_EXIT",
-                    description=f"[state] {name} exits defensive desperation.",
-                ))
+
+            def_payload = lambda: {
+                "type": "defensive",
+                "description": (lambda br: (
+                    f"[state] {name} enters defensive desperation "
+                    f"(pressure={br['score']:.1f}; "
+                    f"{br['opp_commits']} commits, "
+                    f"{br['kuzushi']} kuzushi, "
+                    f"composure -{br['composure_drop']:.2f} "
+                    f"in {br['window_ticks']} ticks)."
+                ))(tracker.breakdown(tick)),
+                "data": tracker.breakdown(tick),
+                "exit_description": f"[state] {name} exits defensive desperation.",
+                "enter_event_type": "DEFENSIVE_DESPERATION_ENTER",
+                "exit_event_type":  "DEFENSIVE_DESPERATION_EXIT",
+            }
+            self._emit_desperation_state_event(
+                name, "defensive", was_def_active, is_def_active,
+                tick, events, def_payload,
+            )
             self._defensive_desperation_active[name] = is_def_active
 
             # Offensive desperation transitions — same predicate the commit
             # path uses, surfaced as an edge-triggered [state] line so the
             # reader sees it without waiting for a failed throw.
             off_active = is_desperation_state(
-                f, self.kumi_kata_clock.get(name, 0)
+                f, self.kumi_kata_clock.get(name, 0),
+                jitter=self._desperation_jitter.get(name),
             )
-            if off_active and not self._offensive_desperation_active[name]:
-                events.append(Event(
-                    tick=tick, event_type="OFFENSIVE_DESPERATION_ENTER",
-                    description=(
-                        f"[state] {name} enters offensive desperation "
-                        f"(composure {f.state.composure_current:.2f}/"
-                        f"{f.capability.composure_ceiling}, "
-                        f"kumi-kata clock {self.kumi_kata_clock.get(name, 0)})."
-                    ),
-                ))
-            elif (not off_active) and self._offensive_desperation_active[name]:
-                events.append(Event(
-                    tick=tick, event_type="OFFENSIVE_DESPERATION_EXIT",
-                    description=f"[state] {name} exits offensive desperation.",
-                ))
+            was_off_active = self._offensive_desperation_active[name]
+            off_payload = lambda: {
+                "type": "offensive",
+                "description": (
+                    f"[state] {name} enters offensive desperation "
+                    f"(composure {f.state.composure_current:.2f}/"
+                    f"{f.capability.composure_ceiling}, "
+                    f"kumi-kata clock {self.kumi_kata_clock.get(name, 0)})."
+                ),
+                "data": None,
+                "exit_description": f"[state] {name} exits offensive desperation.",
+                "enter_event_type": "OFFENSIVE_DESPERATION_ENTER",
+                "exit_event_type":  "OFFENSIVE_DESPERATION_EXIT",
+            }
+            self._emit_desperation_state_event(
+                name, "offensive", was_off_active, off_active,
+                tick, events, off_payload,
+            )
             self._offensive_desperation_active[name] = off_active
+
+    def _emit_desperation_state_event(
+        self, name: str, kind: str,
+        was_active: bool, is_active: bool,
+        tick: int, events: list[Event],
+        payload_fn,
+    ) -> None:
+        """HAJ-48 — gate ENTER on STATE_ANNOUNCE_MIN_TICKS of confirmed
+        duration; only emit EXIT if the matching ENTER was announced.
+
+        Edge cases:
+          - Flicker (active < N ticks): no ENTER, no EXIT, no log noise.
+          - Long-lived: ENTER fires on the Nth tick of continuous activity;
+            EXIT fires when the state releases.
+          - Mid-state: payload composed at announce time so the description
+            reflects the state when the reader sees it, not first transition.
+        """
+        started = self._desp_state_started[name][kind]
+        announced = self._desp_enter_announced[name][kind]
+
+        if is_active and not was_active:
+            # Underlying state just turned on — start the confirmation clock.
+            self._desp_state_started[name][kind] = tick
+            self._desp_enter_announced[name][kind] = False
+        elif (not is_active) and was_active:
+            # Underlying state turned off — emit EXIT only if ENTER was logged.
+            if announced:
+                events.append(Event(
+                    tick=tick,
+                    event_type=payload_fn()["exit_event_type"],
+                    description=payload_fn()["exit_description"],
+                ))
+            self._desp_state_started[name][kind] = None
+            self._desp_enter_announced[name][kind] = False
+        elif is_active and not announced and started is not None:
+            # Continuously active — fire ENTER once duration confirmed.
+            if tick - started >= STATE_ANNOUNCE_MIN_TICKS - 1:
+                p = payload_fn()
+                ev_kwargs = dict(
+                    tick=tick,
+                    event_type=p["enter_event_type"],
+                    description=p["description"],
+                )
+                if p["data"] is not None:
+                    ev_kwargs["data"] = p["data"]
+                events.append(Event(**ev_kwargs))
+                self._desp_enter_announced[name][kind] = True
 
     def _update_composure_from_kuzushi(
         self, a_kuzushi: bool, b_kuzushi: bool
@@ -1719,32 +1825,35 @@ class Match:
                 self.winner     = attacker
                 self.win_method = "ippon"
                 self.match_over = True
-                events.append(Event(
+                score_ev = self.referee.announce_score(
+                    outcome="IPPON",
+                    scorer_id=a_name,
                     tick=tick,
-                    event_type="THROW_LANDING",
-                    description=(
-                        f"[score] {a_name} → {throw_name} → IPPON "
-                        f"— {band_prose}."
-                    ),
-                    data={"execution_quality": execution_quality,
-                          "quality_band": band.name},
-                ))
-                events.append(self.referee.announce_ippon(a_name, tick))
+                    source="throw",
+                    technique=throw_name,
+                    detail=band_prose,
+                    execution_quality=execution_quality,
+                    quality_band=band.name,
+                )
+                events.append(score_ev)
+                self._scoring_events.append(score_ev)
 
             elif effective_award == "WAZA_ARI":
                 attacker.state.score["waza_ari"] += 1
                 wa_count = attacker.state.score["waza_ari"]
-                events.append(Event(
+                score_ev = self.referee.announce_score(
+                    outcome="WAZA_ARI",
+                    scorer_id=a_name,
+                    count=wa_count,
                     tick=tick,
-                    event_type="THROW_LANDING",
-                    description=(
-                        f"[score] {a_name} → {throw_name} → waza-ari "
-                        f"({wa_count}/2) — {band_prose}."
-                    ),
-                    data={"execution_quality": execution_quality,
-                          "quality_band": band.name},
-                ))
-                events.append(self.referee.announce_waza_ari(a_name, wa_count, tick))
+                    source="throw",
+                    technique=throw_name,
+                    detail=band_prose,
+                    execution_quality=execution_quality,
+                    quality_band=band.name,
+                )
+                events.append(score_ev)
+                self._scoring_events.append(score_ev)
                 # Composure hit on defender
                 defender.state.composure_current = max(
                     0.0,
@@ -1893,7 +2002,10 @@ class Match:
         is_tactical_drop = resolution.outcome == FailureOutcome.TACTICAL_DROP_RESET
         desperation = (
             not is_tactical_drop
-            and is_desperation_state(attacker, snapshot_clock)
+            and is_desperation_state(
+                attacker, snapshot_clock,
+                jitter=self._desperation_jitter.get(a_name),
+            )
         )
         if desperation:
             resolution = apply_desperation_overlay(resolution)
@@ -2060,19 +2172,28 @@ class Match:
             self.winner     = holder
             self.win_method = "ippon (pin)"
             self.match_over = True
-            events.append(Event(
+            score_ev = self.referee.announce_score(
+                outcome="IPPON",
+                scorer_id=holder_id,
                 tick=tick,
-                event_type="IPPON_AWARDED",
-                description=(
-                    f"[score] Ippon by pin — {holder_id} wins "
-                    f"({self.osaekomi.ticks_held}s hold)."
-                ),
-            ))
-            events.append(self.referee.announce_ippon(holder_id, tick))
+                source="pin",
+                detail=f"{self.osaekomi.ticks_held}s hold",
+            )
+            events.append(score_ev)
+            self._scoring_events.append(score_ev)
         elif award == "WAZA_ARI":
             holder.state.score["waza_ari"] += 1
             wa_count = holder.state.score["waza_ari"]
-            events.append(self.referee.announce_waza_ari(holder_id, wa_count, tick))
+            score_ev = self.referee.announce_score(
+                outcome="WAZA_ARI",
+                scorer_id=holder_id,
+                count=wa_count,
+                tick=tick,
+                source="pin",
+                detail=f"{self.osaekomi.ticks_held}s hold",
+            )
+            events.append(score_ev)
+            self._scoring_events.append(score_ev)
             if wa_count >= 2:
                 self.winner     = holder
                 self.win_method = "two waza-ari"
@@ -2338,40 +2459,146 @@ class Match:
         print()
 
     def _resolve_match(self) -> None:
-        print()
-        print("=" * 65)
-        if self.winner:
-            loser = (self.fighter_b if self.winner is self.fighter_a
-                     else self.fighter_a)
-            method = self.win_method or ("ippon" if self.winner.state.score["ippon"] else "decision")
-            print(f"  MATCH OVER — {self.winner.identity.name} wins by {method}")
-            print(f"  Score: {self.winner.identity.name} "
-                  f"waza-ari={self.winner.state.score['waza_ari']} | "
-                  f"{loser.identity.name} "
-                  f"waza-ari={loser.state.score['waza_ari']}")
-            print(f"  Ended at tick {self.ticks_run}/{self.max_ticks}")
-        else:
-            a = self.fighter_a
-            b = self.fighter_b
+        # Resolve a draw / decision into self.winner / self.win_method first
+        # so the narrative composer has consistent state to read.
+        if self.winner is None:
+            a, b = self.fighter_a, self.fighter_b
             a_wa = a.state.score["waza_ari"]
             b_wa = b.state.score["waza_ari"]
             if a_wa > b_wa:
-                self.winner     = a
-                self.win_method = "decision"
-                print(f"  MATCH OVER — {a.identity.name} wins by decision "
-                      f"({a_wa}-{b_wa} waza-ari)")
+                self.winner, self.win_method = a, "decision"
             elif b_wa > a_wa:
-                self.winner     = b
-                self.win_method = "decision"
-                print(f"  MATCH OVER — {b.identity.name} wins by decision "
-                      f"({b_wa}-{a_wa} waza-ari)")
+                self.winner, self.win_method = b, "decision"
             else:
                 self.win_method = "draw"
-                print(f"  MATCH OVER — Draw ({a_wa}-{b_wa}). "
-                      f"Golden score pending (Phase 3).")
+
+        print()
         print("=" * 65)
-        self._print_final_state(self.fighter_a)
-        self._print_final_state(self.fighter_b)
+        for line in self._compose_match_summary():
+            print(f"  {line}")
+        print("=" * 65)
+
+        # HAJ-46 — numeric per-fighter dump moves behind the debug stream.
+        # Engineers tuning physics get the numbers; readers get prose.
+        if self._stream == "debug":
+            self._print_final_state(self.fighter_a)
+            self._print_final_state(self.fighter_b)
+
+    def _compose_match_summary(self) -> list[str]:
+        """HAJ-46 — produce 1-2 prose lines naming winner, decisive
+        technique, and one causal element drawn from final state.
+
+        Returns a list of lines. The first names the outcome; the second
+        (when present) names a single causal hook (loser fatigue, shidos,
+        composure) so the reader sees *why*, not just *what*."""
+        a, b = self.fighter_a, self.fighter_b
+
+        # Format the match clock as M:SS for the outcome line.
+        def clock(tick: int) -> str:
+            remaining = max(0, self.max_ticks - tick)
+            return f"{remaining // 60}:{remaining % 60:02d}"
+
+        if self.win_method == "draw":
+            wa = a.state.score["waza_ari"]
+            return [f"Match drawn {wa}-{wa}. Golden score pending (Phase 3)."]
+
+        winner = self.winner
+        loser  = b if winner is a else a
+        wn = winner.identity.name
+        ln = loser.identity.name
+
+        outcome_line = self._compose_outcome_line(winner, loser, clock)
+        causal_line = self._compose_causal_hook(loser, ln)
+
+        out = [outcome_line]
+        if causal_line:
+            out.append(causal_line)
+        return out
+
+    def _compose_outcome_line(self, winner, loser, clock_fn) -> str:
+        wn = winner.identity.name
+        ln = loser.identity.name
+        method = self.win_method
+        wa_w = winner.state.score["waza_ari"]
+        wa_l = loser.state.score["waza_ari"]
+
+        if method == "ippon":
+            # Throw ippon — pull the technique from the most recent IPPON
+            # scoring event with source='throw'.
+            tech = self._latest_ippon_technique(winner.identity.name, "throw")
+            tail = f" — {tech}" if tech else ""
+            tick = self._latest_ippon_tick(winner.identity.name)
+            stamp = f" at {clock_fn(tick)}" if tick is not None else ""
+            return f"{wn} won by ippon{tail}{stamp}."
+        if method == "ippon (pin)":
+            tick = self._latest_ippon_tick(winner.identity.name)
+            stamp = f" at {clock_fn(tick)}" if tick is not None else ""
+            return f"{wn} won by ippon (pin) — {self.osaekomi.ticks_held}s hold{stamp}."
+        if method == "ippon (submission)":
+            tick = self.ticks_run
+            return f"{wn} won by ippon (submission) at {clock_fn(tick)}."
+        if method == "two waza-ari":
+            techs = [
+                e.data.get("technique") for e in self._scoring_events
+                if e.data.get("scorer") == winner.identity.name
+                and e.data.get("outcome") == "WAZA_ARI"
+            ]
+            techs = [t for t in techs if t]
+            if len(techs) >= 2:
+                return f"{wn} won by two waza-ari — {techs[0]}, then {techs[1]}."
+            if techs:
+                return f"{wn} won by two waza-ari — {techs[0]} sealed it."
+            return f"{wn} won by two waza-ari."
+        if method == "decision":
+            return (f"{wn} won the decision {wa_w}-{wa_l} on waza-ari — "
+                    f"neither fighter found ippon.")
+        return f"{wn} won by {method}."
+
+    def _compose_causal_hook(self, loser, ln) -> str:
+        """One short clause naming the dimension that broke for the loser.
+        Order of preference: shidos → ne-waza-relevant fatigue → cardio →
+        composure collapse. Returns "" if no signal stands out."""
+        s = loser.state
+        # Shido: most concrete cause — the ref had been warning them.
+        if s.shidos >= 2:
+            return f"{ln} had been warned {s.shidos} times on passivity."
+        if s.shidos == 1:
+            return f"{ln} was already on a shido for passivity."
+        # Heavy fatigue on a load-bearing dimension.
+        fatigues = {
+            "right_leg":  s.body["right_leg"].fatigue,
+            "core":       s.body["core"].fatigue,
+            "right_hand": s.body["right_hand"].fatigue,
+        }
+        worst_part, worst_fat = max(fatigues.items(), key=lambda kv: kv[1])
+        if worst_fat >= 0.70:
+            return f"{ln}'s {worst_part} (fatigue {worst_fat:.2f}) had run dry."
+        # Cardio: slower bleed; distinct cue.
+        if s.cardio_current <= 0.40:
+            return f"{ln}'s cardio (now {s.cardio_current:.2f}) had bottomed out."
+        # Composure: last resort signal — only flag a true collapse.
+        ceiling = max(1.0, float(loser.capability.composure_ceiling))
+        comp_frac = s.composure_current / ceiling
+        if comp_frac < 0.25:
+            return f"{ln}'s composure had collapsed ({s.composure_current:.1f}/{ceiling:.0f})."
+        return ""
+
+    def _latest_ippon_technique(
+        self, scorer: str, source: str,
+    ) -> Optional[str]:
+        for ev in reversed(self._scoring_events):
+            d = ev.data
+            if (d.get("scorer") == scorer and d.get("outcome") == "IPPON"
+                    and d.get("source") == source):
+                return d.get("technique")
+        return None
+
+    def _latest_ippon_tick(self, scorer: str) -> Optional[int]:
+        for ev in reversed(self._scoring_events):
+            d = ev.data
+            if d.get("scorer") == scorer and d.get("outcome") == "IPPON":
+                return ev.tick
+        return None
 
     def _print_final_state(self, judoka: Judoka) -> None:
         ident = judoka.identity
