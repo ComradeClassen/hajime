@@ -2211,10 +2211,21 @@ class Match:
         - Per-grip unconventional clock: lives on each GripEdge; ticked in
           grip_graph.tick_update(). Shido if any owned edge crosses
           UNCONVENTIONAL_SHIDO_TICKS.
+
+        HAJ-43 — both clocks pause for any fighter with a throw mid-flight.
+        A passivity penalty during an active commit is incoherent: the
+        fighter IS attacking. The clock advances again the tick after the
+        attempt resolves (success, failure, or block).
         """
         for fighter in (self.fighter_a, self.fighter_b):
             name = fighter.identity.name
             owned = self.grip_graph.edges_owned_by(name)
+
+            # HAJ-43 — skip both clocks while this fighter is mid-throw.
+            # The clock isn't reset, just paused; if it was at 25 going in,
+            # it's still at 25 when the attempt ends.
+            if name in self._throws_in_progress:
+                continue
 
             # Kumi-kata clock: advances only while this fighter is gripping.
             if owned:
