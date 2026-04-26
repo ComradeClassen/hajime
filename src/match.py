@@ -97,6 +97,30 @@ UNCONVENTIONAL_SHIDO_TICKS:   int = 5    # BELT/PISTOL/CROSS immediate-attack th
 # ---------------------------------------------------------------------------
 MAT_COORDINATE_UNIT: str = "meters"
 
+# HAJ-127 — out-of-bounds boundary. INTERIM VALUE: 1.5 m half-width.
+#
+# IJF reference: 8 × 8 m contest area → real half-width is 4.0 m. We use a
+# tighter mat as a deliberate stop-gap because the engine has no autonomous
+# locomotion yet (HAJ-128). Force is only transmitted through grips, so two
+# equal fighters cancel out at the start position; with a competition-realistic
+# 4 m half-width, OOB would essentially never fire from organic action. A
+# 1.5 m half-width lets OOB fire from existing grip-driven drift, exercising
+# the referee infrastructure while we wait on locomotion.
+#
+# Widen to 4.0 m (or pull from a future MatGeometry config) when HAJ-128
+# lands and fighters can actually walk to the edge.
+MAT_HALF_WIDTH: float = 1.5
+
+
+def is_out_of_bounds(judoka: Judoka) -> bool:
+    """HAJ-127 — True when the fighter's CoM is outside the contest area.
+
+    Uses |x| > half_width OR |y| > half_width (a square boundary). The
+    contest area is centered on the mat origin per HAJ-124.
+    """
+    x, y = judoka.state.body_state.com_position
+    return abs(x) > MAT_HALF_WIDTH or abs(y) > MAT_HALF_WIDTH
+
 # Part 3 force-model calibration stubs. Phase 3 telemetry will tune these.
 JUDOKA_MASS_KG:           float = 80.0   # v0.1 uniform; Part 6 can pull from identity.
 FRICTION_DAMPING:         float = 0.55   # fraction of velocity surviving a tick (planted feet)
@@ -1305,6 +1329,25 @@ class Match:
         if attacker.identity.name in self._throws_in_progress:
             return []
 
+        # HAJ-127 — start-of-attack OOB gate. A fighter already over the
+        # boundary cannot legally fire a throw — denies edge cheese (foot
+        # already over the line, fire a tomoe-nage). The standing-OOB
+        # check inside should_call_matte will fire next tick to formalize
+        # it as Matte. Distinct from the in-flight grace: that grace
+        # protects throws that *started* inside; this gate prevents
+        # commits from outside.
+        if is_out_of_bounds(attacker):
+            return [Event(
+                tick=tick,
+                event_type="THROW_DENIED_OOB",
+                description=(
+                    f"[throw] {attacker.identity.name} commit denied — "
+                    f"already out of bounds."
+                ),
+                data={"attacker": attacker.identity.name,
+                      "throw_id": throw_id.name},
+            )]
+
         # HAJ-35 — the defender has now officially taken an incoming throw;
         # feed their rolling-window counter. We do this before the resolve
         # path so a sequence of attacks accumulates even if they're all N=1.
@@ -2411,6 +2454,9 @@ class Match:
             osaekomi_ticks=self.osaekomi.ticks_held,
             stalemate_ticks=self.stalemate_ticks,
             stuffed_throw_tick=self._stuffed_throw_tick,
+            fighter_a_oob=is_out_of_bounds(self.fighter_a),
+            fighter_b_oob=is_out_of_bounds(self.fighter_b),
+            any_throw_in_flight=bool(self._throws_in_progress),
         )
 
     def _ne_waza_top(self) -> Judoka:

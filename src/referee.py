@@ -85,6 +85,13 @@ class MatchState:
     osaekomi_ticks: int
     stalemate_ticks: int         # how long the sub-loop has been in stalemate
     stuffed_throw_tick: int      # tick when last stuffed throw occurred (0 = none)
+    # HAJ-127 — out-of-bounds flags + in-flight grace.
+    # The viewer / log surface these per fighter; should_call_matte uses
+    # any_throw_in_flight to skip the OOB check while a throw is mid-flight,
+    # so a throw that started inside but lands outside resolves first.
+    fighter_a_oob: bool = False
+    fighter_b_oob: bool = False
+    any_throw_in_flight: bool = False
 
 
 # ===========================================================================
@@ -155,6 +162,15 @@ class Referee:
         current_tick: int,
     ) -> Optional[MatteReason]:
         """Decide whether to call Matte this tick. Returns reason or None."""
+
+        # HAJ-127 — out-of-bounds. Real judo: stepping outside is an
+        # immediate Matte. In-flight grace mirrors HAJ-43: throws that
+        # started inside resolve normally even if they land outside;
+        # OOB then fires on the post-resolution tick if the landing
+        # position is still outside.
+        if not state.any_throw_in_flight:
+            if state.fighter_a_oob or state.fighter_b_oob:
+                return MatteReason.OUT_OF_BOUNDS
 
         # Ne-waza: check if we've been on the ground too long
         if state.ne_waza_active:
