@@ -32,7 +32,13 @@ if TYPE_CHECKING:
 
 
 # Tuning constants (calibration stubs).
-COMMIT_THRESHOLD:             float = 0.65  # perceived signature must clear this to commit
+# HAJ-128 — bumped from 0.65 to 0.78. Pre-bump, throws fired in close
+# succession because the perceived signature crossed the threshold often
+# during grip-fighting; viewer feedback was "more throw attempts than
+# actual grip attempts." A higher threshold means the grip war has to
+# actually produce a high-quality opening before a throw fires, so
+# grip work dominates the tick budget the way it does in real judo.
+COMMIT_THRESHOLD:             float = 0.78  # perceived signature must clear this to commit
 DESPERATION_KUMI_CLOCK:       int   = 22    # tick count that triggers ladder rung 5
 HIGH_FATIGUE_THRESHOLD:       float = 0.65  # hand-fatigue at which rung 6 prefers connective
 DRIVE_MAGNITUDE_N:            float = 400.0 # PULL/PUSH force a non-desperation drive issues
@@ -715,6 +721,16 @@ def _step_action(judoka: "Judoka", direction: tuple[float, float],
     return step(foot, unit, magnitude)
 
 
+# Grip-war evasion: every fighter, regardless of positional style,
+# circles laterally during active grip exchanges. Real judo: grip
+# fighting is constant lateral motion — angling, breaking line, evading
+# the next reach. Without this, fighters who aren't PRESSURE-styled
+# stand still while throws fire on top of them. Probability is modest
+# so style-driven motion still dominates when it fires.
+GRIP_WAR_EVASION_PROB:      float = 0.30
+GRIP_WAR_EVASION_MAG_M:     float = 0.18
+
+
 def _maybe_emit_step(
     judoka: "Judoka", opponent: "Judoka", graph: "GripGraph",
     rng: random.Random,
@@ -734,6 +750,18 @@ def _maybe_emit_step(
     # Magnitude attenuates under deep opponent grips.
     mag = (STEP_MAGNITUDE_REDUCED_M if _opponent_grip_drag(judoka, graph)
            else STEP_MAGNITUDE_M)
+
+    # HAJ-128 — grip-war evasion. When both fighters have edges (active
+    # grip war), every fighter takes occasional small lateral steps to
+    # angle / break line. Fires before the style-specific intent so the
+    # constant tactical motion is visible on the viewer regardless of
+    # whether the style is PRESSURE.
+    own_edges = graph.edges_owned_by(judoka.identity.name)
+    opp_edges = graph.edges_owned_by(opponent.identity.name)
+    if own_edges and opp_edges and rng.random() < GRIP_WAR_EVASION_PROB:
+        evade = _grip_war_evasion_direction(judoka, opponent, rng)
+        if evade is not None:
+            return _step_action(judoka, evade, GRIP_WAR_EVASION_MAG_M)
 
     if style == PositionalStyle.HOLD_CENTER:
         # Only step toward center when the fighter has drifted noticeably.
@@ -768,6 +796,36 @@ def _maybe_emit_step(
         return _step_action(judoka, _pressure_direction(judoka, opponent, rng), mag)
 
     return None
+
+
+def _grip_war_evasion_direction(
+    judoka: "Judoka", opponent: "Judoka", rng: random.Random,
+) -> Optional[tuple[float, float]]:
+    """HAJ-128 — pick a lateral evasion direction during active grip
+    fighting. Step perpendicular to the line of attack, randomized side
+    per tick so the fighter circles. Pressure-fighters bias forward
+    along that perpendicular; defenders / hold-center bias rearward."""
+    sx, sy = judoka.state.body_state.com_position
+    ox, oy = opponent.state.body_state.com_position
+    dx, dy = ox - sx, oy - sy
+    norm = (dx * dx + dy * dy) ** 0.5
+    if norm < 1e-6:
+        return None
+    fx, fy = dx / norm, dy / norm
+    # 90° rotation: perpendicular to line of attack.
+    perp_x, perp_y = -fy, fx
+    # Randomize side.
+    if rng.random() < 0.5:
+        perp_x, perp_y = -perp_x, -perp_y
+    # Style bias: PRESSURE leans into the opponent while circling;
+    # defenders lean away. HOLD_CENTER stays purely lateral.
+    style = getattr(judoka.identity, "positional_style", PositionalStyle.HOLD_CENTER)
+    forward_bias = 0.0
+    if style == PositionalStyle.PRESSURE:
+        forward_bias = +0.4
+    elif style == PositionalStyle.DEFENSIVE_EDGE:
+        forward_bias = -0.4
+    return (perp_x + fx * forward_bias, perp_y + fy * forward_bias)
 
 
 def _pressure_direction(

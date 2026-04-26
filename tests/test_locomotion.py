@@ -359,6 +359,136 @@ def test_stunned_fighter_does_not_step() -> None:
 # End-to-end: Tanaka(PRESSURE) vs Sato(DEFENSIVE_EDGE) produces visible
 # CoM displacement over a short match.
 # ---------------------------------------------------------------------------
+def test_deepen_emits_grip_event_for_visibility() -> None:
+    """Successful DEEPEN actions emit a [grip] event so the ticker /
+    prose log shows grip work alive across the match. Pre-fix grip
+    activity went silent after the initial engagement."""
+    from actions import deepen
+    from grip_graph import Event as _Event
+    random.seed(1)
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    # Seat a POCKET grip we can deepen.
+    g = m.grip_graph
+    g.add_edge(GripEdge(
+        grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.POCKET,
+        strength=1.0, established_tick=0, mode=GripMode.CONNECTIVE,
+    ))
+    edge = g.edges[0]
+    deepen_action = deepen(edge)
+    events: list[_Event] = []
+    m._apply_grip_actions(t, [deepen_action], tick=2, events=events)
+    grip_events = [e for e in events if e.event_type == "GRIP_DEEPEN"]
+    assert grip_events, "successful DEEPEN should emit a GRIP_DEEPEN event"
+    assert "deepens" in grip_events[0].description.lower()
+
+
+def test_grip_war_evasion_fires_when_both_fighters_have_edges() -> None:
+    """When both fighters have edges, every fighter (regardless of
+    style) emits an evasion step at the configured probability."""
+    from action_selection import _maybe_emit_step, GRIP_WAR_EVASION_MAG_M
+    from grip_graph import GripGraph
+    t, s = _pair()
+    # Use HOLD_CENTER so style-driven steps don't dominate.
+    t.identity.positional_style = PositionalStyle.HOLD_CENTER
+    s.identity.positional_style = PositionalStyle.HOLD_CENTER
+    g = GripGraph()
+    # Both fighters own an edge — active grip war.
+    g.add_edge(GripEdge(
+        grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        strength=1.0, established_tick=0, mode=GripMode.CONNECTIVE,
+    ))
+    g.add_edge(GripEdge(
+        grasper_id=s.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=t.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        strength=1.0, established_tick=0, mode=GripMode.CONNECTIVE,
+    ))
+    saw_evasion = False
+    for seed in range(50):
+        rng = random.Random(seed)
+        out = _maybe_emit_step(t, s, g, rng)
+        if out is not None and abs(out.magnitude - GRIP_WAR_EVASION_MAG_M) < 1e-6:
+            saw_evasion = True
+            break
+    assert saw_evasion, (
+        "HOLD_CENTER fighter should fire evasion steps during a grip war"
+    )
+
+
+def test_grip_war_evasion_silent_without_edges() -> None:
+    """No edges → no evasion step. Pre-engagement, the only stepping
+    comes from style-driven intent (which HOLD_CENTER also suppresses)."""
+    from action_selection import _maybe_emit_step
+    from grip_graph import GripGraph
+    t, s = _pair()
+    t.identity.positional_style = PositionalStyle.HOLD_CENTER
+    g = GripGraph()
+    # No edges; HOLD_CENTER at center → no step at all.
+    for seed in range(50):
+        rng = random.Random(seed)
+        out = _maybe_emit_step(t, s, g, rng)
+        assert out is None
+
+
+def test_commit_threshold_bumped_to_slow_throws() -> None:
+    """Sanity: COMMIT_THRESHOLD is now ≥ 0.75 so throws fire only on
+    high-quality openings, leaving more tick budget for grip work."""
+    from action_selection import COMMIT_THRESHOLD
+    assert COMMIT_THRESHOLD >= 0.75
+
+
+def test_hand_positions_derived_from_facing() -> None:
+    """Hand world positions rotate with facing. A fighter at (0,0)
+    facing +x has hands forward (+x); facing +y has hands at +y."""
+    from match_viewer import _hand_positions, HAND_FORWARD_M
+    # Facing +x → hands extend forward in +x.
+    left, right = _hand_positions((0.0, 0.0), (1.0, 0.0))
+    # Both hands have x ≈ HAND_FORWARD_M (lateral spread is in y).
+    assert abs(left[0]  - HAND_FORWARD_M) < 1e-6
+    assert abs(right[0] - HAND_FORWARD_M) < 1e-6
+    # Lateral spread on y axis.
+    assert left[1] > 0 > right[1]
+
+
+def test_hand_positions_rotate_with_facing() -> None:
+    """Facing +y rotates the hand spread into the x axis."""
+    from match_viewer import _hand_positions, HAND_FORWARD_M
+    left, right = _hand_positions((0.0, 0.0), (0.0, 1.0))
+    # Both hands forward in +y now.
+    assert abs(left[1]  - HAND_FORWARD_M) < 1e-6
+    assert abs(right[1] - HAND_FORWARD_M) < 1e-6
+    # Lateral spread on x axis (perp to facing).
+    # body +y when facing is (0,1) → perp is (-1, 0). left_hand uses +perp,
+    # so left_x is negative.
+    assert left[0] < 0 < right[0]
+
+
+def test_view_state_captures_hand_grip_flags() -> None:
+    """FighterView.hand_l_gripping / hand_r_gripping reflect which
+    hands actually own grip edges in the snapshot."""
+    from match_viewer import capture_view_state
+    random.seed(1)
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    # Seat a left-hand grip on Tanaka.
+    m.grip_graph.add_edge(GripEdge(
+        grasper_id=t.identity.name, grasper_part=BodyPart.LEFT_HAND,
+        target_id=s.identity.name, target_location=GripTarget.RIGHT_SLEEVE,
+        grip_type_v2=GripTypeV2.SLEEVE_HIGH, depth_level=GripDepth.STANDARD,
+        strength=1.0, established_tick=0, mode=GripMode.CONNECTIVE,
+    ))
+    view = capture_view_state(m, tick=0, events=[])
+    assert view.fighter_a.hand_l_gripping is True
+    assert view.fighter_a.hand_r_gripping is False
+    assert view.fighter_b.hand_l_gripping is False
+    assert view.fighter_b.hand_r_gripping is False
+
+
 def test_pressure_introduces_lateral_motion() -> None:
     """The corner-targeting PRESSURE direction yields y-component
     variance, not just +x. With both fighters on the x-axis, the

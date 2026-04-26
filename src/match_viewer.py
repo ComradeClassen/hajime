@@ -85,6 +85,14 @@ class FighterView:
     def_desperation:   bool
     body_parts:        tuple[tuple[str, float, float], ...] = ()
     # Tuple of (part_name, effective, fatigue).
+    # HAJ-128 — hand positions (derived from CoM + facing-rotated body
+    # offsets) and per-hand grip flags. The viewer renders these instead
+    # of feet because in judo the hands ARE the throw — knowing where the
+    # gripping hands are matters far more than where the feet are.
+    hand_l_pos:        tuple[float, float] = (0.0, 0.0)
+    hand_r_pos:        tuple[float, float] = (0.0, 0.0)
+    hand_l_gripping:   bool = False
+    hand_r_gripping:   bool = False
 
 
 @dataclass(frozen=True)
@@ -107,6 +115,29 @@ _INSPECTOR_BODY_PARTS = (
     "core", "lower_back",
 )
 
+# HAJ-128 — hand position offsets in body frame (in meters). Hands
+# extend forward and to either side of the CoM; the renderer uses these
+# offsets rotated by `facing` to place hand dots on the mat.
+HAND_FORWARD_M:  float = 0.30
+HAND_LATERAL_M:  float = 0.22
+
+
+def _hand_positions(
+    com: tuple[float, float], facing: tuple[float, float],
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Compute world-frame (left_hand, right_hand) positions from CoM
+    and facing. Right hand sits to the +x side in body frame; rotate
+    into mat frame using facing as the body's +x axis."""
+    cx, cy = com
+    fx, fy = facing
+    # Body frame: facing = +x; perp (body +y) = (-fy, fx) — 90° CCW.
+    perp_x, perp_y = -fy, fx
+    forward = (fx * HAND_FORWARD_M, fy * HAND_FORWARD_M)
+    lateral = (perp_x * HAND_LATERAL_M, perp_y * HAND_LATERAL_M)
+    left  = (cx + forward[0] + lateral[0], cy + forward[1] + lateral[1])
+    right = (cx + forward[0] - lateral[0], cy + forward[1] - lateral[1])
+    return left, right
+
 
 def _capture_fighter(judoka, color_tag: str, match) -> FighterView:
     ident = judoka.identity
@@ -121,6 +152,13 @@ def _capture_fighter(judoka, color_tag: str, match) -> FighterView:
                 judoka.effective_body_part(key),
                 st.body[key].fatigue,
             ))
+    # HAJ-128 — hand positions + per-hand grip flags. A hand "grips" if
+    # any owned grip edge has it as the grasper part.
+    left_hand, right_hand = _hand_positions(
+        tuple(bs.com_position), tuple(bs.facing),
+    )
+    own_edges = match.grip_graph.edges_owned_by(ident.name)
+    grip_parts = {e.grasper_part.name for e in own_edges}
     return FighterView(
         name=ident.name,
         color_tag=color_tag,
@@ -128,6 +166,10 @@ def _capture_fighter(judoka, color_tag: str, match) -> FighterView:
         facing=tuple(bs.facing),
         foot_l_pos=tuple(bs.foot_state_left.position),
         foot_r_pos=tuple(bs.foot_state_right.position),
+        hand_l_pos=left_hand,
+        hand_r_pos=right_hand,
+        hand_l_gripping=("LEFT_HAND" in grip_parts),
+        hand_r_gripping=("RIGHT_HAND" in grip_parts),
         trunk_sagittal=bs.trunk_sagittal,
         trunk_frontal=bs.trunk_frontal,
         score_waza_ari=st.score["waza_ari"],
@@ -224,6 +266,12 @@ COL_FIGHTER_A   = ( 96, 144, 232)
 COL_FIGHTER_B   = (220,  92,  92)
 COL_FOOT_A      = (170, 200, 240)
 COL_FOOT_B      = (240, 170, 170)
+# HAJ-128 — hand dots replace foot dots in the viewer. Bright color when
+# the hand owns a grip edge; dim when free.
+COL_HAND_A_GRIP = (160, 220, 255)
+COL_HAND_A_FREE = ( 90, 120, 160)
+COL_HAND_B_GRIP = (255, 160, 160)
+COL_HAND_B_FREE = (160,  90,  90)
 COL_FACING      = (240, 240, 240)
 COL_KUZUSHI     = (255,  95,  60)
 COL_TRAIL_A     = ( 96, 144, 232)
@@ -702,7 +750,7 @@ class PygameMatchRenderer:
             self._draw_grip_edges(screen, view)
             self._draw_kuzushi_halos(screen, view)
             self._draw_fighters(screen, view)
-            self._draw_feet(screen, view)
+            self._draw_hands(screen, view)
         self._draw_pause_indicator(screen, view)
         self._draw_sidebar(screen, view)
         self._draw_footer_hint(screen)
@@ -739,19 +787,28 @@ class PygameMatchRenderer:
                 screen.blit(surf, (px - 1, py - 1))
 
     def _draw_grip_edges(self, screen, view: ViewState) -> None:
+        """HAJ-128 — grip lines now run from the grasper's hand dot to
+        the opponent's body (CoM), so the viewer shows which hand owns
+        which grip rather than a generic body-to-body line."""
         import pygame
         T = self._transform
         a, b = view.fighter_a, view.fighter_b
-        ax, ay = T.world_to_screen(*a.com_position)
         bx, by = T.world_to_screen(*b.com_position)
+        ax, ay = T.world_to_screen(*a.com_position)
         for edge in view.grip_edges:
             mode = GripMode(edge.mode_value)
             color = _grip_mode_color(mode)
-            if edge.grasper_id == a.name:
-                p0, p1 = (ax, ay), (bx, by)
+            grasper = a if edge.grasper_id == a.name else b
+            target_com = (bx, by) if edge.grasper_id == a.name else (ax, ay)
+            # Hand dot to use depends on which body part is gripping.
+            if edge.grasper_part_name == "RIGHT_HAND":
+                hand_pos = grasper.hand_r_pos
+            elif edge.grasper_part_name == "LEFT_HAND":
+                hand_pos = grasper.hand_l_pos
             else:
-                p0, p1 = (bx, by), (ax, ay)
-            pygame.draw.line(screen, color, p0, p1, 2)
+                hand_pos = grasper.com_position
+            hp = T.world_to_screen(*hand_pos)
+            pygame.draw.line(screen, color, hp, target_com, 2)
 
     def _draw_kuzushi_halos(self, screen, view: ViewState) -> None:
         import pygame
@@ -793,16 +850,22 @@ class PygameMatchRenderer:
             tx, ty = T.world_to_screen(*tip_m)
             pygame.draw.line(screen, COL_FACING, (cx, cy), (tx, ty), 2)
 
-    def _draw_feet(self, screen, view: ViewState) -> None:
+    def _draw_hands(self, screen, view: ViewState) -> None:
+        """HAJ-128 — render hand dots in place of foot dots. In judo the
+        hands ARE the throw — knowing which hand grips where reads more
+        cleanly than ankle positions. A bright hand owns a grip edge;
+        a dim hand is free."""
         import pygame
         T = self._transform
-        for fv, color in (
-            (view.fighter_a, COL_FOOT_A),
-            (view.fighter_b, COL_FOOT_B),
+        for fv, grip_col, free_col in (
+            (view.fighter_a, COL_HAND_A_GRIP, COL_HAND_A_FREE),
+            (view.fighter_b, COL_HAND_B_GRIP, COL_HAND_B_FREE),
         ):
-            for pos in (fv.foot_l_pos, fv.foot_r_pos):
-                fx, fy = T.world_to_screen(*pos)
-                pygame.draw.circle(screen, color, (fx, fy), 3)
+            l_col = grip_col if fv.hand_l_gripping else free_col
+            r_col = grip_col if fv.hand_r_gripping else free_col
+            for pos, col in ((fv.hand_l_pos, l_col), (fv.hand_r_pos, r_col)):
+                hx, hy = T.world_to_screen(*pos)
+                pygame.draw.circle(screen, col, (hx, hy), 4)
 
     def _draw_pause_indicator(self, screen, view: Optional[ViewState]) -> None:
         import pygame

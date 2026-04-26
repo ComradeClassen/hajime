@@ -239,6 +239,7 @@ _DEBUG_ONLY_EVENT_TYPES: frozenset[str] = frozenset({
     "GRIP_STRIPPED",
     "GRIP_DEGRADE",
     "GRIP_BREAK",
+    "GRIP_DEEPEN",
     "GRIPS_RESET",
     "KUZUSHI_INDUCED",
     "THROW_ABORTED",
@@ -1076,7 +1077,23 @@ class Match:
 
             elif act.kind == ActionKind.DEEPEN and act.edge is not None:
                 if act.edge in self.grip_graph.edges:
-                    self.grip_graph.deepen_grip(act.edge, judoka)
+                    pre_depth = act.edge.depth_level
+                    if self.grip_graph.deepen_grip(act.edge, judoka):
+                        # HAJ-128 — surface successful grip-deepening so
+                        # the ticker / prose log shows the grip war is
+                        # alive across the whole match, not just at the
+                        # initial engagement.
+                        events.append(Event(
+                            tick=tick, event_type="GRIP_DEEPEN",
+                            description=(
+                                f"[grip] {judoka.identity.name} deepens "
+                                f"{act.edge.grip_type_v2.name} → "
+                                f"{act.edge.depth_level.name}"
+                            ),
+                            data={"edge_id": id(act.edge),
+                                  "from": pre_depth.name,
+                                  "to": act.edge.depth_level.name},
+                        ))
 
             elif act.kind == ActionKind.STRIP and act.edge is not None:
                 if act.edge not in self.grip_graph.edges:
