@@ -364,6 +364,7 @@ def _print_match_header(a: Judoka, b: Judoka, ref) -> None:
 
 def _run_one_match(
     build_a, build_b, ref_builder, debug=None, seed=None, stream="both",
+    renderer=None,
 ) -> None:
     import random
     if seed is not None:
@@ -381,13 +382,14 @@ def _run_one_match(
     _print_match_header(a, b, ref)
     match = Match(
         fighter_a=a, fighter_b=b, referee=ref,
-        debug=debug, seed=seed, stream=stream,
+        debug=debug, seed=seed, stream=stream, renderer=renderer,
     )
     match.run()
 
 
 def _interactive_loop(
     ref_builder, debug_factory=None, seed_for_next=None, stream="both",
+    renderer_factory=None,
 ) -> None:
     # Derive the quit key from the matchup count so adding new matchups
     # doesn't collide with the exit option (HAJ-67 added matchup 3,
@@ -411,9 +413,10 @@ def _interactive_loop(
         _, build_a, build_b = MATCHUPS[choice]
         debug = debug_factory() if debug_factory else None
         seed = seed_for_next() if seed_for_next else None
+        renderer = renderer_factory() if renderer_factory else None
         _run_one_match(
             build_a, build_b, ref_builder,
-            debug=debug, seed=seed, stream=stream,
+            debug=debug, seed=seed, stream=stream, renderer=renderer,
         )
 
 
@@ -454,6 +457,15 @@ if __name__ == "__main__":
                              "(default) renders the two streams side-by-side "
                              "— engineer/tick on the left, prose with a "
                              "countdown match clock on the right.")
+    parser.add_argument("--viewer", action="store_true",
+                        help="HAJ-125: open the pygame top-down viewer "
+                             "alongside the match. Dev-tool only — reads "
+                             "match state, never mutates it. Requires "
+                             "pygame (`pip install pygame-ce`).")
+    parser.add_argument("--viewer-tps", type=float, default=None,
+                        help="Viewer frame rate in ticks/second (default 6). "
+                             "1.0 plays a 4-minute match in 4 minutes; "
+                             "20.0 makes it ~12 seconds.")
     args = parser.parse_args()
 
     import random
@@ -497,10 +509,29 @@ if __name__ == "__main__":
         def debug_factory():
             return None
 
+    # HAJ-125 — viewer factory. Imported lazily so the rest of main.py
+    # never needs pygame loaded.
+    if args.viewer:
+        try:
+            from match_viewer import (
+                PygameMatchRenderer, DEFAULT_TICKS_PER_SECOND,
+            )
+        except ImportError as e:
+            parser.error(
+                f"--viewer needs pygame: {e}. Install with `pip install pygame-ce`."
+            )
+        tps = args.viewer_tps if args.viewer_tps is not None else DEFAULT_TICKS_PER_SECOND
+        def renderer_factory():
+            return PygameMatchRenderer(ticks_per_second=tps)
+    else:
+        def renderer_factory():
+            return None
+
     if args.runs is None:
         _interactive_loop(
             ref_builder, debug_factory=debug_factory,
             seed_for_next=seed_for_next, stream=args.stream,
+            renderer_factory=renderer_factory,
         )
     else:
         _, build_a, build_b = MATCHUPS[args.matchup]
@@ -512,5 +543,5 @@ if __name__ == "__main__":
             _run_one_match(
                 build_a, build_b, ref_builder,
                 debug=debug_factory(), seed=seed_for_next(),
-                stream=args.stream,
+                stream=args.stream, renderer=renderer_factory(),
             )

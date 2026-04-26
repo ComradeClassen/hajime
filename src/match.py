@@ -23,7 +23,7 @@ import random
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Protocol, runtime_checkable
 
 from enums import (
     BodyArchetype, DominantSide, Position, StanceMatchup,
@@ -420,6 +420,36 @@ def resolve_throw(
 
 
 # ===========================================================================
+# RENDERER PROTOCOL (HAJ-125)
+#
+# A Renderer is a read-only observer attached to Match. The match calls
+# update(...) once per tick after the post-tick housekeeping; the renderer
+# reads state and draws — never mutates the match.
+#
+# Match itself depends only on this protocol, not on pygame or any other
+# rendering tech. The pygame implementation lives in match_viewer.py and
+# is loaded only when --viewer is passed; the test suite uses lightweight
+# fakes that record calls without opening windows.
+# ===========================================================================
+@runtime_checkable
+class Renderer(Protocol):
+    """Hook for visual / inspection surfaces attached to a running Match."""
+
+    def start(self) -> None:
+        """Called once before the first tick. Window creation, etc."""
+
+    def update(self, tick: int, match: "Match", events: "list[Event]") -> None:
+        """Called once per tick after _post_tick housekeeping."""
+
+    def stop(self) -> None:
+        """Called once after the last tick. Window teardown, etc."""
+
+    def is_open(self) -> bool:
+        """Return False when the user has closed the viewer; the Match
+        loop reads this each tick and ends gracefully if the window is gone."""
+
+
+# ===========================================================================
 # MATCH
 # The conductor. Owns all match-level state and coordinates all subsystems.
 # ===========================================================================
@@ -435,6 +465,7 @@ class Match:
         debug=None,
         seed: Optional[int] = None,
         stream: str = "both",
+        renderer: Optional["Renderer"] = None,
     ) -> None:
         if stream not in VALID_STREAMS:
             raise ValueError(
@@ -447,6 +478,8 @@ class Match:
         self.seed      = seed
         self._debug = debug
         self._stream = stream
+        # HAJ-125 — optional viewer hook. None during normal/test runs.
+        self._renderer = renderer
         if self._debug is not None:
             self._debug.bind_match(self)
 
@@ -594,25 +627,35 @@ class Match:
         self._print_header()
         if self._debug is not None:
             self._debug.print_banner()
+        if self._renderer is not None:
+            self._renderer.start()
 
-        # Hajime — route through the event emitter so the Hajime call
-        # participates in side-by-side rendering (HAJ-65 extension):
-        # left column gets `t000: …`, right column gets the full-match
-        # clock reading (e.g. `4:00  [ref: ...] Hajime!`).
-        hajime = self.referee.announce_hajime(tick=0)
-        self._print_events([hajime])
-        print()
+        try:
+            # Hajime — route through the event emitter so the Hajime call
+            # participates in side-by-side rendering (HAJ-65 extension):
+            # left column gets `t000: …`, right column gets the full-match
+            # clock reading (e.g. `4:00  [ref: ...] Hajime!`).
+            hajime = self.referee.announce_hajime(tick=0)
+            self._print_events([hajime])
+            # HAJ-125 — first frame at tick 0 so the viewer paints the
+            # starting positions before any motion.
+            if self._renderer is not None:
+                self._renderer.update(0, self, [hajime])
+            print()
 
-        for tick in range(1, self.max_ticks + 1):
-            self.ticks_run = tick
-            self._tick(tick)
-            if self.match_over:
-                break
-            if self._debug is not None and self._debug.quit_requested():
-                print("[debug] match aborted by inspector.")
-                break
+            for tick in range(1, self.max_ticks + 1):
+                self.ticks_run = tick
+                self._tick(tick)
+                if self.match_over:
+                    break
+                if self._debug is not None and self._debug.quit_requested():
+                    print("[debug] match aborted by inspector.")
+                    break
 
-        self._resolve_match()
+            self._resolve_match()
+        finally:
+            if self._renderer is not None:
+                self._renderer.stop()
 
     # -----------------------------------------------------------------------
     # TICK — the heart of the match
@@ -856,6 +899,14 @@ class Match:
 
         if self._debug is not None:
             self._debug.maybe_pause(tick, events)
+
+        # HAJ-125 — push the same tick state to the viewer (read-only).
+        if self._renderer is not None:
+            self._renderer.update(tick, self, events)
+            if not self._renderer.is_open():
+                # User closed the viewer window — bail out cleanly so the
+                # match loop's per-tick guard can exit on the next iteration.
+                self.match_over = True
 
     # -----------------------------------------------------------------------
     # NE-WAZA BRANCH
