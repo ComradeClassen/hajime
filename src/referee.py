@@ -141,7 +141,6 @@ class Referee:
 
         # Matte timing constants (modulated by personality)
         # Base values; personality scales them
-        self._STALEMATE_MATTE_TICKS   = int(20 - match_energy_read * 10)    # 10–20 ticks
         self._STUFFED_MATTE_TICKS     = int(8  - stuffed_throw_tolerance * 6)  # 2–8 ticks
         self._NEWAZA_MATTE_TICKS      = int(30 + newaza_patience * 30)      # 30–60 ticks
         self._PASSIVITY_SHIDO_TICKS   = int(120 - grip_initiative_strictness * 60)  # 60–120 ticks
@@ -173,11 +172,10 @@ class Referee:
                     and ticks_since_stuff >= self._STUFFED_MATTE_TICKS):
                 return MatteReason.STUFFED_THROW_TIMEOUT
 
-        # Standing stalemate: sub-loop has been stuck too long
-        if (state.sub_loop_state == SubLoopState.STANDING
-                and state.stalemate_ticks >= self._STALEMATE_MATTE_TICKS):
-            return MatteReason.STALEMATE
-
+        # No standing-stalemate Matte. Real judo doesn't reset a slow grip
+        # exchange — it punishes inactivity with a shido for passivity
+        # (handled by update_passivity → ShidoCall). The only standing event
+        # that triggers Matte is out-of-bounds, which is enforced elsewhere.
         return None
 
     # -----------------------------------------------------------------------
@@ -287,10 +285,8 @@ class Referee:
 
     def announce_matte(self, reason: MatteReason, tick: int = 0) -> Event:
         reason_text = {
-            MatteReason.SCORING:               "score awarded",
             MatteReason.STALEMATE:             "stalemate",
             MatteReason.OUT_OF_BOUNDS:         "out of bounds",
-            MatteReason.PASSIVITY:             "passivity",
             MatteReason.STUFFED_THROW_TIMEOUT: "stuffed throw — reset",
             MatteReason.INJURY:                "injury",
             MatteReason.OSAEKOMI_DECISION:     "osaekomi decision",

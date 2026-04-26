@@ -367,10 +367,8 @@ class LandingProfile(Enum):
 # Why the referee called Matte. Used in event logs and coach windows.
 # ---------------------------------------------------------------------------
 class MatteReason(Enum):
-    SCORING               = auto()  # Score was just awarded
     STALEMATE             = auto()  # Neither fighter making progress
     OUT_OF_BOUNDS         = auto()  # One or both fighters left the mat
-    PASSIVITY             = auto()  # Extended non-action, penalty pending
     STUFFED_THROW_TIMEOUT = auto()  # Stuffed throw; ref closes ne-waza window
     INJURY                = auto()  # Medical stop
     OSAEKOMI_DECISION     = auto()  # Pin clock reached decision threshold

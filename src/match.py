@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from enums import (
-    BodyArchetype, DominantSide, MatteReason, Position, StanceMatchup,
+    BodyArchetype, DominantSide, Position, StanceMatchup,
     SubLoopState, LandingProfile, GripMode,
 )
 from judoka import Judoka
@@ -83,7 +83,6 @@ TRUNK_ANGLE_GAIN:         float = 0.00008 # radians per N·m of net torque (stub
 TRUNK_RESTORATION:        float = 0.15   # passive + active return-to-vertical each tick
 FORCE_NOISE_PCT:          float = 0.10   # ±10% uniform on applied force magnitudes (3.8)
 TRUNK_NOISE_PCT:          float = 0.05   # ±5% uniform on trunk angle updates (3.8)
-STALEMATE_NO_PROGRESS_TICKS: int = 45    # ticks with no kuzushi signal before matte-eligible
 
 # Throw resolution
 NOISE_STD:           float = 2.0
@@ -1720,8 +1719,6 @@ class Match:
                 self.winner     = attacker
                 self.win_method = "ippon"
                 self.match_over = True
-                # Throw lands → referee calls it → matte. Human reading
-                # order should match causal order.
                 events.append(Event(
                     tick=tick,
                     event_type="THROW_LANDING",
@@ -1733,7 +1730,6 @@ class Match:
                           "quality_band": band.name},
                 ))
                 events.append(self.referee.announce_ippon(a_name, tick))
-                events.append(self.referee.announce_matte(MatteReason.SCORING, tick))
 
             elif effective_award == "WAZA_ARI":
                 attacker.state.score["waza_ari"] += 1
@@ -1763,12 +1759,9 @@ class Match:
                         event_type="IPPON_AWARDED",
                         description=f"[ref: {self.referee.name}] Two waza-ari — Ippon! {a_name} wins.",
                     ))
-                else:
-                    # Matte after score
-                    events.append(self.referee.announce_matte(
-                        __import__('enums').MatteReason.SCORING, tick
-                    ))
-                    self._handle_matte(tick)
+                # HAJ-44 — single waza-ari is announced and play continues.
+                # Real judo does not call Matte here; the sub-loop carries
+                # on, and should_call_matte will fire if the action stalls.
 
             else:  # NO_SCORE despite high raw net — ref downgraded it
                 events.append(Event(
