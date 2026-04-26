@@ -75,6 +75,28 @@ ENGAGEMENT_TICKS_FLOOR: int = 2
 KUMI_KATA_SHIDO_TICKS:        int = 30   # grip-to-attack threshold
 UNCONVENTIONAL_SHIDO_TICKS:   int = 5    # BELT/PISTOL/CROSS immediate-attack threshold
 
+# ---------------------------------------------------------------------------
+# MAT COORDINATE CONVENTION (HAJ-124)
+#
+# Single source of truth for the spatial unit used throughout the simulator.
+# Every consumer that interprets a coordinate, displacement, or distance —
+# the OOB boundary check, the top-down viewer, future locomotion — should
+# reference this declaration rather than re-deriving it from physics
+# constants.
+#
+#   - body_state.com_position is in MAT-FRAME METERS, origin at mat center.
+#   - Match-start positions: fighter_a at (-0.5, 0.0); fighter_b at (+0.5, 0.0).
+#     One meter apart, centered on the origin.
+#   - DISPLACEMENT_GAIN is in m/N·tick. force / mass × gain → meters of
+#     CoM displacement per tick (after FRICTION_DAMPING).
+#   - IJF reference geometry: contest area is 8 × 8 m; safety border is
+#     ≥ 3 m wide on all sides; total mat is ≥ 14 × 14 m. Sim half-widths
+#     should be derived from these numbers, not hard-coded.
+#
+# This convention is load-bearing for HAJ-125 (viewer) and HAJ-127 (OOB).
+# ---------------------------------------------------------------------------
+MAT_COORDINATE_UNIT: str = "meters"
+
 # Part 3 force-model calibration stubs. Phase 3 telemetry will tune these.
 JUDOKA_MASS_KG:           float = 80.0   # v0.1 uniform; Part 6 can pull from identity.
 FRICTION_DAMPING:         float = 0.55   # fraction of velocity surviving a tick (planted feet)
