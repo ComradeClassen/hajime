@@ -25,6 +25,7 @@
 from __future__ import annotations
 import time
 from collections import deque
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
 from enums import GripMode
@@ -33,6 +34,154 @@ if TYPE_CHECKING:
     from match import Match
     from grip_graph import Event
     from judoka import Judoka
+
+
+# ---------------------------------------------------------------------------
+# VIEW STATE (per-tick snapshot)
+# Everything the renderer needs to draw a single tick. Captured during
+# the live match run so the post-match review mode can scrub back to any
+# earlier tick without re-running the simulation.
+#
+# These are pure-data structs (no references to live Judoka objects) so
+# the snapshot list is independent of subsequent state mutation. Cost
+# per tick is small (~1 KB), so a 240-tick match holds <250 KB.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class GripEdgeView:
+    grasper_id:        str
+    grasper_part_name: str
+    target_id:         str
+    target_loc_name:   str
+    grip_type_name:    str
+    depth_name:        str
+    mode_value:        int   # GripMode.value — kept as int to detach
+
+
+@dataclass(frozen=True)
+class FighterView:
+    name:              str
+    color_tag:         str   # "a" or "b"
+    com_position:      tuple[float, float]
+    facing:            tuple[float, float]
+    foot_l_pos:        tuple[float, float]
+    foot_r_pos:        tuple[float, float]
+    trunk_sagittal:    float
+    trunk_frontal:     float
+    score_waza_ari:    int
+    score_ippon:       bool
+    shidos:            int
+    composure_current: float
+    composure_ceiling: float
+    cardio_current:    float
+    stun_ticks:        int
+    stance_name:       str
+    belt_name:         str
+    archetype_name:    str
+    age:               int
+    dominant_side:     str
+    kumi_kata_clock:   int
+    last_attack_tick:  int
+    off_desperation:   bool
+    def_desperation:   bool
+    body_parts:        tuple[tuple[str, float, float], ...] = ()
+    # Tuple of (part_name, effective, fatigue).
+
+
+@dataclass(frozen=True)
+class ViewState:
+    tick:               int
+    max_ticks:           int
+    position_name:      str
+    sub_loop_name:      str
+    matchup_name:       str
+    edge_count:         int
+    fighter_a:          FighterView
+    fighter_b:          FighterView
+    grip_edges:         tuple[GripEdgeView, ...]
+    event_descriptions: tuple[str, ...]
+    kuzushi_victims:    tuple[str, ...]   # names whose halo should flash this tick
+
+
+_INSPECTOR_BODY_PARTS = (
+    "right_hand", "left_hand", "right_leg", "left_leg",
+    "core", "lower_back",
+)
+
+
+def _capture_fighter(judoka, color_tag: str, match) -> FighterView:
+    ident = judoka.identity
+    cap   = judoka.capability
+    st    = judoka.state
+    bs    = st.body_state
+    parts = []
+    for key in _INSPECTOR_BODY_PARTS:
+        if key in st.body:
+            parts.append((
+                key,
+                judoka.effective_body_part(key),
+                st.body[key].fatigue,
+            ))
+    return FighterView(
+        name=ident.name,
+        color_tag=color_tag,
+        com_position=tuple(bs.com_position),
+        facing=tuple(bs.facing),
+        foot_l_pos=tuple(bs.foot_state_left.position),
+        foot_r_pos=tuple(bs.foot_state_right.position),
+        trunk_sagittal=bs.trunk_sagittal,
+        trunk_frontal=bs.trunk_frontal,
+        score_waza_ari=st.score["waza_ari"],
+        score_ippon=st.score["ippon"],
+        shidos=st.shidos,
+        composure_current=st.composure_current,
+        composure_ceiling=float(cap.composure_ceiling),
+        cardio_current=st.cardio_current,
+        stun_ticks=st.stun_ticks,
+        stance_name=st.current_stance.name.lower(),
+        belt_name=ident.belt_rank.name,
+        archetype_name=ident.body_archetype.name,
+        age=ident.age,
+        dominant_side=ident.dominant_side.name.lower(),
+        kumi_kata_clock=match.kumi_kata_clock.get(ident.name, 0),
+        last_attack_tick=match._last_attack_tick.get(ident.name, 0),
+        off_desperation=match._offensive_desperation_active.get(ident.name, False),
+        def_desperation=match._defensive_desperation_active.get(ident.name, False),
+        body_parts=tuple(parts),
+    )
+
+
+def capture_view_state(
+    match, tick: int, events, kuzushi_victims: tuple[str, ...] = (),
+) -> ViewState:
+    """Build a frozen ViewState from live Match state. Pure read; never
+    mutates anything. Called once per tick during a live run."""
+    edges = []
+    for e in match.grip_graph.edges:
+        edges.append(GripEdgeView(
+            grasper_id=e.grasper_id,
+            grasper_part_name=e.grasper_part.name,
+            target_id=e.target_id,
+            target_loc_name=e.target_location.name,
+            grip_type_name=e.grip_type_v2.name,
+            depth_name=e.depth_level.name,
+            mode_value=e.mode.value,
+        ))
+    descs = tuple(
+        e.description for e in events if getattr(e, "description", None)
+    )
+    return ViewState(
+        tick=tick,
+        max_ticks=match.max_ticks,
+        position_name=match.position.name,
+        sub_loop_name=match.sub_loop_state.name,
+        matchup_name=match._compute_stance_matchup().name,
+        edge_count=match.grip_graph.edge_count(),
+        fighter_a=_capture_fighter(match.fighter_a, "a", match),
+        fighter_b=_capture_fighter(match.fighter_b, "b", match),
+        grip_edges=tuple(edges),
+        event_descriptions=descs,
+        kuzushi_victims=kuzushi_victims,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +334,16 @@ class PygameMatchRenderer:
         # Kuzushi flash decay marker (per fighter).
         self._last_kuzushi_tick: dict[str, int] = {}
 
+        # Per-tick visual snapshots, captured during the live run. After
+        # match.end() the renderer enters review mode and renders these
+        # so the user can scrub backward.
+        self._snapshots: list[ViewState] = []
+        self._review_mode: bool = False
+        self._review_idx: int = 0
+        self._review_autoplay: bool = False
+        self._review_autoplay_dir: int = +1   # +1 forward, -1 backward
+        self._wall_t_last_review_step: float = 0.0
+
     # --- Renderer protocol (push) ----------------------------------------
     def start(self) -> None:
         import pygame
@@ -217,30 +376,146 @@ class PygameMatchRenderer:
 
     def run_interactive(self, match: "Match") -> None:
         """Own the wall-clock loop. Pump input every frame, advance the
-        match according to pause / step / speed-scrub state, render."""
+        match according to pause / step / speed-scrub state, render.
+        After match.end() is called, drop into review mode so the user
+        can scrub backward through the captured snapshots."""
         import pygame
         match.begin()
         self._wall_t_last_step = time.monotonic()
 
+        match_resolved = False
         try:
+            # Live phase — drive the match.
             while self._open and not match.is_done():
                 self._handle_input(match)
                 self._advance_match_if_due(match)
-                self._render_frame(match)
+                self._render_frame()
                 self._frame_idx += 1
                 self._clock.tick(60)   # 60 FPS render cap; sim pace is _tps
 
-            # Drain remaining input + give the user one final paint that
-            # shows the final state. Do NOT call begin/step here.
-            if self._open:
-                self._render_frame(match)
-        finally:
-            # Resolve match (decision/draw/summary) regardless of why we exited.
+            # Match has ended (score, time-up, or window close). Resolve
+            # for the narrative summary, then enter review mode if the
+            # window is still open.
             try:
                 match.end()
+                match_resolved = True
             except Exception:
-                # Don't let viewer teardown swallow real engine errors.
                 raise
+
+            if not self._open:
+                return
+
+            # Auto-pause and start review at the final tick.
+            self._enter_review_mode()
+
+            # Review phase — user can scrub the captured history.
+            while self._open:
+                self._handle_input_review()
+                self._advance_review_if_due()
+                self._render_frame()
+                self._frame_idx += 1
+                self._clock.tick(60)
+        finally:
+            if not match_resolved:
+                # Window closed before resolution — still call end() so
+                # the post-match summary fires for the log.
+                try:
+                    match.end()
+                except Exception:
+                    raise
+
+    # --- Review mode helpers --------------------------------------------
+    def _enter_review_mode(self) -> None:
+        self._review_mode = True
+        self._paused = True
+        self._review_autoplay = False
+        # Land on the most recent snapshot.
+        self._review_idx = max(0, len(self._snapshots) - 1)
+
+    def _handle_input_review(self) -> None:
+        import pygame
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                self._open = False
+                return
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                self._handle_click_review(ev.pos)
+            if ev.type != pygame.KEYDOWN:
+                continue
+            k = ev.key
+            if k == pygame.K_q or k == pygame.K_ESCAPE:
+                # First Esc clears inspector if active; second quits.
+                if self._inspect_target is not None and k == pygame.K_ESCAPE:
+                    self._inspect_target = None
+                else:
+                    self._open = False
+            elif k == pygame.K_LEFT:
+                self._review_idx = max(0, self._review_idx - 1)
+                self._review_autoplay = False
+            elif k in (pygame.K_RIGHT, pygame.K_PERIOD):
+                self._review_idx = min(
+                    len(self._snapshots) - 1, self._review_idx + 1,
+                )
+                self._review_autoplay = False
+            elif k == pygame.K_HOME:
+                self._review_idx = 0
+                self._review_autoplay = False
+            elif k == pygame.K_END:
+                self._review_idx = max(0, len(self._snapshots) - 1)
+                self._review_autoplay = False
+            elif k == pygame.K_SPACE:
+                self._review_autoplay = not self._review_autoplay
+                self._review_autoplay_dir = +1
+                self._wall_t_last_review_step = time.monotonic()
+            elif k == pygame.K_BACKSPACE:
+                self._review_autoplay = not self._review_autoplay
+                self._review_autoplay_dir = -1
+                self._wall_t_last_review_step = time.monotonic()
+            elif k in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
+                self._tps = min(MAX_TPS, self._tps * TPS_STEP_FACTOR)
+            elif k in (pygame.K_MINUS, pygame.K_KP_MINUS):
+                self._tps = max(MIN_TPS, self._tps / TPS_STEP_FACTOR)
+            elif k == pygame.K_0:
+                self._tps = self._initial_tps
+
+    def _handle_click_review(self, pos: tuple[int, int]) -> None:
+        # Hit-test against the snapshot's fighter positions.
+        if not self._snapshots:
+            return
+        snap = self._snapshots[self._review_idx]
+        T = self._transform
+        click_x, click_y = pos
+        hit: Optional[str] = None
+        for fv in (snap.fighter_a, snap.fighter_b):
+            cx, cy = T.world_to_screen(*fv.com_position)
+            if (click_x - cx) ** 2 + (click_y - cy) ** 2 <= 16 ** 2:
+                hit = fv.color_tag
+                break
+        if hit is None:
+            if click_x < MAT_PANEL_W:
+                self._inspect_target = None
+        else:
+            self._inspect_target = None if self._inspect_target == hit else hit
+
+    def _advance_review_if_due(self) -> None:
+        if not self._review_autoplay:
+            return
+        if not self._snapshots:
+            return
+        period = 1.0 / max(MIN_TPS, self._tps)
+        now = time.monotonic()
+        if now - self._wall_t_last_review_step < period:
+            return
+        self._wall_t_last_review_step = now
+        new_idx = self._review_idx + self._review_autoplay_dir
+        last = len(self._snapshots) - 1
+        if new_idx < 0:
+            new_idx = 0
+            self._review_autoplay = False
+        elif new_idx > last:
+            new_idx = last
+            self._review_autoplay = False
+        self._review_idx = new_idx
 
     # --- Internal: input + advance ---------------------------------------
     def _handle_input(self, match: "Match") -> None:
@@ -315,38 +590,86 @@ class PygameMatchRenderer:
 
     # --- Internal: per-tick absorption (called from update()) ------------
     def _absorb_tick(self, tick: int, match: "Match", events: "list[Event]") -> None:
-        # Watch for kuzushi events to flash halos.
+        # Watch for kuzushi events to flash halos. Track victims at this
+        # tick so the snapshot can paint the same flash in review mode.
+        kuzushi_victims: list[str] = []
         for e in events:
             if e.event_type == "KUZUSHI_INDUCED":
                 victim = (e.data or {}).get("victim")
                 if victim:
                     self._last_kuzushi_tick[victim] = tick
+                    kuzushi_victims.append(victim)
                 else:
                     for f in (match.fighter_a, match.fighter_b):
                         if f.identity.name in (e.description or ""):
                             self._last_kuzushi_tick[f.identity.name] = tick
+                            kuzushi_victims.append(f.identity.name)
             # Stash everything-with-a-description into the ticker.
             if e.description:
                 self._event_log.append((tick, e.description, self._frame_idx))
-        # Push trails once per tick (not once per frame).
-        self._trails.push(
-            match.fighter_a.state.body_state.com_position,
-            match.fighter_b.state.body_state.com_position,
-        )
+        # Capture a frozen snapshot of everything the renderer needs to
+        # draw THIS tick. Powers post-match scrubbing in review mode.
+        self._snapshots.append(capture_view_state(
+            match, tick, events, kuzushi_victims=tuple(kuzushi_victims),
+        ))
 
     # --- Internal: rendering ---------------------------------------------
-    def _render_frame(self, match: "Match") -> None:
+    def _current_view(self) -> Optional[ViewState]:
+        """The ViewState that drives the current frame.
+
+        - Live mode: most recent snapshot (or None pre-tick-0).
+        - Review mode: snapshot at _review_idx.
+        """
+        if not self._snapshots:
+            return None
+        if self._review_mode:
+            return self._snapshots[self._review_idx]
+        return self._snapshots[-1]
+
+    def _trail_positions(self, view: ViewState, tag: str) -> list[tuple[float, float]]:
+        """Construct a trail tail by reading recent snapshots up to the
+        currently-displayed view. Live mode shows the most recent
+        TRAIL_LENGTH; review mode shows TRAIL_LENGTH preceding the
+        review_idx so the trail is "what led up to this moment.\""""
+        if self._review_mode:
+            end = self._review_idx + 1
+        else:
+            end = len(self._snapshots)
+        start = max(0, end - TRAIL_LENGTH)
+        sl = self._snapshots[start:end]
+        if tag == "a":
+            return [s.fighter_a.com_position for s in sl]
+        return [s.fighter_b.com_position for s in sl]
+
+    def _ticks_since_kuzushi(self, view: ViewState, name: str) -> int:
+        """How many ticks ago this fighter last had a KUZUSHI_INDUCED
+        event. Live mode reads from the live decay marker; review mode
+        scans the snapshot history backwards from the displayed tick."""
+        if not self._review_mode:
+            last = self._last_kuzushi_tick.get(name, -10**9)
+            return view.tick - last
+        # Review: scan back through snapshots up to and including the
+        # currently-displayed one for any kuzushi flash on this fighter.
+        for i in range(self._review_idx, -1, -1):
+            snap = self._snapshots[i]
+            if name in snap.kuzushi_victims:
+                return view.tick - snap.tick
+        return 10**9
+
+    def _render_frame(self) -> None:
         import pygame
+        view = self._current_view()
         screen = self._screen
         screen.fill(COL_BG)
         self._draw_mat(screen)
-        self._draw_trails(screen)
-        self._draw_grip_edges(screen, match)
-        self._draw_kuzushi_halos(screen, match, match.ticks_run)
-        self._draw_fighters(screen, match)
-        self._draw_feet(screen, match)
-        self._draw_pause_indicator(screen)
-        self._draw_sidebar(screen, match)
+        if view is not None:
+            self._draw_trails(screen, view)
+            self._draw_grip_edges(screen, view)
+            self._draw_kuzushi_halos(screen, view)
+            self._draw_fighters(screen, view)
+            self._draw_feet(screen, view)
+        self._draw_pause_indicator(screen, view)
+        self._draw_sidebar(screen, view)
         self._draw_footer_hint(screen)
         pygame.display.flip()
 
@@ -365,13 +688,11 @@ class PygameMatchRenderer:
         pygame.draw.line(screen, COL_GRID, (ox - 6, oy), (ox + 6, oy), 1)
         pygame.draw.line(screen, COL_GRID, (ox, oy - 6), (ox, oy + 6), 1)
 
-    def _draw_trails(self, screen) -> None:
+    def _draw_trails(self, screen, view: ViewState) -> None:
         import pygame
         T = self._transform
-        for trail, color in (
-            (self._trails.fighter_a(), COL_TRAIL_A),
-            (self._trails.fighter_b(), COL_TRAIL_B),
-        ):
+        for tag, color in (("a", COL_TRAIL_A), ("b", COL_TRAIL_B)):
+            trail = self._trail_positions(view, tag)
             n = len(trail)
             if n < 2:
                 continue
@@ -382,28 +703,27 @@ class PygameMatchRenderer:
                 px, py = T.world_to_screen(*trail[i])
                 screen.blit(surf, (px - 1, py - 1))
 
-    def _draw_grip_edges(self, screen, match: "Match") -> None:
+    def _draw_grip_edges(self, screen, view: ViewState) -> None:
         import pygame
         T = self._transform
-        a = match.fighter_a
-        b = match.fighter_b
-        ax, ay = T.world_to_screen(*a.state.body_state.com_position)
-        bx, by = T.world_to_screen(*b.state.body_state.com_position)
-        for edge in match.grip_graph.edges:
-            color = _grip_mode_color(edge.mode)
-            if edge.grasper_id == a.identity.name:
+        a, b = view.fighter_a, view.fighter_b
+        ax, ay = T.world_to_screen(*a.com_position)
+        bx, by = T.world_to_screen(*b.com_position)
+        for edge in view.grip_edges:
+            mode = GripMode(edge.mode_value)
+            color = _grip_mode_color(mode)
+            if edge.grasper_id == a.name:
                 p0, p1 = (ax, ay), (bx, by)
             else:
                 p0, p1 = (bx, by), (ax, ay)
             pygame.draw.line(screen, color, p0, p1, 2)
 
-    def _draw_kuzushi_halos(self, screen, match: "Match", tick: int) -> None:
+    def _draw_kuzushi_halos(self, screen, view: ViewState) -> None:
         import pygame
         T = self._transform
-        for f in (match.fighter_a, match.fighter_b):
-            bs = f.state.body_state
-            mag = abs(bs.trunk_sagittal) + abs(bs.trunk_frontal)
-            ticks_since = tick - self._last_kuzushi_tick.get(f.identity.name, -10**9)
+        for fv in (view.fighter_a, view.fighter_b):
+            mag = abs(fv.trunk_sagittal) + abs(fv.trunk_frontal)
+            ticks_since = self._ticks_since_kuzushi(view, fv.name)
             flash = max(0.0, 1.0 - ticks_since / 5.0) if ticks_since >= 0 else 0.0
             base_alpha = int(min(255, mag * 200))
             flash_alpha = int(min(255, flash * 255))
@@ -411,7 +731,7 @@ class PygameMatchRenderer:
             if alpha <= 0:
                 continue
             radius_px = T.meters_to_pixels(0.55) + (8 if flash > 0.5 else 0)
-            cx, cy = T.world_to_screen(*bs.com_position)
+            cx, cy = T.world_to_screen(*fv.com_position)
             halo = pygame.Surface((radius_px * 2, radius_px * 2), pygame.SRCALPHA)
             pygame.draw.circle(
                 halo, (*COL_KUZUSHI, alpha),
@@ -419,96 +739,101 @@ class PygameMatchRenderer:
             )
             screen.blit(halo, (cx - radius_px, cy - radius_px))
 
-    def _draw_fighters(self, screen, match: "Match") -> None:
+    def _draw_fighters(self, screen, view: ViewState) -> None:
         import pygame
         T = self._transform
-        for tag, f, color in (
-            ("a", match.fighter_a, COL_FIGHTER_A),
-            ("b", match.fighter_b, COL_FIGHTER_B),
+        for fv, color in (
+            (view.fighter_a, COL_FIGHTER_A),
+            (view.fighter_b, COL_FIGHTER_B),
         ):
-            bs = f.state.body_state
-            cx, cy = T.world_to_screen(*bs.com_position)
+            cx, cy = T.world_to_screen(*fv.com_position)
             pygame.draw.circle(screen, color, (cx, cy), 9)
-            # Highlight the inspect target with a thin white ring.
-            if self._inspect_target == tag:
+            if self._inspect_target == fv.color_tag:
                 pygame.draw.circle(screen, COL_INSPECT, (cx, cy), 13, 2)
-            fx, fy = bs.facing
+            fx, fy = fv.facing
             tip_m = (
-                bs.com_position[0] + fx * 0.45,
-                bs.com_position[1] + fy * 0.45,
+                fv.com_position[0] + fx * 0.45,
+                fv.com_position[1] + fy * 0.45,
             )
             tx, ty = T.world_to_screen(*tip_m)
             pygame.draw.line(screen, COL_FACING, (cx, cy), (tx, ty), 2)
 
-    def _draw_feet(self, screen, match: "Match") -> None:
+    def _draw_feet(self, screen, view: ViewState) -> None:
         import pygame
         T = self._transform
-        for f, color in (
-            (match.fighter_a, COL_FOOT_A),
-            (match.fighter_b, COL_FOOT_B),
+        for fv, color in (
+            (view.fighter_a, COL_FOOT_A),
+            (view.fighter_b, COL_FOOT_B),
         ):
-            bs = f.state.body_state
-            for foot in (bs.foot_state_left, bs.foot_state_right):
-                fx, fy = T.world_to_screen(*foot.position)
+            for pos in (fv.foot_l_pos, fv.foot_r_pos):
+                fx, fy = T.world_to_screen(*pos)
                 pygame.draw.circle(screen, color, (fx, fy), 3)
 
-    def _draw_pause_indicator(self, screen) -> None:
+    def _draw_pause_indicator(self, screen, view: Optional[ViewState]) -> None:
         import pygame
+        if self._review_mode:
+            last = max(0, len(self._snapshots) - 1)
+            label = self._font_med.render(
+                f"REVIEW  tick {view.tick if view else 0}/{last}"
+                f"  (← →: scrub   space: autoplay   "
+                f"backspace: rewind   home/end: ends)",
+                True, COL_PAUSE_BAR,
+            )
+            screen.blit(label, (16, 12))
+            return
         if not self._paused:
             return
-        # Simple "PAUSED" label top-left of the mat panel.
         label = self._font_med.render(
             f"PAUSED  (tps {self._tps:.2f})", True, COL_PAUSE_BAR,
         )
         screen.blit(label, (16, 12))
 
-    def _draw_sidebar(self, screen, match: "Match") -> None:
+    def _draw_sidebar(self, screen, view: Optional[ViewState]) -> None:
         import pygame
         x0 = WINDOW_W - SIDEBAR_W
         panel = pygame.Rect(x0, 0, SIDEBAR_W, WINDOW_H)
         pygame.draw.rect(screen, COL_PANEL, panel)
 
-        # Top half: state summary (or inspector when a fighter is selected).
-        if self._inspect_target is None:
-            self._draw_summary(screen, match, x0)
-        else:
-            target = (match.fighter_a if self._inspect_target == "a"
-                      else match.fighter_b)
-            self._draw_inspector(screen, match, target, x0)
+        if view is not None:
+            if self._inspect_target is None:
+                self._draw_summary(screen, view, x0)
+            else:
+                fv = (view.fighter_a if self._inspect_target == "a"
+                      else view.fighter_b)
+                self._draw_inspector(screen, view, fv, x0)
 
-        # Bottom half: docked event ticker.
         self._draw_ticker(screen, x0)
 
-    def _draw_summary(self, screen, match: "Match", x0: int) -> None:
-        a = match.fighter_a
-        b = match.fighter_b
-        remaining = max(0, match.max_ticks - match.ticks_run)
+    def _draw_summary(self, screen, view: ViewState, x0: int) -> None:
+        a, b = view.fighter_a, view.fighter_b
+        remaining = max(0, view.max_ticks - view.tick)
         clock = f"{remaining // 60}:{remaining % 60:02d}"
-        speed_mark = (f"{self._tps:.2f}× ticks/sec"
-                      f"{' [paused]' if self._paused else ''}")
+        if self._review_mode:
+            speed_mark = "REVIEW MODE"
+        else:
+            speed_mark = (f"{self._tps:.2f}× ticks/sec"
+                          f"{' [paused]' if self._paused else ''}")
         lines: list[tuple[str, tuple]] = [
-            (f"tick {match.ticks_run:03d}/{match.max_ticks}    {clock}", COL_TEXT),
+            (f"tick {view.tick:03d}/{view.max_ticks}    {clock}", COL_TEXT),
             (speed_mark, COL_TEXT_DIM),
             ("", COL_TEXT),
-            (f"position:    {match.position.name}", COL_TEXT),
-            (f"sub-loop:    {match.sub_loop_state.name}", COL_TEXT),
+            (f"position:    {view.position_name}", COL_TEXT),
+            (f"sub-loop:    {view.sub_loop_name}", COL_TEXT),
             ("", COL_TEXT),
-            (f"  {a.identity.name}", COL_FIGHTER_A),
-            (f"   waza-ari {a.state.score['waza_ari']}   "
-             f"shidos {a.state.shidos}", COL_TEXT_DIM),
-            (f"   composure {a.state.composure_current:.2f}/"
-             f"{a.capability.composure_ceiling}", COL_TEXT_DIM),
-            (f"   stance {a.state.current_stance.name.lower()}", COL_TEXT_DIM),
+            (f"  {a.name}", COL_FIGHTER_A),
+            (f"   waza-ari {a.score_waza_ari}   shidos {a.shidos}", COL_TEXT_DIM),
+            (f"   composure {a.composure_current:.2f}/"
+             f"{a.composure_ceiling:.0f}", COL_TEXT_DIM),
+            (f"   stance {a.stance_name}", COL_TEXT_DIM),
             ("", COL_TEXT),
-            (f"  {b.identity.name}", COL_FIGHTER_B),
-            (f"   waza-ari {b.state.score['waza_ari']}   "
-             f"shidos {b.state.shidos}", COL_TEXT_DIM),
-            (f"   composure {b.state.composure_current:.2f}/"
-             f"{b.capability.composure_ceiling}", COL_TEXT_DIM),
-            (f"   stance {b.state.current_stance.name.lower()}", COL_TEXT_DIM),
+            (f"  {b.name}", COL_FIGHTER_B),
+            (f"   waza-ari {b.score_waza_ari}   shidos {b.shidos}", COL_TEXT_DIM),
+            (f"   composure {b.composure_current:.2f}/"
+             f"{b.composure_ceiling:.0f}", COL_TEXT_DIM),
+            (f"   stance {b.stance_name}", COL_TEXT_DIM),
             ("", COL_TEXT),
-            (f"matchup:     {match._compute_stance_matchup().name}", COL_TEXT),
-            (f"edges:       {match.grip_graph.edge_count()}", COL_TEXT_DIM),
+            (f"matchup:     {view.matchup_name}", COL_TEXT),
+            (f"edges:       {view.edge_count}", COL_TEXT_DIM),
         ]
         y = 14
         for text, color in lines:
@@ -518,77 +843,61 @@ class PygameMatchRenderer:
             y += 18
 
     def _draw_inspector(
-        self, screen, match: "Match", judoka: "Judoka", x0: int,
+        self, screen, view: ViewState, fv: FighterView, x0: int,
     ) -> None:
         import pygame
-        # Background tint to make inspect mode visually distinct.
         pygame.draw.rect(screen, COL_PANEL_ALT,
                          pygame.Rect(x0, 0, SIDEBAR_W, WINDOW_H - TICKER_H - FOOTER_H))
-        ident = judoka.identity
-        cap   = judoka.capability
-        st    = judoka.state
-        bs    = st.body_state
-        cf    = COL_FIGHTER_A if judoka is match.fighter_a else COL_FIGHTER_B
-        head  = self._font_big.render(
-            f"{ident.name}  [inspect]", True, cf,
-        )
+        cf = COL_FIGHTER_A if fv.color_tag == "a" else COL_FIGHTER_B
+        head = self._font_big.render(f"{fv.name}  [inspect]", True, cf)
         screen.blit(head, (x0 + 12, 10))
 
-        # Active grip edges (this fighter as grasper).
-        own_edges = [e for e in match.grip_graph.edges
-                     if e.grasper_id == ident.name]
+        own_edges = [e for e in view.grip_edges if e.grasper_id == fv.name]
 
-        body = st.body
         lines: list[tuple[str, tuple]] = [
-            (f"belt {ident.belt_rank.name}   "
-             f"{ident.body_archetype.name}   age {ident.age}", COL_TEXT_DIM),
-            (f"stance {st.current_stance.name.lower()}   "
-             f"dom {ident.dominant_side.name.lower()}", COL_TEXT_DIM),
+            (f"belt {fv.belt_name}   {fv.archetype_name}   age {fv.age}",
+             COL_TEXT_DIM),
+            (f"stance {fv.stance_name}   dom {fv.dominant_side}",
+             COL_TEXT_DIM),
             ("", COL_TEXT),
-            (f"score: waza-ari {st.score['waza_ari']}   "
-             f"ippon {st.score['ippon']}   shidos {st.shidos}", COL_TEXT),
+            (f"score: waza-ari {fv.score_waza_ari}   "
+             f"ippon {fv.score_ippon}   shidos {fv.shidos}", COL_TEXT),
             ("", COL_TEXT),
             ("composure / cardio / stun:", COL_TEXT),
-            (f"  composure  {st.composure_current:.2f} / "
-             f"{cap.composure_ceiling}", COL_TEXT_DIM),
-            (f"  cardio     {st.cardio_current:.3f}", COL_TEXT_DIM),
-            (f"  stun_ticks {st.stun_ticks}", COL_TEXT_DIM),
+            (f"  composure  {fv.composure_current:.2f} / "
+             f"{fv.composure_ceiling:.0f}", COL_TEXT_DIM),
+            (f"  cardio     {fv.cardio_current:.3f}", COL_TEXT_DIM),
+            (f"  stun_ticks {fv.stun_ticks}", COL_TEXT_DIM),
             ("", COL_TEXT),
             ("body fatigue:", COL_TEXT),
         ]
-        for part_key in ("right_hand", "left_hand", "right_leg", "left_leg",
-                         "core", "lower_back"):
-            if part_key in body:
-                lines.append((
-                    f"  {part_key:<11} eff {judoka.effective_body_part(part_key):.2f}  "
-                    f"fat {body[part_key].fatigue:.3f}",
-                    COL_TEXT_DIM,
-                ))
+        for part_key, eff, fat in fv.body_parts:
+            lines.append((
+                f"  {part_key:<11} eff {eff:.2f}  fat {fat:.3f}",
+                COL_TEXT_DIM,
+            ))
         lines.extend([
             ("", COL_TEXT),
             ("body state:", COL_TEXT),
-            (f"  com_pos    ({bs.com_position[0]:+.2f}, {bs.com_position[1]:+.2f}) m",
-             COL_TEXT_DIM),
-            (f"  trunk_sag  {bs.trunk_sagittal:+.3f} rad", COL_TEXT_DIM),
-            (f"  trunk_frt  {bs.trunk_frontal:+.3f} rad", COL_TEXT_DIM),
+            (f"  com_pos    ({fv.com_position[0]:+.2f}, "
+             f"{fv.com_position[1]:+.2f}) m", COL_TEXT_DIM),
+            (f"  trunk_sag  {fv.trunk_sagittal:+.3f} rad", COL_TEXT_DIM),
+            (f"  trunk_frt  {fv.trunk_frontal:+.3f} rad", COL_TEXT_DIM),
             ("", COL_TEXT),
-            (f"clocks: kumi-kata {match.kumi_kata_clock.get(ident.name, 0)}",
-             COL_TEXT),
-            (f"        last_attack {match._last_attack_tick.get(ident.name, 0)}",
-             COL_TEXT_DIM),
+            (f"clocks: kumi-kata {fv.kumi_kata_clock}", COL_TEXT),
+            (f"        last_attack {fv.last_attack_tick}", COL_TEXT_DIM),
             ("", COL_TEXT),
             ("desperation:", COL_TEXT),
-            (f"  offensive {match._offensive_desperation_active.get(ident.name, False)}",
-             COL_TEXT_DIM),
-            (f"  defensive {match._defensive_desperation_active.get(ident.name, False)}",
-             COL_TEXT_DIM),
+            (f"  offensive {fv.off_desperation}", COL_TEXT_DIM),
+            (f"  defensive {fv.def_desperation}", COL_TEXT_DIM),
             ("", COL_TEXT),
             (f"grips ({len(own_edges)}):", COL_TEXT),
         ])
         for e in own_edges:
             lines.append((
-                f"  {e.grasper_part.name:<10} → {e.target_location.name:<14} "
-                f"{e.grip_type_v2.name:<12} {e.depth_level.name:<10} {e.mode.name}",
+                f"  {e.grasper_part_name:<10} → {e.target_loc_name:<14} "
+                f"{e.grip_type_name:<12} {e.depth_name:<10} "
+                f"{GripMode(e.mode_value).name}",
                 COL_TEXT_DIM,
             ))
         if not own_edges:
@@ -611,18 +920,32 @@ class PygameMatchRenderer:
         pygame.draw.line(screen, COL_GRID,
                          (x0, ticker_y0), (WINDOW_W, ticker_y0), 1)
 
-        title = self._font_med.render("event ticker", True, COL_TEXT_DIM)
+        title_text = ("event ticker (review)" if self._review_mode
+                      else "event ticker")
+        title = self._font_med.render(title_text, True, COL_TEXT_DIM)
         screen.blit(title, (x0 + 12, ticker_y0 + 6))
 
-        # Newest at top.
-        events = list(self._event_log)
-        events.reverse()
+        # In review mode, show only events at or before the current tick
+        # so the ticker reflects what's visible on the mat.
+        if self._review_mode and self._snapshots:
+            cutoff = self._snapshots[self._review_idx].tick
+            events = [(t, d, fs) for (t, d, fs) in self._event_log
+                      if t <= cutoff]
+        else:
+            events = list(self._event_log)
+        events.reverse()  # newest at top
+
         y = ticker_y0 + 30
         for ev_tick, desc, frame_seen in events[:TICKER_MAX_LINES]:
-            age = self._frame_idx - frame_seen
-            color = COL_TEXT_NEW if age <= NEW_EVENT_HIGHLIGHT_FRAMES else COL_TEXT_DIM
+            if self._review_mode:
+                # Highlighting in review is misleading; dim everything.
+                color = COL_TEXT_DIM
+            else:
+                age = self._frame_idx - frame_seen
+                color = (COL_TEXT_NEW
+                         if age <= NEW_EVENT_HIGHLIGHT_FRAMES
+                         else COL_TEXT_DIM)
             text = f"t{ev_tick:03d} {desc}"
-            # Truncate to fit.
             max_chars = 52
             if len(text) > max_chars:
                 text = text[:max_chars - 1] + "…"
@@ -634,8 +957,13 @@ class PygameMatchRenderer:
         import pygame
         rect = pygame.Rect(0, WINDOW_H - FOOTER_H, WINDOW_W, FOOTER_H)
         pygame.draw.rect(screen, COL_PANEL, rect)
-        hint = ("space: pause/play   →: step   +/-: speed   "
-                "0: reset speed   click: inspect   esc: clear   q: quit")
+        if self._review_mode:
+            hint = ("REVIEW   ← →: scrub one tick   "
+                    "space: autoplay forward   backspace: autoplay back   "
+                    "home/end: jump   click: inspect   q: quit")
+        else:
+            hint = ("space: pause/play   →: step   +/-: speed   "
+                    "0: reset speed   click: inspect   esc: clear   q: quit")
         surf = self._font_small.render(hint, True, COL_TEXT_DIM)
         screen.blit(surf, (12, WINDOW_H - FOOTER_H + 4))
 
