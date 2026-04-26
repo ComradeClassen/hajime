@@ -255,6 +255,108 @@ def test_review_scrubbing_does_not_call_match_step() -> None:
     assert len(r._snapshots) == final + 1   # tick 0 paint + final stepped
 
 
+def test_left_arrow_enters_mid_match_scrub_back() -> None:
+    """Pressing LEFT during the live phase auto-pauses the match and
+    flips the renderer into review at (latest - 1)."""
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    from match_viewer import PygameMatchRenderer
+    import pygame
+
+    class PressLeftAtFrame3(PygameMatchRenderer):
+        def __init__(self):
+            super().__init__(ticks_per_second=30.0)
+            self._review_frames = 0
+            self._was_live_when_review_first_seen: Optional[bool] = None
+            self._review_idx_at_entry: Optional[int] = None
+            self._left_sent = False
+
+        def _handle_input(self, match):
+            # Drop a fake LEFT into the queue once we have snapshots.
+            if not self._left_sent and len(self._snapshots) >= 3:
+                self._left_sent = True
+                pygame.event.post(pygame.event.Event(
+                    pygame.KEYDOWN,
+                    {"key": pygame.K_LEFT, "mod": 0, "unicode": "",
+                     "scancode": 0},
+                ))
+            super()._handle_input(match)
+
+        def _handle_input_review(self):
+            if self._was_live_when_review_first_seen is None:
+                self._was_live_when_review_first_seen = self._match_live
+                self._review_idx_at_entry = self._review_idx
+            super()._handle_input_review()
+            self._review_frames += 1
+            if self._review_frames > 3:
+                self._open = False
+
+    r = PressLeftAtFrame3()
+    m = _new_match(max_ticks=20, seed=23)
+    m._renderer = r
+    _silent_run(m)
+    assert r._review_mode is True
+    assert r._was_live_when_review_first_seen is True, (
+        "review entered mid-match (during the live phase)"
+    )
+    # Entry index landed at len-2 (one tick back from the latest).
+    assert r._review_idx_at_entry == max(0, len(r._snapshots) - 2)
+    assert r._paused is True
+
+
+def test_space_in_mid_match_review_resumes_live_play() -> None:
+    """SPACE while in mid-match review exits review and unpauses, so
+    the live phase resumes advancing the match."""
+    os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+    from match_viewer import PygameMatchRenderer
+    import pygame
+
+    class LeftThenSpace(PygameMatchRenderer):
+        def __init__(self):
+            super().__init__(ticks_per_second=30.0)
+            self._left_sent = False
+            self._space_sent = False
+            self._ticks_at_resume: Optional[int] = None
+            self._post_resume_frames = 0
+
+        def _handle_input(self, match):
+            if not self._left_sent and len(self._snapshots) >= 3:
+                self._left_sent = True
+                pygame.event.post(pygame.event.Event(
+                    pygame.KEYDOWN,
+                    {"key": pygame.K_LEFT, "mod": 0, "unicode": "",
+                     "scancode": 0},
+                ))
+            # If we're back in live mode after the LEFT/SPACE round-trip,
+            # snapshot the tick count once and quit shortly after.
+            if (self._left_sent and self._space_sent
+                    and self._ticks_at_resume is None):
+                self._ticks_at_resume = match.ticks_run
+            if self._ticks_at_resume is not None:
+                self._post_resume_frames += 1
+                if self._post_resume_frames > 5:
+                    self._open = False
+            super()._handle_input(match)
+
+        def _handle_input_review(self):
+            if not self._space_sent:
+                self._space_sent = True
+                pygame.event.post(pygame.event.Event(
+                    pygame.KEYDOWN,
+                    {"key": pygame.K_SPACE, "mod": 0, "unicode": " ",
+                     "scancode": 0},
+                ))
+            super()._handle_input_review()
+
+    r = LeftThenSpace()
+    m = _new_match(max_ticks=20, seed=29)
+    m._renderer = r
+    _silent_run(m)
+    # The match continued running after SPACE was pressed in review.
+    assert r._ticks_at_resume is not None
+    # Match advanced past the resume point.
+    assert m.ticks_run >= r._ticks_at_resume
+
+
 def test_review_idx_clamped_to_snapshot_range() -> None:
     """Manually nudging _review_idx outside the snapshot range gets
     clamped on the next handle_input_review call (LEFT/RIGHT clamp at

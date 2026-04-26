@@ -336,13 +336,19 @@ class PygameMatchRenderer:
 
         # Per-tick visual snapshots, captured during the live run. After
         # match.end() the renderer enters review mode and renders these
-        # so the user can scrub backward.
+        # so the user can scrub backward. The user can also enter review
+        # mid-match by pressing LEFT — the match auto-pauses, the viewer
+        # holds an older snapshot, and SPACE resumes live play.
         self._snapshots: list[ViewState] = []
         self._review_mode: bool = False
         self._review_idx: int = 0
         self._review_autoplay: bool = False
         self._review_autoplay_dir: int = +1   # +1 forward, -1 backward
         self._wall_t_last_review_step: float = 0.0
+        # True while the live phase is running. Goes False after match.end().
+        # Used by the review key handler to distinguish "resume live play"
+        # (mid-match) from "toggle autoplay scrub" (post-match).
+        self._match_live: bool = False
 
     # --- Renderer protocol (push) ----------------------------------------
     def start(self) -> None:
@@ -382,13 +388,21 @@ class PygameMatchRenderer:
         import pygame
         match.begin()
         self._wall_t_last_step = time.monotonic()
+        self._match_live = True
 
         match_resolved = False
         try:
-            # Live phase — drive the match.
+            # Live phase — drive the match. Input dispatch flips to the
+            # review handler when the user steps into mid-match review
+            # (LEFT arrow); the loop keeps running until match.is_done(),
+            # but the match doesn't advance while review is active.
             while self._open and not match.is_done():
-                self._handle_input(match)
-                self._advance_match_if_due(match)
+                if self._review_mode:
+                    self._handle_input_review()
+                    self._advance_review_if_due()
+                else:
+                    self._handle_input(match)
+                    self._advance_match_if_due(match)
                 self._render_frame()
                 self._frame_idx += 1
                 self._clock.tick(60)   # 60 FPS render cap; sim pace is _tps
@@ -402,6 +416,7 @@ class PygameMatchRenderer:
             except Exception:
                 raise
 
+            self._match_live = False
             if not self._open:
                 return
 
@@ -416,6 +431,7 @@ class PygameMatchRenderer:
                 self._frame_idx += 1
                 self._clock.tick(60)
         finally:
+            self._match_live = False
             if not match_resolved:
                 # Window closed before resolution — still call end() so
                 # the post-match summary fires for the log.
@@ -464,9 +480,19 @@ class PygameMatchRenderer:
                 self._review_idx = max(0, len(self._snapshots) - 1)
                 self._review_autoplay = False
             elif k == pygame.K_SPACE:
-                self._review_autoplay = not self._review_autoplay
-                self._review_autoplay_dir = +1
-                self._wall_t_last_review_step = time.monotonic()
+                if self._match_live:
+                    # Mid-match: SPACE exits review and resumes live play.
+                    # The match was auto-paused on review entry; clearing
+                    # both flags hands control back to the live phase.
+                    self._review_mode = False
+                    self._review_autoplay = False
+                    self._paused = False
+                    self._wall_t_last_step = time.monotonic()
+                else:
+                    # Post-match: toggle autoplay forward through history.
+                    self._review_autoplay = not self._review_autoplay
+                    self._review_autoplay_dir = +1
+                    self._wall_t_last_review_step = time.monotonic()
             elif k == pygame.K_BACKSPACE:
                 self._review_autoplay = not self._review_autoplay
                 self._review_autoplay_dir = -1
@@ -537,6 +563,15 @@ class PygameMatchRenderer:
             # Step one tick. Only meaningful when paused, but harmless
             # otherwise — _advance_match_if_due will also fire normally.
             self._step_request = True
+        elif ev.key == pygame.K_LEFT:
+            # Mid-match scrub-back: auto-pause and flip into review
+            # showing the previous tick's snapshot. Keep pressing LEFT
+            # to walk further backward; SPACE resumes live play.
+            if self._snapshots:
+                self._paused = True
+                self._review_mode = True
+                self._review_idx = max(0, len(self._snapshots) - 2)
+                self._review_autoplay = False
         elif ev.key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS):
             self._tps = min(MAX_TPS, self._tps * TPS_STEP_FACTOR)
         elif ev.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
@@ -773,12 +808,20 @@ class PygameMatchRenderer:
         import pygame
         if self._review_mode:
             last = max(0, len(self._snapshots) - 1)
-            label = self._font_med.render(
-                f"REVIEW  tick {view.tick if view else 0}/{last}"
-                f"  (← →: scrub   space: autoplay   "
-                f"backspace: rewind   home/end: ends)",
-                True, COL_PAUSE_BAR,
-            )
+            cur = view.tick if view else 0
+            if self._match_live:
+                label = self._font_med.render(
+                    f"SCRUB-BACK  tick {cur}/{last}  "
+                    f"(← →: scrub   space: resume live)",
+                    True, COL_PAUSE_BAR,
+                )
+            else:
+                label = self._font_med.render(
+                    f"REVIEW  tick {cur}/{last}  "
+                    f"(← →: scrub   space: autoplay   "
+                    f"backspace: rewind   home/end: ends)",
+                    True, COL_PAUSE_BAR,
+                )
             screen.blit(label, (16, 12))
             return
         if not self._paused:
@@ -957,13 +1000,17 @@ class PygameMatchRenderer:
         import pygame
         rect = pygame.Rect(0, WINDOW_H - FOOTER_H, WINDOW_W, FOOTER_H)
         pygame.draw.rect(screen, COL_PANEL, rect)
-        if self._review_mode:
+        if self._review_mode and self._match_live:
+            hint = ("SCRUB-BACK   ← →: scrub one tick   "
+                    "home/end: jump   space: resume live   "
+                    "click: inspect   q: quit")
+        elif self._review_mode:
             hint = ("REVIEW   ← →: scrub one tick   "
                     "space: autoplay forward   backspace: autoplay back   "
                     "home/end: jump   click: inspect   q: quit")
         else:
-            hint = ("space: pause/play   →: step   +/-: speed   "
-                    "0: reset speed   click: inspect   esc: clear   q: quit")
+            hint = ("space: pause/play   ←: scrub back   →: step   "
+                    "+/-: speed   0: reset speed   click: inspect   q: quit")
         surf = self._font_small.render(hint, True, COL_TEXT_DIM)
         screen.blit(surf, (12, WINDOW_H - FOOTER_H + 4))
 
