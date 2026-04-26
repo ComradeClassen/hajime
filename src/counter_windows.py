@@ -55,6 +55,13 @@ COUNTER_PERCEPTION_FLIP_PROB: float = 0.25   # base misperception for iq=0, clam
 COUNTER_BASE_PROBABILITY:     float = 0.30   # baseline fire chance for iq=10, fresh, vuln=1.0
 COUNTER_WINDOW_QUALITY_BONUS: float = 0.15   # bonus to window_quality when counter lands
 
+# HAJ-58 — stiffness telegraphing. A bent-over attacker broadcasts intent
+# through grip tension before commit; the defender feels the attack coming
+# early, so reduce the misperception flip probability. Threshold reuses
+# body_state.UPRIGHT_LIMIT_RAD (the same boundary HAJ-56 taxes for stamina);
+# the bonus is small — a nudge, not a free read.
+ATTACKER_STIFFNESS_PERCEPTION_BONUS: float = 0.05
+
 # Starter counter-option tables (Part 6.2 narrative examples). Defenders pick
 # the first entry that exists in their throw_vocabulary; SEN_NO_SEN has an
 # additional "symmetric" pass where defender tries attacker's own throw_id
@@ -147,6 +154,7 @@ def perceived_counter_window(
     rng: Optional[random.Random] = None,
     *,
     defensive_desperation: bool = False,
+    attacker: Optional["Judoka"] = None,
 ) -> CounterWindow:
     """Return the defender's perception of the current region.
 
@@ -164,6 +172,13 @@ def perceived_counter_window(
     (non-NONE) windows: a defender pinned in attack after attack starts
     reading the pattern. NONE misreads are unaffected — a desperate
     defender doesn't hallucinate attacks that aren't there.
+
+    HAJ-58 — a bent-over attacker telegraphs intent through grip tension
+    before commit. When `attacker` is supplied and their trunk_sagittal
+    exceeds UPRIGHT_LIMIT_RAD (forward bend only), reduce flip_p by
+    ATTACKER_STIFFNESS_PERCEPTION_BONUS. NONE windows are unaffected by
+    symmetry with the desperation rule — stiffness on no-attack reads
+    shouldn't summon ghost attacks.
     """
     r = rng if rng is not None else random
     iq = max(0.0, min(10.0, float(defender.capability.fight_iq)))
@@ -172,6 +187,10 @@ def perceived_counter_window(
     if defensive_desperation and actual != CounterWindow.NONE:
         from defensive_desperation import CW_PERCEPTION_BONUS
         flip_p = max(0.0, flip_p - CW_PERCEPTION_BONUS)
+    if attacker is not None and actual != CounterWindow.NONE:
+        from body_state import UPRIGHT_LIMIT_RAD
+        if attacker.state.body_state.trunk_sagittal > UPRIGHT_LIMIT_RAD:
+            flip_p = max(0.0, flip_p - ATTACKER_STIFFNESS_PERCEPTION_BONUS)
     if r.random() >= flip_p:
         return actual
     return _adjacent_region(actual, r)

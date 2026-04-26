@@ -106,6 +106,15 @@ THROW_FATIGUE: dict[str, float] = {
 CARDIO_DRAIN_PER_TICK: float = 0.002
 HAND_FATIGUE_PER_TICK: float = 0.0003
 
+# HAJ-56 — posture-driven continuous stamina drain. Bent-over fighters burn
+# cardio compensating muscularly for what the skeleton handles when upright.
+# Triggers when forward lean exceeds body_state.UPRIGHT_LIMIT_RAD (the same
+# 15° boundary that splits Posture.UPRIGHT from SLIGHTLY_BENT). Forward-only:
+# back-lean is the evasion posture and shouldn't be taxed.
+# Magnitude: 0.001/tick = ~0.24 cardio over a 4-min (240-tick) match — a
+# meaningful surcharge on top of CARDIO_DRAIN_PER_TICK without dominating it.
+POSTURE_BENT_CARDIO_DRAIN: float = 0.001
+
 # Composure drops on scoring events
 COMPOSURE_DROP_WAZA_ARI: float = 0.5
 COMPOSURE_DROP_IPPON:    float = 2.0
@@ -1390,6 +1399,7 @@ class Match:
         perceived = perceived_counter_window(
             actual, defender, rng=rng,
             defensive_desperation=def_desp,
+            attacker=attacker,
         )
         if perceived == CounterWindow.NONE:
             return None
@@ -2076,10 +2086,13 @@ class Match:
             )
 
     def _accumulate_base_fatigue(self, judoka: Judoka) -> None:
+        from body_state import UPRIGHT_LIMIT_RAD
         s = judoka.state
         s.body["right_hand"].fatigue = min(1.0, s.body["right_hand"].fatigue + HAND_FATIGUE_PER_TICK)
         s.body["left_hand"].fatigue  = min(1.0, s.body["left_hand"].fatigue  + HAND_FATIGUE_PER_TICK)
         s.cardio_current = max(0.0, s.cardio_current - CARDIO_DRAIN_PER_TICK)
+        if s.body_state.trunk_sagittal > UPRIGHT_LIMIT_RAD:
+            s.cardio_current = max(0.0, s.cardio_current - POSTURE_BENT_CARDIO_DRAIN)
 
     def _decay_stun(self, judoka: Judoka) -> None:
         if judoka.state.stun_ticks > 0:
