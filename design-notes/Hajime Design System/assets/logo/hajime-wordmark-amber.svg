@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 180" width="460" height="180">
+  <defs>
+    
+  </defs>
+
+  
+  <g transform="translate(90,92)">
+    
+    <path d="M -70 -8 L -16 -10 L -12 10 L -70 10 Z" fill="#1a1410" stroke="#d4a04a" stroke-width="1.2"></path>
+    
+    <path d="M 16 -10 L 70 -8 L 70 10 L 12 10 Z" fill="#1a1410" stroke="#d4a04a" stroke-width="1.2"></path>
+    
+    <rect x="-18" y="-16" width="36" height="32" fill="#1a1410" stroke="#d4a04a" stroke-width="1.2" rx="1"></rect>
+    
+    <line x1="-14" y1="0" x2="14" y2="0" stroke="#d4a04a" stroke-width="1" opacity="0.5"></line>
+    
+    <rect x="-68" y="-5" width="10" height="12" fill="#8a2a1c"></rect>
+  </g>
+
+  
+  <text class="w" x="448" y="96" font-size="62" text-anchor="end" letter-spacing="-0.01em">Hajime</text>
+
+  
+  <text class="w" x="400" y="134" font-size="19" text-anchor="end" font-style="italic" fill="#d4a04a" letter-spacing="0.08em" opacity="0.9">始め</text>
+
+  
+  <g transform="translate(422,126) rotate(-5)">
+    <rect x="-14" y="-14" width="28" height="28" fill="#d4a04a" rx="1"></rect>
+    <text class="stamp" x="0" y="6" font-size="18" text-anchor="middle">始</text>
+  </g>
+
+  
+  <text x="448" y="160" font-family="&#39;IBM Plex Mono&#39;, monospace" font-size="10" fill="#d4a04a" opacity="0.55" text-anchor="end" letter-spacing="0.18em">JUDO · CRANFORD</text>
+</svg>

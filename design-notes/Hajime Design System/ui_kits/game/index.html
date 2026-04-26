@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hajime — UI Kit</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--font-serif); }
+  .app {
+    max-width: 1200px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background: var(--ink-black);
+    position: relative;
+  }
+  .frame {
+    padding: 0;
+  }
+  .dojo {
+    padding: 56px 48px 80px;
+    background:
+      radial-gradient(ellipse at 15% 25%, rgba(212,160,74,0.12), transparent 55%),
+      radial-gradient(ellipse at 85% 85%, rgba(123,36,24,0.10), transparent 55%),
+      var(--ink-black);
+    min-height: 560px;
+  }
+  .kicker { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(245,237,216,0.55); margin: 0 0 8px; }
+  h1 { font-family: var(--font-serif); font-size: 34px; font-weight: 400; margin: 0 0 4px; letter-spacing: -0.005em; }
+  .sub { font-style: italic; color: rgba(245,237,216,0.65); font-size: 15px; margin: 0 0 28px; max-width: 52ch; line-height: 1.55; }
+  .section-label { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--amber-bulb); margin: 28px 0 12px; }
+  .fighters { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+  .opponent-block { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 14px; }
+  .opp-card {
+    background: rgba(245,237,216,0.04);
+    border: 1px solid rgba(212,160,74,0.3);
+    border-radius: 3px;
+    padding: 16px 18px;
+  }
+  .opp-card h3 { font-family: var(--font-serif); font-weight: 400; font-size: 20px; margin: 0 0 2px; }
+  .opp-card .meta { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(245,237,216,0.5); margin: 0 0 12px; }
+  .opp-card p { font-size: 13px; line-height: 1.55; color: rgba(245,237,216,0.8); margin: 0 0 8px; }
+  .opp-card .ref-note { font-style: italic; color: var(--amber-bulb); }
+  .begin {
+    display: inline-block; margin-top: 28px; padding: 11px 20px;
+    border: 1px solid var(--amber-bulb); color: var(--amber-bulb); background: transparent;
+    font-family: var(--font-serif); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
+    border-radius: 2px; cursor: pointer;
+    transition: all 120ms cubic-bezier(0.25,0.1,0.25,1);
+  }
+  .begin:hover { color: var(--amber-glow); border-color: var(--amber-glow); }
+
+  .match-frame { padding: 24px 48px 40px; }
+  .matte-frame { padding: 20px 48px 48px; }
+
+  /* Match indicator */
+  .round-head {
+    text-align: center;
+    padding: 20px 0 14px;
+    font-family: var(--font-sans); font-weight: 300;
+    letter-spacing: 0.24em; text-transform: uppercase; font-size: 12px;
+    color: rgba(245,237,216,0.55);
+  }
+  .round-head .dot { color: var(--amber-bulb); margin: 0 8px; }
+
+  .post {
+    padding: 60px 48px 80px;
+    text-align: center;
+  }
+  .post .verdict {
+    font-family: var(--font-serif);
+    font-size: 64px;
+    line-height: 1;
+    color: var(--amber-bulb);
+    letter-spacing: -0.01em;
+    margin: 20px 0 10px;
+  }
+  .post .verdict.ippon { color: var(--oxblood); }
+  .post .who { font-size: 22px; font-style: italic; color: var(--fg); margin: 0 0 6px; }
+  .post .recap { max-width: 48ch; margin: 24px auto 0; font-size: 15px; line-height: 1.65; color: rgba(245,237,216,0.75); font-style: italic; }
+
+  /* Tabs / prev */
+  .bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 48px;
+    border-bottom: 1px solid rgba(212,160,74,0.2);
+    font-family: var(--font-serif);
+    font-size: 13px;
+    color: rgba(245,237,216,0.6);
+  }
+  .bar .brand { color: var(--amber-bulb); letter-spacing: 0.12em; font-size: 12px; text-transform: uppercase; font-family: var(--font-sans); font-weight: 300; }
+  .bar .loc { font-style: italic; }
+  .stepbtn {
+    background: transparent; border: 1px solid rgba(245,237,216,0.2);
+    color: rgba(245,237,216,0.7); padding: 5px 10px; font-size: 11px;
+    font-family: var(--font-serif); letter-spacing: 0.1em; text-transform: uppercase;
+    border-radius: 2px; cursor: pointer; margin-left: 6px;
+    transition: all 120ms;
+  }
+  .stepbtn:hover { border-color: var(--amber-bulb); color: var(--amber-bulb); }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="app" id="root"></div>
+
+<script type="text/babel" src="TitleCard.jsx"></script>
+<script type="text/babel" src="ScoreStrip.jsx"></script>
+<script type="text/babel" src="MatchLog.jsx"></script>
+<script type="text/babel" src="InstructionChip.jsx"></script>
+<script type="text/babel" src="CoachChair.jsx"></script>
+<script type="text/babel" src="FighterCard.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// Scripted events for a single match. Each is the prose line + score update.
+const MATCH_EVENTS = [
+  { t: '0:03', parts: [{ s: 'Tanaka steps in. Right hand reaches for the lapel.' }] },
+  { t: '0:04', parts: [{ s: 'Sato\u2019s left hand intercepts \u2014 pistol grip on the sleeve.' }] },
+  { t: '0:06', parts: [{ s: 'Tanaka pulls. The grip holds. ' }, { k: 'hl', s: 'Right grip \u22121.' }] },
+  { t: '0:09', parts: [{ s: 'Tanaka secures high collar. Deep grip.' }] },
+  { t: '0:11', parts: [{ s: 'Sato breaks posture forward, framing the bicep.' }] },
+  { t: '0:14', parts: [{ s: 'Grip battle. Both hands engaged. Forearms fatiguing.' }] },
+  { t: '0:18', parts: [{ s: 'Tanaka attempts seoi-nage \u2014 Sato sprawls. ' }, { k: 'hl', s: 'Throw stuffed.' }] },
+  { t: '0:22', parts: [{ s: 'Sato attacks o-uchi-gari \u2014 Tanaka\u2019s left leg absorbs.' }] },
+  { t: '0:24', parts: [{ k: 'hl', s: 'Matte.' }] },
+];
+
+const MATCH_RESUME_EVENTS = [
+  { t: '0:32', parts: [{ s: 'Restart. Tanaka switches to a sleeve-first read.' }] },
+  { t: '0:38', parts: [{ s: 'He strips Sato\u2019s pistol grip \u2014 ' }, { k: 'hl', s: 'right side opens.' }] },
+  { t: '0:44', parts: [{ s: 'Feint to seoi. Sato bites. Tanaka transitions to ko-uchi \u2014' }] },
+  { t: '0:45', parts: [{ k: 'hl', s: 'Sato goes down on his back. Clean.' }] },
+  { t: '0:46', parts: [{ s: 'The referee\u2019s hand goes up.' }] },
+  { t: '0:46', parts: [{ k: 'danger', s: 'Ippon.' }] },
+];
+
+const TANAKA = {
+  name: 'Kenji Tanaka',
+  belt: 'Black · 2nd dan', weight: '–73 kg', age: '22',
+  stats: [
+    { k: 'Composure', v: '7 / 10' },
+    { k: 'Right grip', v: '8 / 10' },
+    { k: 'Read speed', v: '6 / 10' },
+    { k: 'Trust in coach', v: '9 / 10' },
+  ],
+  note: 'Two seasons under you. Seoi is his tokui-waza.',
+};
+const SATO = {
+  name: 'Ryu Sato',
+  belt: 'Black · 2nd dan', weight: '–73 kg', age: '24',
+  stats: [
+    { k: 'Composure', v: '8 / 10' },
+    { k: 'Counter read', v: '8 / 10' },
+    { k: 'Cardio', v: '7 / 10' },
+  ],
+  note: 'Left-hand pistol grip is his whole match.',
+};
+
+function Dojo({ onBegin }) {
+  return (
+    <div className="dojo" data-screen-label="02 Dojo">
+      <p className="kicker">Today\u2019s card</p>
+      <h1>Round 1 — quarterfinal</h1>
+      <p className="sub">Regional invitational, Cranford. Mat two, 10:40 a.m. Sato opened the bracket with a twenty-second ippon. Tanaka drew the bye.</p>
+      <p className="section-label">Your fighter</p>
+      <div className="fighters">
+        <FighterCard fighter={TANAKA} selected={true} />
+      </div>
+      <p className="section-label">Opponent &amp; referee</p>
+      <div className="opponent-block">
+        <div className="opp-card">
+          <h3>{SATO.name}</h3>
+          <p className="meta">{SATO.belt} · {SATO.weight}</p>
+          <p>Korean-school influence. Drop seoi specialist with a left-hand pistol grip he trusts too much.</p>
+          <p className="ref-note">Study: 8 of his last 10 matches ended inside a minute.</p>
+        </div>
+        <div className="opp-card">
+          <h3>Referee · Suzuki</h3>
+          <p className="meta">Classical · strict</p>
+          <p>Low tolerance for stalling. Calls matte quickly on stuffed throws with no ne-waza commitment.</p>
+          <p className="ref-note">Scoring: strict on waza-ari. Clean backs only.</p>
+        </div>
+      </div>
+      <button className="begin" onClick={onBegin}>Begin the match</button>
+    </div>
+  );
+}
+
+function Match({ onMatte }) {
+  const [events, setEvents] = useState([]);
+  const [time, setTime] = useState('0:00');
+  useEffect(() => {
+    let i = 0;
+    const id = setInterval(() => {
+      if (i >= MATCH_EVENTS.length) {
+        clearInterval(id);
+        setTimeout(onMatte, 600);
+        return;
+      }
+      const e = MATCH_EVENTS[i];
+      setEvents((prev) => [...prev, e]);
+      setTime(e.t);
+      i++;
+    }, 900);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="match-frame" data-screen-label="03 Match">
+      <div className="round-head">Round 1<span className="dot">·</span>–73 kg<span className="dot">·</span>Tanaka vs. Sato</div>
+      <ScoreStrip round={1} weight="–73 kg" left="Tanaka" right="Sato" leftScore={0} rightScore={0} time={time} state="live" />
+      <MatchLog events={events} />
+    </div>
+  );
+}
+
+function Matte({ onResume }) {
+  return (
+    <div className="matte-frame" data-screen-label="04 Matte">
+      <ScoreStrip round={1} weight="–73 kg" left="Tanaka" right="Sato" leftScore={0} rightScore={0} time="0:24" state="matte" />
+      <div style={{ height: 16 }} />
+      <CoachChair
+        fighter="Tanaka"
+        stats={[
+          { label: 'Composure', val: '7 / 10 \u2193' },
+          { label: 'Right grip', val: '5 / 10 \u2193\u2193' },
+          { label: 'Left grip', val: '8 / 10' },
+          { label: 'Legs', val: '8 / 10' },
+          { label: 'Read speed', val: '6 / 10' },
+          { label: 'Trust in coach', val: '9 / 10' },
+        ]}
+        note="He went for his strongest throw too early. Sato read it. The grip fight is going against him on the right side."
+        onResume={onResume}
+      />
+    </div>
+  );
+}
+
+function Resume({ onDone }) {
+  const [events, setEvents] = useState([]);
+  const [time, setTime] = useState('0:24');
+  useEffect(() => {
+    let i = 0;
+    const id = setInterval(() => {
+      if (i >= MATCH_RESUME_EVENTS.length) { clearInterval(id); setTimeout(onDone, 1000); return; }
+      const e = MATCH_RESUME_EVENTS[i];
+      setEvents((prev) => [...prev, e]);
+      setTime(e.t);
+      i++;
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="match-frame" data-screen-label="05 Resume">
+      <ScoreStrip round={1} weight="–73 kg" left="Tanaka" right="Sato" leftScore={0} rightScore={0} time={time} state="live" />
+      <MatchLog events={events} />
+    </div>
+  );
+}
+
+function Post({ onReset }) {
+  return (
+    <div className="post" data-screen-label="06 Post">
+      <p className="kicker">Round 1 · final</p>
+      <div className="verdict ippon">Ippon.</div>
+      <p className="who">Tanaka · ko-uchi-gari · 0:46</p>
+      <p className="recap">
+        You told him to break the grip first. He did. When Sato bit on the seoi feint, the right side opened and Tanaka took him down clean.
+        The referee\u2019s hand was up before either man had fully registered it.
+      </p>
+      <button className="begin" onClick={onReset}>Return to the dojo</button>
+    </div>
+  );
+}
+
+function App() {
+  const SCREENS = ['title', 'dojo', 'match', 'matte', 'resume', 'post'];
+  const saved = localStorage.getItem('hajime-ui-screen');
+  const [screen, setScreen] = useState(saved && SCREENS.includes(saved) ? saved : 'title');
+  useEffect(() => { localStorage.setItem('hajime-ui-screen', screen); }, [screen]);
+  const idx = SCREENS.indexOf(screen);
+  return (
+    <>
+      <div className="bar">
+        <span className="brand">HAJIME</span>
+        <span className="loc">Cranford JKC · basement 1</span>
+        <span>
+          <button className="stepbtn" onClick={() => setScreen(SCREENS[Math.max(0, idx - 1)])}>‹ prev</button>
+          <button className="stepbtn" onClick={() => setScreen(SCREENS[Math.min(SCREENS.length - 1, idx + 1)])}>next ›</button>
+        </span>
+      </div>
+      <div className="frame">
+        {screen === 'title' && <TitleCard onEnter={() => setScreen('dojo')} />}
+        {screen === 'dojo' && <Dojo onBegin={() => setScreen('match')} />}
+        {screen === 'match' && <Match onMatte={() => setScreen('matte')} />}
+        {screen === 'matte' && <Matte onResume={() => setScreen('resume')} />}
+        {screen === 'resume' && <Resume onDone={() => setScreen('post')} />}
+        {screen === 'post' && <Post onReset={() => setScreen('title')} />}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

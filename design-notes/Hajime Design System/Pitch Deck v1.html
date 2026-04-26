@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Hajime · Pitch Deck</title>
+<link rel="stylesheet" href="colors_and_type.css">
+<script src="deck-stage.js" defer></script>
+<style>
+  html,body{margin:0;padding:0;background:#0a0806;color:var(--gi-cream);font-family:var(--font-serif);}
+
+  /* Every slide: 1920x1080, ink sanctuary */
+  deck-stage > section{
+    width:1920px;height:1080px;
+    position:relative;overflow:hidden;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(212,160,74,0.07), transparent 55%),
+      #1a1410;
+    color:var(--gi-cream);
+    font-family:var(--font-serif);
+    padding:0;
+  }
+
+  /* Reusable chrome */
+  .frame-pad{padding:90px 120px;height:100%;box-sizing:border-box;display:flex;flex-direction:column;}
+  .kicker{font-family:var(--font-mono);font-size:18px;letter-spacing:0.28em;text-transform:uppercase;color:var(--amber-bulb);margin:0 0 18px;}
+  .eyebrow{font-family:var(--font-mono);font-size:14px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(245,237,216,0.55);margin:0 0 12px;}
+  h1.title{font-family:var(--font-serif);font-weight:400;font-size:150px;line-height:0.95;letter-spacing:-0.012em;margin:0;color:var(--gi-cream);text-wrap:balance;}
+  h2.section{font-family:var(--font-serif);font-weight:400;font-size:96px;line-height:1.02;letter-spacing:-0.01em;margin:0 0 24px;text-wrap:balance;}
+  h3.head{font-family:var(--font-serif);font-weight:400;font-size:56px;line-height:1.08;margin:0 0 18px;letter-spacing:-0.005em;text-wrap:balance;}
+  p.lede{font-family:var(--font-serif);font-size:32px;line-height:1.45;color:rgba(245,237,216,0.88);max-width:28ch;margin:0;text-wrap:pretty;}
+  p.body{font-family:var(--font-serif);font-size:22px;line-height:1.55;color:rgba(245,237,216,0.82);max-width:52ch;margin:0 0 18px;text-wrap:pretty;}
+  p.body em{color:var(--amber-bulb);font-style:italic;}
+  .mono{font-family:var(--font-mono);}
+
+  /* Footer bar (slide index, title), consistent across */
+  .foot{
+    position:absolute;left:120px;right:120px;bottom:54px;
+    display:flex;justify-content:space-between;align-items:center;
+    font-family:var(--font-mono);font-size:15px;letter-spacing:0.22em;
+    color:rgba(245,237,216,0.45);text-transform:uppercase;
+  }
+  .foot .brand{color:var(--amber-bulb);}
+  .foot .kanji{font-family:"Hiragino Mincho Pro","Yu Mincho","Songti SC","Noto Serif JP",var(--font-serif);font-weight:900;color:var(--amber-bulb);letter-spacing:0.05em;margin-right:10px;}
+
+  /* ---------- Slide 1 · Cover ---------- */
+  .cover{display:flex;align-items:center;justify-content:flex-start;}
+  .cover .left{flex:1;padding:120px 100px 120px 160px;}
+  .cover .big-kanji{
+    position:absolute;right:-80px;top:50%;transform:translateY(-52%);
+    font-family:"Hiragino Mincho Pro","Yu Mincho","Songti SC","Noto Serif JP",serif;
+    font-weight:900;font-size:1100px;line-height:0.8;color:#211811;letter-spacing:-0.02em;user-select:none;
+  }
+  .cover h1{font-size:240px;line-height:0.88;letter-spacing:-0.015em;}
+  .cover .sub{font-style:italic;font-size:32px;color:var(--amber-bulb);margin-top:12px;letter-spacing:0.02em;}
+  .cover .rule{width:140px;height:6px;background:var(--oxblood);margin:44px 0;}
+  .cover .tag{font-family:var(--font-serif);font-size:34px;line-height:1.5;max-width:22ch;color:rgba(245,237,216,0.85);font-style:italic;}
+  .cover .meta{
+    position:absolute;left:160px;bottom:120px;
+    font-family:var(--font-mono);font-size:15px;letter-spacing:0.22em;text-transform:uppercase;color:rgba(245,237,216,0.5);
+  }
+  .cover .meta .amber{color:var(--amber-bulb);}
+  .cover .bulb-wash{
+    position:absolute;right:10%;top:0;width:60%;height:70%;
+    background:radial-gradient(ellipse at center top, rgba(212,160,74,0.22) 0%, transparent 60%);
+  }
+
+  /* ---------- Slide 2 · Thesis / the pitch in one sentence ---------- */
+  .thesis{display:flex;flex-direction:column;justify-content:center;padding:140px 180px;}
+  .thesis h2{font-size:104px;line-height:1.04;letter-spacing:-0.01em;max-width:24ch;margin:0 0 60px;}
+  .thesis h2 em{color:var(--amber-bulb);font-style:italic;}
+  .thesis h2 .red{color:var(--oxblood);font-style:normal;}
+  .thesis .byline{font-family:var(--font-mono);font-size:16px;letter-spacing:0.22em;text-transform:uppercase;color:rgba(245,237,216,0.55);}
+
+  /* ---------- Slide 3 · The pipeline (local → Olympic) ---------- */
+  .pipeline{display:flex;flex-direction:column;justify-content:flex-start;padding:90px 120px;}
+  .tiers{display:grid;grid-template-columns:repeat(5,1fr);gap:24px;margin-top:48px;position:relative;}
+  .tiers::before{
+    content:"";position:absolute;left:2%;right:2%;top:40px;height:2px;
+    background:linear-gradient(90deg, var(--amber-dim) 0%, var(--amber-bulb) 100%);
+    z-index:0;
+  }
+  .tier{
+    position:relative;z-index:1;
+    background:linear-gradient(180deg, #221c16 0%, #1a1410 100%);
+    border:1px solid var(--border-ink);
+    border-top:3px solid var(--amber-bulb);
+    padding:56px 26px 26px;
+    min-height:360px;
+    display:flex;flex-direction:column;
+  }
+  .tier .dot{
+    position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+    width:24px;height:24px;border-radius:50%;
+    background:var(--amber-bulb);border:4px solid #1a1410;box-shadow:0 0 0 2px var(--amber-bulb);
+  }
+  .tier .n{font-family:var(--font-mono);font-size:13px;letter-spacing:0.22em;color:var(--amber-bulb);margin-bottom:10px;}
+  .tier h4{font-family:var(--font-serif);font-weight:400;font-size:32px;margin:0 0 6px;}
+  .tier .where{font-family:var(--font-serif);font-style:italic;font-size:17px;color:rgba(245,237,216,0.6);margin:0 0 18px;}
+  .tier p{font-family:var(--font-serif);font-size:15px;line-height:1.5;color:rgba(245,237,216,0.78);margin:0 0 10px;}
+  .tier .stake{font-family:var(--font-mono);font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:var(--oxblood);margin-top:auto;border-top:1px dotted var(--border-dotted);padding-top:10px;}
+  .tier.apex{border-top-color:#e8b868;background:linear-gradient(180deg, #2a1f16 0%, #1a1410 100%);}
+  .tier.apex .dot{background:#e8b868;box-shadow:0 0 0 2px #e8b868, 0 0 30px rgba(232,184,104,0.6);}
+  .tier.apex h4{color:#e8b868;}
+
+  /* ---------- Slide 4 · Procedurally generated judoka ---------- */
+  .proc{display:grid;grid-template-columns:1fr 1.1fr;gap:80px;padding:100px 120px;height:100%;box-sizing:border-box;align-items:center;}
+  .proc-left h2{font-size:92px;}
+  .proc-card{
+    background:linear-gradient(180deg, #221c16 0%, #1a1410 100%);
+    border:1px solid var(--border-ink);
+    border-left:4px solid var(--amber-bulb);
+    padding:36px 40px;
+    font-family:var(--font-serif);
+    max-width:760px;
+  }
+  .proc-card .id{font-family:var(--font-mono);font-size:14px;letter-spacing:0.2em;color:var(--amber-bulb);text-transform:uppercase;margin-bottom:6px;}
+  .proc-card .name{font-family:var(--font-serif);font-weight:400;font-size:48px;line-height:1.05;margin:0 0 4px;}
+  .proc-card .nat{font-family:var(--font-serif);font-style:italic;font-size:22px;color:rgba(245,237,216,0.65);margin:0 0 22px;}
+  .proc-card .row{display:grid;grid-template-columns:1fr auto;gap:18px;padding:10px 0;border-bottom:1px dotted var(--border-dotted);font-size:20px;}
+  .proc-card .row .lbl{color:rgba(245,237,216,0.7);}
+  .proc-card .row .val{font-family:var(--font-mono);color:var(--amber-bulb);font-size:18px;letter-spacing:0.05em;}
+  .proc-card .row .red{color:var(--oxblood);}
+  .proc-card .tokui{margin-top:18px;font-family:var(--font-serif);font-style:italic;font-size:20px;color:var(--amber-bulb);}
+  .proc-card .quote{margin-top:20px;padding-top:18px;border-top:1px dotted var(--border-dotted);font-style:italic;font-size:19px;color:rgba(245,237,216,0.72);line-height:1.55;}
+
+  /* ---------- Slide 5 · Simulation as foundation ---------- */
+  .sim{padding:90px 120px;display:flex;flex-direction:column;}
+  .sim .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:40px;}
+  .sim .pillar{
+    background:#221c16;border:1px solid var(--border-ink);padding:36px;
+    display:flex;flex-direction:column;gap:14px;min-height:440px;
+  }
+  .sim .pillar .n{font-family:var(--font-mono);font-size:60px;color:var(--amber-bulb);line-height:1;margin:0 0 16px;letter-spacing:-0.02em;}
+  .sim .pillar h4{font-family:var(--font-serif);font-weight:400;font-size:36px;margin:0;line-height:1.1;}
+  .sim .pillar p{font-family:var(--font-serif);font-size:19px;line-height:1.55;color:rgba(245,237,216,0.78);margin:0;}
+  .sim .pillar .tag{margin-top:auto;font-family:var(--font-mono);font-size:12px;letter-spacing:0.18em;color:var(--amber-bulb);text-transform:uppercase;padding-top:14px;border-top:1px dotted var(--border-dotted);}
+
+  /* ---------- Slide 6 · You are the coach ---------- */
+  .coach-slide{display:grid;grid-template-columns:1fr 1fr;padding:100px 120px;gap:80px;align-items:center;height:100%;box-sizing:border-box;}
+  .coach-ill{
+    position:relative;height:700px;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(212,160,74,0.18), transparent 55%),
+      linear-gradient(180deg, #1f1812 0%, #120c08 100%);
+    border:1px solid var(--border-ink);
+    overflow:hidden;
+  }
+  .coach-ill .caption{
+    position:absolute;bottom:16px;left:18px;
+    font-family:var(--font-mono);font-size:13px;letter-spacing:0.2em;
+    color:var(--amber-bulb);text-transform:uppercase;opacity:0.75;
+  }
+  .coach-list{list-style:none;padding:0;margin:30px 0 0;display:flex;flex-direction:column;gap:14px;}
+  .coach-list li{
+    display:flex;gap:18px;align-items:flex-start;
+    padding:14px 0;border-bottom:1px dotted var(--border-dotted);
+    font-family:var(--font-serif);font-size:22px;line-height:1.45;color:rgba(245,237,216,0.88);
+  }
+  .coach-list .bullet{
+    flex-shrink:0;width:24px;height:24px;border:1.5px solid var(--amber-bulb);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--font-mono);font-size:12px;color:var(--amber-bulb);margin-top:4px;
+  }
+  .coach-list em{color:var(--amber-bulb);font-style:italic;}
+
+  /* ---------- Slide 7 · The moment (event pop) ---------- */
+  .moment{padding:80px 120px;display:grid;grid-template-columns:1.2fr 1fr;gap:70px;align-items:center;height:100%;box-sizing:border-box;}
+  .moment-left{display:flex;flex-direction:column;gap:20px;min-width:0;}
+  .moment-left h2{font-size:68px;line-height:1.04;margin:0;max-width:16ch;}
+  .moment-left h2 em{display:inline;}
+  .moment-left p{margin:0;}
+  .event-card{
+    background:
+      radial-gradient(ellipse at 30% 0%, rgba(180,150,90,0.08), transparent 60%),
+      #1e1612;
+    border:1px solid #3a2a1c;
+    box-shadow: 0 0 0 1px #0a0806, 0 0 0 4px #2a1f16, 0 0 0 5px #4a3520, 0 20px 50px rgba(0,0,0,0.7);
+    max-height:820px;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  .event-card .banner{padding:18px 30px;background:linear-gradient(180deg,#3a2a1c,#2a1f16);border-bottom:1px solid #4a3520;text-align:center;}
+  .event-card .banner .k{font-family:var(--font-mono);font-size:13px;letter-spacing:0.24em;color:#b8984c;text-transform:uppercase;margin:0 0 4px;}
+  .event-card .banner h4{font-family:var(--font-serif);font-weight:400;font-size:34px;margin:0;color:var(--gi-cream);}
+  .event-card .scene{
+    height:260px;background:linear-gradient(180deg,#2a1f16 0%,#3a2a1c 50%,#4a3824 100%);
+    position:relative;border-bottom:1px solid #3a2a1c;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .event-card .scene .stand-in{
+    font-family:"Hiragino Mincho Pro","Yu Mincho","Songti SC","Noto Serif JP",serif;
+    font-weight:900;font-size:220px;color:rgba(212,160,74,0.18);line-height:1;
+  }
+  .event-card .scene .caption{position:absolute;bottom:10px;left:16px;font-family:var(--font-mono);font-size:11px;letter-spacing:0.18em;color:rgba(245,237,216,0.55);text-transform:uppercase;}
+  .event-card .body{padding:22px 30px;font-family:var(--font-serif);font-size:20px;line-height:1.55;color:rgba(245,237,216,0.9);}
+  .event-card .body em{color:var(--amber-bulb);font-style:italic;}
+  .event-card .body p{margin:0 0 10px;}
+  .decisions2{padding:4px 22px 18px;display:flex;flex-direction:column;gap:8px;}
+  .dec{display:flex;align-items:flex-start;gap:14px;padding:12px 16px;background:linear-gradient(180deg, rgba(212,160,74,0.04), rgba(212,160,74,0.01));border:1px solid #3a2a1c;border-left:3px solid var(--amber-bulb);}
+  .dec .letter{width:26px;height:26px;border:1px solid #b8984c;color:var(--amber-bulb);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:13px;flex-shrink:0;}
+  .dec .t{font-size:18px;color:var(--gi-cream);}
+  .dec .s{font-family:var(--font-serif);font-style:italic;font-size:15px;color:rgba(245,237,216,0.6);margin-top:2px;line-height:1.45;}
+
+  /* ---------- Slide 8 · Comps ---------- */
+  .comps{padding:100px 120px;}
+  .comps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:36px;margin-top:60px;}
+  .comp{
+    background:#221c16;border:1px solid var(--border-ink);padding:36px;
+    display:flex;flex-direction:column;gap:14px;min-height:420px;
+  }
+  .comp .name{font-family:var(--font-serif);font-weight:400;font-size:34px;line-height:1.1;margin:0;}
+  .comp .who{font-family:var(--font-mono);font-size:14px;letter-spacing:0.18em;color:var(--amber-bulb);text-transform:uppercase;margin:4px 0 0;}
+  .comp .take{font-family:var(--font-serif);font-size:20px;line-height:1.5;color:rgba(245,237,216,0.82);margin-top:14px;}
+  .comp .tag{margin-top:auto;font-family:var(--font-mono);font-size:12px;letter-spacing:0.18em;text-transform:uppercase;padding-top:14px;border-top:1px dotted var(--border-dotted);}
+  .comp .tag .good{color:var(--amber-bulb);}
+  .comp .tag .bad{color:var(--oxblood);}
+
+  /* ---------- Slide 9 · Why now / why me ---------- */
+  .why{padding:100px 120px;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;height:100%;box-sizing:border-box;}
+  .why ul{list-style:none;padding:0;margin:30px 0 0;}
+  .why ul li{font-family:var(--font-serif);font-size:22px;line-height:1.55;padding:14px 0;border-bottom:1px dotted var(--border-dotted);color:rgba(245,237,216,0.85);}
+  .why ul li .n{font-family:var(--font-mono);font-size:14px;color:var(--amber-bulb);letter-spacing:0.2em;margin-right:14px;}
+  .why .pull{
+    background:#1a1410;border-left:4px solid var(--oxblood);padding:36px 40px;
+    font-family:var(--font-serif);font-style:italic;font-size:30px;line-height:1.45;
+    color:rgba(245,237,216,0.92);
+  }
+  .why .pull .sig{
+    display:block;margin-top:22px;font-family:var(--font-mono);font-style:normal;
+    font-size:13px;letter-spacing:0.2em;color:var(--amber-bulb);text-transform:uppercase;
+  }
+
+  /* ---------- Slide 10 · Close ---------- */
+  .close{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:140px 180px;position:relative;}
+  .close .bigmark{
+    position:absolute;right:-60px;bottom:-60px;
+    font-family:"Hiragino Mincho Pro","Yu Mincho","Songti SC","Noto Serif JP",serif;
+    font-weight:900;font-size:900px;color:#211811;line-height:0.8;user-select:none;
+  }
+  .close h2{font-size:140px;line-height:0.95;margin:0 0 30px;}
+  .close h2 em{color:var(--amber-bulb);font-style:italic;}
+  .close .line{width:160px;height:5px;background:var(--oxblood);margin:28px 0;}
+  .close .contact{display:flex;gap:60px;margin-top:60px;font-family:var(--font-mono);font-size:18px;letter-spacing:0.2em;color:rgba(245,237,216,0.7);text-transform:uppercase;}
+  .close .contact .amber{color:var(--amber-bulb);}
+  .close .lede{font-size:38px;max-width:26ch;color:rgba(245,237,216,0.82);}
+
+  /* Shared SVG scene helpers */
+  .coach-svg{position:absolute;inset:0;width:100%;height:100%;}
+</style>
+</head>
+<body>
+
+<deck-stage>
+
+  <!-- =========================================================
+       SLIDE 1 · COVER
+       ========================================================= -->
+  <section class="cover" data-screen-label="01 Cover">
+    <div class="bulb-wash"></div>
+    <div class="big-kanji">始</div>
+    <div class="left" style="position:relative;z-index:2;">
+      <p class="kicker">Pitch · 2026</p>
+      <h1>Hajime<span style="color:var(--oxblood);">.</span></h1>
+      <div class="sub">— 始め — <span style="opacity:0.55;">the moment the match begins</span></div>
+      <div class="rule"></div>
+      <p class="tag">A judo coaching simulation. The sport is the foundation. The career is yours to build.</p>
+    </div>
+    <div class="meta"><span class="amber">Cranford JKC</span> &nbsp;·&nbsp; Vertical-slice pitch &nbsp;·&nbsp; <span class="amber">v0.1</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 2 · THESIS
+       ========================================================= -->
+  <section class="thesis" data-screen-label="02 Thesis">
+    <p class="eyebrow">The pitch in one sentence</p>
+    <h2 class="section">
+      Procedurally generated judoka walk into your dojo. You coach them from <em>a church basement</em> to the <em>Olympic podium</em> — and the <span class="red">simulation</span> is honest enough to make every match mean something.
+    </h2>
+    <p class="byline">— what <span style="color:var(--amber-bulb);">Football Manager</span> did for the pitch, Hajime does for the mat.</p>
+    <div class="foot"><span><span class="kanji">始</span>HAJIME</span><span>02 / 10 · Thesis</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 3 · THE PIPELINE
+       ========================================================= -->
+  <section class="pipeline" data-screen-label="03 Pipeline">
+    <p class="eyebrow">The long career · five tiers</p>
+    <h2 class="section" style="font-size:76px;">From the basement to the rings.</h2>
+    <p class="body" style="max-width:78ch;font-size:24px;margin-top:-8px;">Every judoka who walks in starts somewhere on this ladder. Most stop along the way. A rare few go all the way up. The simulation is what decides.</p>
+
+    <div class="tiers">
+      <div class="tier">
+        <div class="dot"></div>
+        <div class="n">01 · LOCAL</div>
+        <h4>Club Randori</h4>
+        <p class="where"><em>Cranford · church basement</em></p>
+        <p>Weekly mat time. White-belt nerves. First randori. Newcomers learn if they like falling.</p>
+        <div class="stake">Stakes: do they come back?</div>
+      </div>
+      <div class="tier">
+        <div class="dot"></div>
+        <div class="n">02 · STATE</div>
+        <h4>NJ Open</h4>
+        <p class="where"><em>Rutgers · Piscataway</em></p>
+        <p>First real tournament bracket. Mouthguards, coffee, nerves. Weight classes filled with strangers.</p>
+        <div class="stake">Stakes: first taste of ranked play</div>
+      </div>
+      <div class="tier">
+        <div class="dot"></div>
+        <div class="n">03 · NATIONAL</div>
+        <h4>US Open · Sr. Nationals</h4>
+        <p class="where"><em>Vegas · Spokane</em></p>
+        <p>The first tier where judo becomes a job. Travel, weight cuts, sponsors, coaches in suits.</p>
+        <div class="stake">Stakes: national ranking · team looks</div>
+      </div>
+      <div class="tier">
+        <div class="dot"></div>
+        <div class="n">04 · INTERNATIONAL</div>
+        <h4>IJF World Tour</h4>
+        <p class="where"><em>Tbilisi · Tashkent · Paris</em></p>
+        <p>World-rank points. Draws against names your fighter grew up watching. Medals count.</p>
+        <div class="stake">Stakes: Olympic qualification</div>
+      </div>
+      <div class="tier apex">
+        <div class="dot"></div>
+        <div class="n">05 · APEX</div>
+        <h4>The Olympics</h4>
+        <p class="where"><em>Once every four years</em></p>
+        <p>One draw. One morning. Five matches, end to end. Most of your fighters never make it here. The ones who do, you will remember forever.</p>
+        <div class="stake">Stakes: the reason the game exists</div>
+      </div>
+    </div>
+    <div class="foot" style="bottom:40px;"><span><span class="kanji">始</span>HAJIME</span><span>03 / 10 · Pipeline</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 4 · PROCEDURAL JUDOKA
+       ========================================================= -->
+  <section class="proc" data-screen-label="04 Procedural judoka">
+    <div class="proc-left">
+      <p class="eyebrow">Who walks through the door</p>
+      <h2 class="section">Nobody is hand-written.<br><em style="color:var(--amber-bulb);font-style:italic;">Everyone has a history.</em></h2>
+      <p class="body" style="font-size:24px;">Each judoka is generated with a country of origin, a club lineage, a body, a <em>tokui-waza</em>, a temperament, and a story. The simulation respects them. Some will be world-class. Some will quit after a month. You won't know which is which when they step through the door.</p>
+      <p class="body" style="font-size:20px;color:rgba(245,237,216,0.6);">→ National styles pass on inherited DNA. Brazilian ne-waza. Georgian sode. Japanese timing. Your dojo becomes a weather system of what you recruit and what you teach.</p>
+    </div>
+    <div class="proc-card">
+      <div class="id">Incoming · white belt · age 19</div>
+      <div class="name">Marcus Bell</div>
+      <div class="nat">USA · Newark · rec. by friend</div>
+      <div class="row"><span class="lbl">Height / weight</span><span class="val">178 cm · –73 kg</span></div>
+      <div class="row"><span class="lbl">Strength</span><span class="val">7 / 10</span></div>
+      <div class="row"><span class="lbl">Read</span><span class="val">4 / 10</span></div>
+      <div class="row"><span class="lbl">Composure</span><span class="val red">3 / 10 ↓</span></div>
+      <div class="row"><span class="lbl">Grip preference</span><span class="val">R. lapel · pistol</span></div>
+      <div class="row"><span class="lbl">Inherited DNA</span><span class="val">Wrestling (folkstyle)</span></div>
+      <div class="tokui">Tokui-waza · <span style="color:var(--gi-cream);">undecided — none stuck yet</span></div>
+      <div class="quote">"He's strong. He panics. He came back the second week — that's all I had to know."</div>
+    </div>
+    <div class="foot"><span><span class="kanji">始</span>HAJIME</span><span>04 / 10 · Procedural</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 5 · SIMULATION PILLARS
+       ========================================================= -->
+  <section class="sim" data-screen-label="05 Simulation">
+    <p class="eyebrow">The simulation is the foundation</p>
+    <h2 class="section" style="font-size:84px;">Three systems. One honest match.</h2>
+    <p class="body" style="max-width:72ch;font-size:22px;">The career layer floats on top of a match sim that respects judo: grips fight, kuzushi matters, throws have setups, scrambles go to the ground. Nothing is a dice roll with flavor text.</p>
+
+    <div class="grid">
+      <div class="pillar">
+        <div class="n">01</div>
+        <h4>Grip fight</h4>
+        <p>Every exchange starts at the hands. Who gets the lapel. Who gets the sleeve. Who breaks first. 70% of a real match is decided here — and so is 70% of the sim.</p>
+        <p style="color:rgba(245,237,216,0.55);font-size:17px;">Models: hand dominance, grip fatigue, pistol vs. high-collar preference, griphand strength.</p>
+        <div class="tag">Tokui-waza · Kumi-kata</div>
+      </div>
+      <div class="pillar">
+        <div class="n">02</div>
+        <h4>Kuzushi → throw</h4>
+        <p>Balance is a state, not a probability. You break it with foot position, direction, and tempo. The throw is the <em>conclusion</em>, not the attempt.</p>
+        <p style="color:rgba(245,237,216,0.55);font-size:17px;">Models: eight directions of off-balance, entry timing, uchi-komi familiarity per technique.</p>
+        <div class="tag">Nage-waza</div>
+      </div>
+      <div class="pillar">
+        <div class="n">03</div>
+        <h4>Ne-waza</h4>
+        <p>The ground is its own game. Pins, armbars, strangles. Position before submission. A bad scramble can cost you the match you were winning.</p>
+        <p style="color:rgba(245,237,216,0.55);font-size:17px;">Models: position hierarchy, pin timers, escape windows, ne-waza specialist trait.</p>
+        <div class="tag">Ne-waza · Osaekomi</div>
+      </div>
+    </div>
+    <div class="foot" style="bottom:40px;"><span><span class="kanji">始</span>HAJIME</span><span>05 / 10 · Simulation</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 6 · YOU ARE THE COACH
+       ========================================================= -->
+  <section class="coach-slide" data-screen-label="06 Coach">
+    <div class="coach-ill">
+      <!-- Coach rising from his chair scene -->
+      <svg class="coach-svg" viewBox="0 0 800 700" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="cb" cx="50%" cy="0%" r="70%">
+            <stop offset="0%" stop-color="#f5d890" stop-opacity="0.55"/>
+            <stop offset="40%" stop-color="#d4a04a" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#1a1410" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect x="0" y="0" width="800" height="700" fill="#1e1812"/>
+        <ellipse cx="400" cy="-80" rx="420" ry="360" fill="url(#cb)"/>
+        <!-- bulb -->
+        <line x1="400" y1="0" x2="400" y2="40" stroke="#4a3520" stroke-width="1.5"/>
+        <circle cx="400" cy="48" r="10" fill="#f5d890"/>
+        <circle cx="400" cy="48" r="22" fill="#f5d890" opacity="0.25"/>
+        <!-- trophy shelf -->
+        <rect x="60" y="160" width="320" height="5" fill="#6b4a2e"/>
+        <rect x="90" y="128" width="12" height="34" fill="#b8984c"/>
+        <rect x="130" y="118" width="14" height="44" fill="#b8984c"/>
+        <rect x="170" y="132" width="12" height="30" fill="#7b2418"/>
+        <rect x="210" y="120" width="14" height="42" fill="#b8984c"/>
+        <rect x="250" y="132" width="12" height="30" fill="#b8984c"/>
+        <rect x="300" y="116" width="16" height="46" fill="#7b2418"/>
+        <!-- kanji banner -->
+        <rect x="540" y="80" width="110" height="150" fill="#f5edd8"/>
+        <text x="595" y="150" font-family="Hiragino Mincho Pro,Yu Mincho,serif" font-weight="900" font-size="70" fill="#1a1410" text-anchor="middle">始</text>
+        <text x="595" y="210" font-family="Hiragino Mincho Pro,Yu Mincho,serif" font-weight="900" font-size="50" fill="#1a1410" text-anchor="middle">道</text>
+        <!-- floor -->
+        <polygon points="0,440 800,440 800,700 0,700" fill="#4a5838"/>
+        <rect x="0" y="450" width="800" height="6" fill="#7b2418" opacity="0.7"/>
+        <g stroke="#3a4528" stroke-width="1" opacity="0.6">
+          <line x1="0" y1="500" x2="800" y2="500"/>
+          <line x1="0" y1="550" x2="800" y2="550"/>
+          <line x1="0" y1="620" x2="800" y2="620"/>
+        </g>
+        <!-- two fighters mid-distance, backs to viewer -->
+        <g transform="translate(320,300)">
+          <rect x="0" y="30" width="70" height="100" fill="#f5edd8" stroke="#1a1410" stroke-width="2.5"/>
+          <rect x="0" y="90" width="70" height="10" fill="#1a1410"/>
+          <rect x="10" y="130" width="20" height="60" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+          <rect x="42" y="130" width="20" height="60" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+          <circle cx="35" cy="20" r="22" fill="#e8c9a6" stroke="#1a1410" stroke-width="2.5"/>
+          <path d="M15 14 Q35 0 55 14 Q56 26 54 28 Q48 18 35 18 Q22 18 16 28 Q14 26 15 14 Z" fill="#1a1410"/>
+          <rect x="68" y="50" width="36" height="14" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+          <circle cx="108" cy="57" r="7" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.8"/>
+        </g>
+        <g transform="translate(460,280)">
+          <rect x="0" y="34" width="72" height="106" fill="#2e4a6b" stroke="#1a1410" stroke-width="2.5"/>
+          <rect x="0" y="96" width="72" height="10" fill="#1a1410"/>
+          <rect x="12" y="140" width="20" height="66" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+          <rect x="44" y="140" width="20" height="66" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+          <circle cx="36" cy="22" r="22" fill="#e8c9a6" stroke="#1a1410" stroke-width="2.5"/>
+          <path d="M16 16 Q36 0 56 16 Q56 28 54 30 Q48 20 36 20 Q24 20 18 30 Q14 28 16 16 Z" fill="#2a1f18"/>
+          <rect x="-36" y="56" width="40" height="14" fill="#2e4a6b" stroke="#1a1410" stroke-width="2"/>
+          <circle cx="-38" cy="63" r="7" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.8"/>
+        </g>
+        <!-- COACH rising from chair, foreground left -->
+        <g transform="translate(60,340)">
+          <!-- chair -->
+          <rect x="-10" y="160" width="100" height="90" fill="#6b4a2e" stroke="#1a1410" stroke-width="2.2"/>
+          <rect x="-10" y="150" width="100" height="14" fill="#4a321f" stroke="#1a1410" stroke-width="2.2"/>
+          <rect x="0" y="250" width="8" height="44" fill="#4a321f"/>
+          <rect x="76" y="250" width="8" height="44" fill="#4a321f"/>
+          <!-- coach body (mid-stand, leaning forward) -->
+          <rect x="22" y="70" width="60" height="110" fill="#6b4a2e" stroke="#1a1410" stroke-width="2.4"/>
+          <rect x="46" y="74" width="10" height="60" fill="#7b2418"/>
+          <!-- trousers -->
+          <rect x="22" y="180" width="28" height="90" fill="#2a1f16" stroke="#1a1410" stroke-width="2"/>
+          <rect x="54" y="180" width="28" height="90" fill="#2a1f16" stroke="#1a1410" stroke-width="2"/>
+          <!-- extended arm -->
+          <rect x="78" y="90" width="60" height="16" fill="#6b4a2e" stroke="#1a1410" stroke-width="2.2"/>
+          <circle cx="142" cy="98" r="11" fill="#e8c9a6" stroke="#1a1410" stroke-width="2"/>
+          <!-- head -->
+          <circle cx="52" cy="46" r="24" fill="#e8c9a6" stroke="#1a1410" stroke-width="2.4"/>
+          <path d="M28 40 Q30 18 52 16 Q74 18 74 40 Q72 42 68 40 Q62 32 52 32 Q42 32 36 40 Q32 42 28 40 Z" fill="#3a2a22"/>
+          <!-- glasses -->
+          <rect x="64" y="46" width="10" height="4" fill="#1a1410"/>
+        </g>
+      </svg>
+      <div class="caption">COACH'S CHAIR · RD 1 · 0:24</div>
+    </div>
+    <div class="coach-right">
+      <p class="eyebrow">The player's role</p>
+      <h2 class="section" style="font-size:82px;">You don't fight.<br><em style="color:var(--amber-bulb);font-style:italic;">You coach.</em></h2>
+      <p class="body">The match plays itself. You watch, like Neil Adams in the booth, from the chair in the corner. When <em>matte</em> is called, you get the <em>seconds</em> between — two instructions, a look, a breath — and then <em>hajime</em>.</p>
+      <ul class="coach-list">
+        <li><span class="bullet">A</span>You never touch a d-pad during the match. You touch it <em>between</em> them.</li>
+        <li><span class="bullet">B</span>Your fighters hear you — within limits. Composure, fatigue, and their own stubbornness all filter the call.</li>
+        <li><span class="bullet">C</span>Over a career, what you say to them becomes what they believe about themselves.</li>
+      </ul>
+    </div>
+    <div class="foot"><span><span class="kanji">始</span>HAJIME</span><span>06 / 10 · Coach</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 7 · THE MOMENT (event card)
+       ========================================================= -->
+  <section class="moment" data-screen-label="07 The moment">
+    <div class="moment-left">
+      <p class="eyebrow">What a key moment looks like</p>
+      <h2 class="section">Between every exchange,<br>a <em style="color:var(--amber-bulb);font-style:italic;">Paradox-style</em> event card.</h2>
+      <p class="body" style="font-size:22px;">Matte is called. The match pauses. The scene illustrates itself — your coach rising from the chair, the fighters walking back — and you get two instructions to spend before the next <em>hajime</em>.</p>
+      <p class="body" style="font-size:20px;color:rgba(245,237,216,0.6);">Each instruction has a cost. Break his grip: +grip, −tempo. Stay patient: +composure. Over a career, these calls <em>are</em> the coaching relationship.</p>
+      <p class="body mono" style="font-size:15px;letter-spacing:0.18em;text-transform:uppercase;color:var(--amber-bulb);margin-top:20px;">→ tone: Neil Adams on commentary. present tense. warm. technical.</p>
+    </div>
+    <div class="event-card">
+      <div class="banner">
+        <p class="k">Matte · end of exchange 1</p>
+        <h4>The coach rises from his chair</h4>
+      </div>
+      <div class="scene">
+        <div class="stand-in">始</div>
+        <div class="caption">ILL. COACH'S CHAIR · RD 1 · 0:24</div>
+      </div>
+      <div class="body">
+        <p>Tanaka went for <em>seoi-nage</em> off a grip he never finished earning. Sato sprawled clean. The referee called <em>matte</em> and both fighters reset.</p>
+        <p>You catch Tanaka's eye as he walks back. His <em>right-grip number is falling.</em></p>
+      </div>
+      <div class="decisions2">
+        <div class="dec"><div class="letter">A</div><div><div class="t">Break his grip</div><div class="s">"Strip the pistol grip before another throw."</div></div></div>
+        <div class="dec"><div class="letter">B</div><div><div class="t">Stay patient</div><div class="s">"Don't force it. Read first, then move."</div></div></div>
+        <div class="dec"><div class="letter">C</div><div><div class="t">Go to the ground</div><div class="s">"If he bites, take him to ne-waza."</div></div></div>
+      </div>
+    </div>
+    <div class="foot"><span><span class="kanji">始</span>HAJIME</span><span>07 / 10 · Moment</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 8 · COMPS
+       ========================================================= -->
+  <section class="comps" data-screen-label="08 Comps">
+    <p class="eyebrow">What it borrows, what it doesn't</p>
+    <h2 class="section" style="font-size:84px;">It lives in a gap nobody<br>has built in yet.</h2>
+    <div class="comps-grid">
+      <div class="comp">
+        <div class="who">Football Manager</div>
+        <h4 class="name">The management DNA.</h4>
+        <p class="take">A career simulation with a real sport underneath it. Spreadsheets that feel like a book. The match is observed, not played.</p>
+        <div class="tag"><span class="good">+ career depth, tactical loop</span><br><span class="bad">− football, not a one-sport combat world</span></div>
+      </div>
+      <div class="comp">
+        <div class="who">Crusader Kings 3</div>
+        <h4 class="name">The event pops.</h4>
+        <p class="take">Illustrated scenes. Lettered decisions with trade-offs. A story that emerges from a simulation that doesn't know it's telling one.</p>
+        <div class="tag"><span class="good">+ event grammar, prose voice</span><br><span class="bad">− medieval, macro-political</span></div>
+      </div>
+      <div class="comp">
+        <div class="who">EA UFC · Undisputed</div>
+        <h4 class="name">The authentic sport.</h4>
+        <p class="take">They built the fight. They didn't build the career. The fighter walks out with 0 story, and fights 0 fights that matter in a world.</p>
+        <div class="tag"><span class="good">+ combat vocabulary</span><br><span class="bad">− no career, no soul</span></div>
+      </div>
+    </div>
+    <div class="foot"><span><span class="kanji">始</span>HAJIME</span><span>08 / 10 · Comps</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 9 · WHY ME / WHY NOW
+       ========================================================= -->
+  <section class="why" data-screen-label="09 Why">
+    <div>
+      <p class="eyebrow">Why this exists</p>
+      <h2 class="section" style="font-size:76px;">I coach judo.<br>Nobody's made this game.<br><em style="color:var(--amber-bulb);font-style:italic;">So I'm making it.</em></h2>
+      <ul>
+        <li><span class="n">01</span>Judo's global. The audience exists. Nobody serves them.</li>
+        <li><span class="n">02</span>Sim-heavy management games are having a decade. FM's ceiling keeps rising.</li>
+        <li><span class="n">03</span>The church-basement dojo is a setting nobody else can write honestly.</li>
+        <li><span class="n">04</span>Procedural + sim means infinite content at a one-person scale.</li>
+      </ul>
+    </div>
+    <div class="pull">
+      "Most people who walk into a dojo won't compete. Some will. A few are quietly terrifying. A coach doesn't know which is which for months. That's the game."
+      <span class="sig">— design note, April 2026</span>
+    </div>
+    <div class="foot"><span><span class="kanji">始</span>HAJIME</span><span>09 / 10 · Why</span></div>
+  </section>
+
+  <!-- =========================================================
+       SLIDE 10 · CLOSE
+       ========================================================= -->
+  <section class="close" data-screen-label="10 Close">
+    <div class="bigmark">始</div>
+    <div style="position:relative;z-index:2;">
+      <p class="kicker">What comes next</p>
+      <h2 class="section">Playable match.<br>One year. <em>One coach.</em></h2>
+      <div class="line"></div>
+      <p class="lede">Vertical slice by Q4. A single randori session, one procedurally-generated opponent, the full chair-to-chip loop. From there: local tournament → state → and up.</p>
+      <div class="contact">
+        <span><span class="amber">Project</span> · Hajime</span>
+        <span><span class="amber">Studio</span> · Cranford JKC</span>
+        <span><span class="amber">Status</span> · Pitch v0.1</span>
+      </div>
+    </div>
+  </section>
+
+</deck-stage>
+
+</body></html>

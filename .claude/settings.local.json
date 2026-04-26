@@ -80,7 +80,14 @@
       "Bash(python -m pytest tests/ -s --no-header -v)",
       "Bash(tee /tmp/pytest2.log)",
       "Bash(git -C C:/Users/jackc/hajime diff --stat hajime-master-doc.md)",
-      "Bash(git -C C:/Users/jackc/hajime diff hajime-master-doc.md)"
+      "Bash(git -C C:/Users/jackc/hajime diff hajime-master-doc.md)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, 'src'\\); import match; import referee; import enums; print\\('imports OK'\\); print\\('SCORING in MatteReason:', hasattr\\(enums.MatteReason, 'SCORING'\\)\\)\")",
+      "Bash(python -m pytest tests -x -q)",
+      "Bash(python -m pytest tests -x)",
+      "Bash(python -m pytest tests --co -q -p no:cacheprovider)",
+      "Bash(python -m pytest tests --capture=no -p no:cacheprovider)",
+      "Bash(python -m pytest tests --capture=no -p no:cacheprovider --tb=line)",
+      "Bash(python -m pytest tests/test_score_announcements.py --capture=no -p no:cacheprovider)"
     ]
   }
 }

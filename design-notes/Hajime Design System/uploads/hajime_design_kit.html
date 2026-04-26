@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hajime — Visual Identity</title>
+<style>
+  :root {
+    /* Neutral document palette */
+    --doc-paper: #efe6d0;
+    --doc-paper-dark: #d8cdb0;
+    --doc-paper-card: #faf4e2;
+    --doc-ink: #1f1a14;
+    --doc-ink-soft: #4a3f2e;
+    --doc-ink-light: #8a7a5c;
+
+    /* === PALETTE 01 — BASEMENT SANCTUARY === */
+    --p1-mat: #4a5838;
+    --p1-amber: #d4a04a;
+    --p1-oxblood: #7b2418;
+    --p1-cream: #f5edd8;
+    --p1-ink: #1a1410;
+    --p1-wood: #6b4a2e;
+
+    /* === PALETTE 02 — TOKYO TO CRANFORD === */
+    --p2-indigo: #1e2f4a;
+    --p2-ecru: #ebe3cd;
+    --p2-vermilion: #c93e2b;
+    --p2-charcoal: #2a2420;
+    --p2-celadon: #9aa889;
+    --p2-gold: #b8984c;
+
+    /* === PALETTE 03 — PHOTOGRAPH === */
+    --p3-photo: #8b7a60;
+    --p3-shadow: #2b241c;
+    --p3-highlight: #f2ead2;
+    --p3-stamp: #a8391e;
+    --p3-ink: #1c1610;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    background: var(--doc-paper);
+    color: var(--doc-ink);
+    padding: 24px 16px 80px;
+    max-width: 1080px;
+    margin: 0 auto;
+    line-height: 1.6;
+    background-image:
+      radial-gradient(ellipse at top left, rgba(255, 250, 230, 0.5), transparent 55%),
+      radial-gradient(ellipse at bottom right, rgba(80, 50, 10, 0.06), transparent 55%);
+  }
+  h1 {
+    font-weight: normal;
+    font-size: 34px;
+    margin: 0 0 2px;
+    letter-spacing: -0.005em;
+  }
+  .kicker {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--doc-ink-light);
+    margin: 0 0 4px;
+  }
+  .subtitle {
+    font-style: italic;
+    color: var(--doc-ink-soft);
+    font-size: 15px;
+    margin: 0 0 6px;
+  }
+  h2 {
+    font-weight: normal;
+    font-size: 24px;
+    color: var(--doc-ink);
+    margin: 0 0 2px;
+  }
+  h2 .num {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    border: 1px solid var(--doc-ink-soft);
+    border-radius: 50%;
+    font-size: 14px;
+    margin-right: 10px;
+    color: var(--doc-ink-soft);
+  }
+  h3 {
+    font-weight: normal;
+    font-size: 18px;
+    margin: 0 0 4px;
+  }
+  .section {
+    background: var(--doc-paper-card);
+    border: 1px solid var(--doc-paper-dark);
+    padding: 24px 22px;
+    margin: 24px 0;
+    border-radius: 4px;
+    box-shadow: 2px 3px 0 rgba(60, 45, 20, 0.06);
+  }
+  .section-intro {
+    font-size: 14px;
+    color: var(--doc-ink-soft);
+    margin: 6px 0 22px;
+    max-width: 680px;
+  }
+  .pull-quote {
+    font-style: italic;
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--doc-ink-soft);
+    border-left: 2px solid var(--doc-ink);
+    padding: 4px 0 4px 16px;
+    margin: 18px 0;
+    max-width: 620px;
+  }
+
+  /* Story section */
+  .story-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+    margin-top: 16px;
+  }
+  @media (min-width: 720px) {
+    .story-grid { grid-template-columns: 1fr 260px; }
+  }
+  .facts {
+    background: var(--doc-paper);
+    border: 1px solid var(--doc-paper-dark);
+    border-radius: 3px;
+    padding: 16px;
+  }
+  .facts dl { margin: 0; }
+  .facts dt {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--doc-ink-light);
+    margin-top: 10px;
+  }
+  .facts dt:first-child { margin-top: 0; }
+  .facts dd {
+    font-size: 14px;
+    margin: 2px 0 0;
+    color: var(--doc-ink);
+  }
+
+  /* Palette card */
+  .palette {
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 18px 0;
+    border: 1px solid var(--doc-paper-dark);
+  }
+  .palette-header {
+    padding: 14px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .palette-name {
+    font-size: 20px;
+    margin: 0;
+  }
+  .palette-tag {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.75;
+  }
+  .swatch-strip {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    min-height: 90px;
+  }
+  @media (max-width: 520px) {
+    .swatch-strip { grid-template-columns: repeat(3, 1fr); min-height: 70px; }
+  }
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 10px 8px;
+    font-size: 10px;
+    font-family: "SF Mono", "Menlo", monospace;
+    letter-spacing: 0.04em;
+    min-height: 90px;
+  }
+  .swatch-name {
+    font-family: "Iowan Old Style", Georgia, serif;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+  .palette-body {
+    padding: 16px 18px 20px;
+    background: var(--doc-paper);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--doc-ink-soft);
+  }
+  .palette-body strong { color: var(--doc-ink); }
+  .use-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 14px;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+  .use-grid .label {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--doc-ink-light);
+    font-size: 10px;
+  }
+
+  /* Palette 1 header theme */
+  .p1-header { background: var(--p1-ink); color: var(--p1-cream); }
+  .p1-header .palette-tag { color: var(--p1-amber); opacity: 1; }
+  .p2-header { background: var(--p2-indigo); color: var(--p2-ecru); }
+  .p2-header .palette-tag { color: var(--p2-vermilion); opacity: 1; }
+  .p3-header { background: var(--p3-shadow); color: var(--p3-highlight); }
+  .p3-header .palette-tag { color: var(--p3-stamp); opacity: 1; }
+
+  /* Light/dark swatch text */
+  .txt-light { color: rgba(245, 237, 216, 0.92); }
+  .txt-dark { color: rgba(20, 15, 10, 0.85); }
+
+  /* Typography section */
+  .type-pair {
+    background: var(--doc-paper);
+    border: 1px solid var(--doc-paper-dark);
+    border-radius: 3px;
+    padding: 18px;
+    margin: 14px 0;
+  }
+  .type-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--doc-ink-light);
+    margin-bottom: 2px;
+  }
+  .type-display-serif {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Hoefler Text", Georgia, serif;
+    font-size: 36px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin: 4px 0 12px;
+  }
+  .type-display-sans {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 36px;
+    font-weight: 300;
+    letter-spacing: 0.08em;
+    margin: 4px 0 12px;
+    text-transform: uppercase;
+  }
+  .type-body {
+    font-size: 15px;
+    color: var(--doc-ink);
+    max-width: 580px;
+  }
+  .type-mono {
+    font-family: "SF Mono", "Menlo", "Courier New", monospace;
+    font-size: 13px;
+    color: var(--doc-ink-soft);
+    margin-top: 10px;
+  }
+
+  /* Wordmark */
+  .wordmark-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 14px;
+  }
+  .wordmark-card {
+    flex: 1 1 240px;
+    background: var(--doc-paper);
+    border: 1px solid var(--doc-paper-dark);
+    border-radius: 3px;
+    padding: 24px 18px 16px;
+    text-align: center;
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .wordmark-card.dark { background: var(--p1-ink); color: var(--p1-cream); border-color: #000; }
+  .wordmark-card.indigo { background: var(--p2-indigo); color: var(--p2-ecru); border-color: #0c1524; }
+  .wordmark-note {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--doc-ink-light);
+    font-style: italic;
+    margin-top: 14px;
+  }
+  .wordmark-note.light { color: rgba(245, 237, 216, 0.55); }
+
+  /* Mockup UI */
+  .mockup {
+    background: var(--p1-ink);
+    color: var(--p1-cream);
+    border: 1px solid #000;
+    border-radius: 4px;
+    padding: 16px 14px;
+    margin: 16px 0;
+    font-family: "Iowan Old Style", Georgia, serif;
+  }
+  .mockup-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--p1-amber);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(212, 160, 74, 0.3);
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+  }
+  .mockup-stream {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--p1-cream);
+  }
+  .mockup-stream .time {
+    color: var(--p1-amber);
+    font-family: "SF Mono", monospace;
+    font-size: 11px;
+    margin-right: 6px;
+  }
+  .mockup-stream .highlight { color: var(--p1-amber); font-weight: 600; }
+  .mockup-panel {
+    background: rgba(245, 237, 216, 0.06);
+    border: 1px solid rgba(212, 160, 74, 0.35);
+    border-radius: 3px;
+    padding: 12px;
+    margin-top: 14px;
+  }
+  .panel-title {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--p1-amber);
+    margin: 0 0 8px;
+  }
+  .stat-line {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 3px 0;
+    border-bottom: 1px dotted rgba(212, 160, 74, 0.2);
+  }
+  .stat-line .val { color: var(--p1-amber); font-family: "SF Mono", monospace; font-size: 12px; }
+  .instr-btn {
+    display: inline-block;
+    border: 1px solid var(--p1-amber);
+    color: var(--p1-amber);
+    padding: 6px 12px;
+    margin: 4px 4px 4px 0;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-radius: 2px;
+  }
+  .instr-btn.active {
+    background: var(--p1-oxblood);
+    border-color: var(--p1-oxblood);
+    color: var(--p1-cream);
+  }
+
+  /* Art direction cards */
+  .art-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-top: 14px;
+  }
+  @media (min-width: 600px) { .art-grid { grid-template-columns: 1fr 1fr; } }
+  .art-card {
+    background: var(--doc-paper);
+    border: 1px solid var(--doc-paper-dark);
+    border-radius: 3px;
+    padding: 16px;
+  }
+  .art-card h4 {
+    margin: 0 0 2px;
+    font-weight: normal;
+    font-size: 17px;
+  }
+  .art-card .ref {
+    font-size: 11px;
+    color: var(--doc-ink-light);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .art-card p { font-size: 14px; color: var(--doc-ink-soft); margin: 6px 0; }
+
+  /* Tone voice */
+  .voice-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .voice-card {
+    background: var(--doc-paper);
+    border: 1px solid var(--doc-paper-dark);
+    border-radius: 3px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--doc-ink-soft);
+  }
+  .voice-card .vlabel {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--doc-ink-light);
+    margin-bottom: 4px;
+  }
+  .voice-card em { color: var(--doc-ink); font-style: italic; }
+
+  /* Recommendation */
+  .reco {
+    background: var(--p1-ink);
+    color: var(--p1-cream);
+    border: 1px solid #000;
+    border-radius: 4px;
+    padding: 24px 22px;
+    margin: 28px 0;
+    box-shadow: 3px 4px 0 rgba(60, 45, 20, 0.12);
+  }
+  .reco h2 { color: var(--p1-cream); }
+  .reco h2 .num { border-color: var(--p1-amber); color: var(--p1-amber); }
+  .reco .section-intro { color: rgba(245, 237, 216, 0.7); }
+  .reco p { font-size: 15px; line-height: 1.65; }
+  .reco strong { color: var(--p1-amber); }
+
+  footer {
+    text-align: center;
+    font-size: 12px;
+    color: var(--doc-ink-light);
+    font-style: italic;
+    margin-top: 28px;
+  }
+</style>
+</head>
+<body>
+
+<p class="kicker">Visual identity · design kit</p>
+<h1>Hajime</h1>
+<p class="subtitle">A coaching simulation rooted in a specific basement on South Avenue West, Cranford, New Jersey.</p>
+<p class="subtitle" style="color: var(--doc-ink-light); font-size: 13px; margin-top: 4px;">Design exploration · April 17, 2026 · Three palette directions · Typography · Wordmark · Art direction · Tone</p>
+
+<!-- =================================================================== -->
+<!-- 1. THE SOURCE                                                      -->
+<!-- =================================================================== -->
+<div class="section">
+  <h2><span class="num">1</span>The Source Dojo</h2>
+  <p class="section-intro">Good identities come from a real place. Hajime's place is already picked out. Everything downstream traces back to it.</p>
+
+  <p class="pull-quote">You walk down. The street noise drops. The air gets warmer. Old trophies catch the amber light on the far wall. A bell rings. Someone is already on the mat. This is where the game happens.</p>
+
+  <div class="story-grid">
+    <div>
+      <p>Cranford JKC — the Cranford Judo & Karate Center — sits below street level at 107 South Avenue West. <em>Bsmt 1</em> in the mailing address. A literal basement sanctuary.</p>
+      <p>Founded by Yoshisada Yonezuka in 1962, two years after he emigrated from Japan. He coached the US Olympic Judo Team in 1988 and 1992. Six Olympians came out of that basement before he passed in 2014. His son Nicolas, himself a 1980 Olympian, runs it now. The current generation — Jack Yonezuka — competed in Paris 2024. Three generations of one family, sixty-four years of continuous instruction, one room underground.</p>
+      <p>This is Hajime's design-by-story anchor. The multigenerational dojo, the Wall of champions, the coach who retires and passes the club to a former student — those aren't imagined mechanics. They are what Cranford has been doing for sixty-four years. The game is already there. The identity should feel like walking down those steps.</p>
+    </div>
+    <div class="facts">
+      <dl>
+        <dt>Location</dt>
+        <dd>107 S Ave W, Bsmt 1 · Cranford, NJ</dd>
+        <dt>Founded</dt>
+        <dd>1962, by Yoshisada Yonezuka</dd>
+        <dt>Current Sensei</dt>
+        <dd>Nicolas Yonezuka (1980 Olympian)</dd>
+        <dt>Olympians Produced</dt>
+        <dd>6 across three generations</dd>
+        <dt>Olympic Medals</dt>
+        <dd>1976 (Coage, bronze) · 1988 (bronze)</dd>
+        <dt>Visual Signals</dt>
+        <dd>Basement warmth · old trophy wood · red exit signage · kanji banners · worn tatami · incandescent bulbs</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<!-- =================================================================== -->
+<!-- 2. THREE PALETTE DIRECTIONS                                        -->
+<!-- =================================================================== -->
+<div class="section">
+  <h2><span class="num">2</span>Three Palette Directions</h2>
+  <p class="section-intro">Each palette is a different answer to the question: what is Hajime <em>for</em>? Warmth, reverence, or documentary realism.</p>
+
+  <!-- PALETTE 01 -->
+  <div class="palette">
+    <div class="palette-header p1-header">
+      <div>
+        <p class="palette-name">Basement Sanctuary</p>
+        <p class="palette-tag">direction 01 · warm · the recommended direction</p>
+      </div>
+      <div class="palette-tag">the feel of walking down the stairs</div>
+    </div>
+    <div class="swatch-strip">
+      <div class="swatch txt-light" style="background: #1a1410;">
+        <div>#1A1410</div>
+        <div class="swatch-name">Ink black</div>
+      </div>
+      <div class="swatch txt-light" style="background: #4a5838;">
+        <div>#4A5838</div>
+        <div class="swatch-name">Mat green</div>
+      </div>
+      <div class="swatch txt-light" style="background: #6b4a2e;">
+        <div>#6B4A2E</div>
+        <div class="swatch-name">Trophy wood</div>
+      </div>
+      <div class="swatch txt-light" style="background: #7b2418;">
+        <div>#7B2418</div>
+        <div class="swatch-name">Oxblood</div>
+      </div>
+      <div class="swatch txt-dark" style="background: #d4a04a;">
+        <div>#D4A04A</div>
+        <div class="swatch-name">Amber bulb</div>
+      </div>
+      <div class="swatch txt-dark" style="background: #f5edd8;">
+        <div>#F5EDD8</div>
+        <div class="swatch-name">Gi cream</div>
+      </div>
+    </div>
+    <div class="palette-body">
+      <p><strong>The move.</strong> Ink-black canvas behind everything. Amber as the only warm light source — the incandescent bulb under the stairs. Mat green for the tatami and training UI. Oxblood for urgency, danger, ippon calls, the exit sign. Wood brown for frames, trophy cases, wooden weapon racks. Cream for text and the gi.</p>
+      <div class="use-grid">
+        <div>
+          <div class="label">Background</div>
+          <div>Ink black — never pure #000</div>
+        </div>
+        <div>
+          <div class="label">Primary accent</div>
+          <div>Amber bulb — the only glow</div>
+        </div>
+        <div>
+          <div class="label">Tatami / training UI</div>
+          <div>Mat green — where the work happens</div>
+        </div>
+        <div>
+          <div class="label">Alarm / ippon</div>
+          <div>Oxblood — used rarely</div>
+        </div>
+        <div>
+          <div class="label">Body text</div>
+          <div>Gi cream on ink</div>
+        </div>
+        <div>
+          <div class="label">Frames / cases</div>
+          <div>Trophy wood</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PALETTE 02 -->
+  <div class="palette">
+    <div class="palette-header p2-header">
+      <div>
+        <p class="palette-name">Tokyo to Cranford</p>
+        <p class="palette-tag">direction 02 · editorial · elevated</p>
+      </div>
+      <div class="palette-tag">samue indigo, rice paper, hanko red</div>
+    </div>
+    <div class="swatch-strip">
+      <div class="swatch txt-light" style="background: #1e2f4a;">
+        <div>#1E2F4A</div>
+        <div class="swatch-name">Samue indigo</div>
+      </div>
+      <div class="swatch txt-light" style="background: #2a2420;">
+        <div>#2A2420</div>
+        <div class="swatch-name">Sumi charcoal</div>
+      </div>
+      <div class="swatch txt-dark" style="background: #9aa889;">
+        <div>#9AA889</div>
+        <div class="swatch-name">Faded celadon</div>
+      </div>
+      <div class="swatch txt-dark" style="background: #b8984c;">
+        <div>#B8984C</div>
+        <div class="swatch-name">Old brass</div>
+      </div>
+      <div class="swatch txt-light" style="background: #c93e2b;">
+        <div>#C93E2B</div>
+        <div class="swatch-name">Hanko red</div>
+      </div>
+      <div class="swatch txt-dark" style="background: #ebe3cd;">
+        <div>#EBE3CD</div>
+        <div class="swatch-name">Rice paper</div>
+      </div>
+    </div>
+    <div class="palette-body">
+      <p><strong>The move.</strong> Editorial, museum-catalog, broadsheet-newspaper quality. The game styled like a book about judo, not a game <em>of</em> judo. Indigo dominant, rice paper for canvas, vermilion only for the hanko (name stamp) that finishes each match result. Brass for numeric data. Celadon as a quiet secondary for the mat.</p>
+      <p style="margin-top: 10px; font-style: italic; font-size: 12px;">Risk: can feel cold or remote. Distances the player from the sweat and basement warmth of Cranford. Best for menus and title screens; may fight against the match screen's intensity.</p>
+    </div>
+  </div>
+
+  <!-- PALETTE 03 -->
+  <div class="palette">
+    <div class="palette-header p3-header">
+      <div>
+        <p class="palette-name">Photograph</p>
+        <p class="palette-tag">direction 03 · documentary · experimental</p>
+      </div>
+      <div class="palette-tag">Despelote-inspired — real photos of Cranford</div>
+    </div>
+    <div class="swatch-strip">
+      <div class="swatch txt-light" style="background: #1c1610;">
+        <div>#1C1610</div>
+        <div class="swatch-name">Photo shadow</div>
+      </div>
+      <div class="swatch txt-light" style="background: #8b7a60;">
+        <div>#8b7a60</div>
+        <div class="swatch-name">Mid-tone warm</div>
+      </div>
+      <div class="swatch txt-light" style="background: #a8391e;">
+        <div>#A8391E</div>
+        <div class="swatch-name">Stamp red</div>
+      </div>
+      <div class="swatch txt-dark" style="background: #f2ead2;">
+        <div>#F2EAD2</div>
+        <div class="swatch-name">Photo highlight</div>
+      </div>
+      <div class="swatch txt-dark" style="background: #d4c4a0;">
+        <div>#D4C4A0</div>
+        <div class="swatch-name">Aged paper</div>
+      </div>
+      <div class="swatch txt-light" style="background: #2b241c;">
+        <div>#2B241C</div>
+        <div class="swatch-name">Ink-on-ink</div>
+      </div>
+    </div>
+    <div class="palette-body">
+      <p><strong>The move.</strong> This is less a palette than a method. The palette <em>is</em> whatever a real photograph of Cranford JKC contains. UI lives in a muted ink-and-stamp monochrome that doesn't fight the image. Every location in the game is a photograph, slightly desaturated, with paper-doll judoka drawn over it — the way Despelote renders Quito.</p>
+      <p style="margin-top: 10px; font-style: italic; font-size: 12px;">Strength: makes Hajime a personal artifact. The game is <em>of your dojo</em>. Requires you (or a friend with a camera) to actually photograph Cranford JKC — a weekend's work. Would be wildly original for a coaching sim.</p>
+    </div>
+  </div>
+</div>
+
+<!-- =================================================================== -->
+<!-- 3. TYPOGRAPHY                                                      -->
+<!-- =================================================================== -->
+<div class="section">
+  <h2><span class="num">3</span>Typography</h2>
+  <p class="section-intro">Two pairings. Both work with Palette 01. The first leans literary; the second leans broadcast.</p>
+
+  <div class="type-pair">
+    <p class="type-label">Pairing A · literary · <strong>recommended for the sanctuary feel</strong></p>
+    <p class="type-display-serif">Tanaka approaches. Right hand to the lapel.</p>
+    <p class="type-body">Display and body in a warm old-style serif — Iowan Old Style, Palatino, or (if licensed) Hoefler Text. Reads like a book about judo, which is the whole tonal target. The match prose stream <em>wants</em> this. Numbers and grip-graph readouts sit in a mono for contrast.</p>
+    <p class="type-mono">0:14 · grip depth 0.8 · composure 7/10 · R.hand → DEEP COLLAR</p>
+  </div>
+
+  <div class="type-pair">
+    <p class="type-label">Pairing B · broadcast · for tournament surfaces</p>
+    <p class="type-display-sans">Round 1 · –73kg · TANAKA vs. SATO</p>
+    <p class="type-body" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px;">A thin uppercase sans — Helvetica Neue Light, Inter, or similar — for score strips and broadcast chrome. Used only where the game is pretending to be television. The sanctuary is serif. The match venue is sans. The contrast is the point.</p>
+  </div>
+</div>
+
+<!-- =================================================================== -->
+<!-- 4. WORDMARK                                                        -->
+<!-- =================================================================== -->
+<div class="section">
+  <h2><span class="num">4</span>Wordmark Exploration</h2>
+  <p class="section-intro">Three directions. Each is a rough pass — these are sketches, not final marks.</p>
+
+  <div class="wordmark-row">
+    <div class="wordmark-card">
+      <div>
+        <div style="font-family: 'Iowan Old Style', Georgia, serif; font-size: 46px; line-height: 1; letter-spacing: -0.01em; color: var(--p1-ink);">Hajime</div>
+        <div style="font-family: 'Iowan Old Style', Georgia, serif; font-size: 13px; font-style: italic; color: var(--p1-oxblood); letter-spacing: 0.1em;">— 始め —</div>
+      </div>
+      <p class="wordmark-note">Option A · literary · Japanese subtitle as a quiet tell</p>
+    </div>
+
+    <div class="wordmark-card dark">
+      <div>
+        <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 42px; font-weight: 300; letter-spacing: 0.24em; text-transform: uppercase; color: var(--p1-amber);">HAJIME</div>
+        <div style="height: 2px; width: 40px; background: var(--p1-amber); margin: 10px auto 0;"></div>
+      </div>
+      <p class="wordmark-note light">Option B · broadcast · the referee's raised hand</p>
+    </div>
+
+    <div class="wordmark-card indigo">
+      <div>
+        <div style="font-family: 'Iowan Old Style', Georgia, serif; font-size: 44px; font-style: italic; letter-spacing: 0; color: var(--p2-ecru);">hajime<span style="color: var(--p2-vermilion); font-style: normal;">.</span></div>
+      </div>
+      <p class="wordmark-note light">Option C · lowercase · intimate, a note to yourself</p>
+    </div>
+  </div>
+
+  <p class="pull-quote" style="margin-top: 20px;">The word "hajime" is a command, a beginning, and the name of the game. The mark should work on a signboard outside a basement door.</p>
+</div>
+
+<!-- =================================================================== -->
+<!-- 5. ART DIRECTION QUESTION                                          -->
+<!-- =================================================================== -->
+<div class="section">
+  <h2><span class="num">5</span>The Art Direction Question</h2>
+  <p class="section-intro">Before picking a palette, a bigger question has to be answered. What kind of <em>image</em> is Hajime?</p>
+
+  <div class="art-grid">
+    <div class="art-card">
+      <h4>The Drawn Game</h4>
+      <div class="ref">Ref: Wildermyth · Boxing Gym Story</div>
+      <p>Everything is hand-drawn. Tatami, dojo, judoka, coach chair, tournament hall — all 2D illustrated assets, all yours to shape. The paper-doll layering already sketched fits this.</p>
+      <p><strong>Pro:</strong> total control. Unified style. Scales to many locations.</p>
+      <p><strong>Con:</strong> more art to produce. Risk of feeling generic if the illustration isn't specific.</p>
+    </div>
+
+    <div class="art-card">
+      <h4>The Photograph Game</h4>
+      <div class="ref">Ref: Despelote · Virginia · Kentucky Route Zero prologue</div>
+      <p>Backgrounds are real photographs — Cranford JKC's basement, a tournament venue, a weigh-in room. Judoka are drawn and layered over. Time of day, weather, dust in the air — all captured by lens, not illustrated.</p>
+      <p><strong>Pro:</strong> instantly specific. The game <em>is</em> your dojo. Unimitable.</p>
+      <p><strong>Con:</strong> requires access (Nick Yonezuka's permission, a photographer, a weekend). Binds the game to one real place.</p>
+    </div>
+
+    <div class="art-card">
+      <h4>The Isometric Game</h4>
+      <div class="ref">Ref: Disco Elysium · Into the Breach</div>
+      <p>Everything rendered in 2D isometric tiles. Dojo, mat, coach chair, all placed on a grid. Sprites scaled accordingly. Cleaner spatial reasoning for the match view and training day view.</p>
+      <p><strong>Pro:</strong> the scale-model aesthetic matches coaching's god's-eye nature. Easy to compose new rooms.</p>
+      <p><strong>Con:</strong> can feel distanced. Loses the intimate basement warmth that the source dojo is built on.</p>
+    </div>
+
+    <div class="art-card">
+      <h4>The Hybrid</h4>
+      <div class="ref">Ref: hand-drawn characters on photo backdrops</div>
+      <p>Photograph backdrops for locations (basement dojo, tournament hall, weigh-in). Hand-drawn paper-doll judoka layered on. Match-view specifically uses a warm-lit drawn tatami. UI floats above both in the Pairing A serif type.</p>
+      <p><strong>This is probably the answer.</strong> Photo gives the specificity; drawn characters give the legibility the coaching sim needs. The drawn tatami in match view means you don't need perfectly-lit photos of mid-throw action.</p>
+    </div>
+  </div>
+</div>
+
+<!-- =================================================================== -->
+<!-- 6. UI MOCKUP (PALETTE 01 + TYPOGRAPHY A)                          -->
+<!-- =================================================================== -->
+<div class="section">
+  <h2><span class="num">6</span>UI Mockup — Palette 01 in Motion</h2>
+  <p class="section-intro">What the Anchoring Scene looks like with Basement Sanctuary colors and Pairing A typography applied. This is the concrete test of the direction.</p>
+
+  <div class="mockup">
+    <div class="mockup-row">
+      <span>Round 1 · –73kg</span>
+      <span>Tanaka 0 : 0 Sato</span>
+      <span>0:24 · Matte</span>
+    </div>
+
+    <div class="mockup-stream">
+      <div><span class="time">0:03</span>Tanaka steps in. Right hand reaches for the lapel.</div>
+      <div><span class="time">0:04</span>Sato's left hand intercepts — pistol grip on the sleeve.</div>
+      <div><span class="time">0:06</span>Tanaka pulls. The grip holds. <span class="highlight">Right grip −1.</span></div>
+      <div><span class="time">0:09</span>Tanaka secures high collar. Deep grip.</div>
+      <div><span class="time">0:11</span>Sato breaks posture forward, framing the bicep.</div>
+      <div><span class="time">0:14</span>Grip battle. Both hands engaged. Forearms fatiguing.</div>
+      <div><span class="time">0:18</span>Tanaka attempts seoi-nage — Sato sprawls. <span class="highlight">Throw stuffed.</span></div>
+      <div><span class="time">0:22</span>Sato attacks o-uchi-gari — Tanaka's left leg absorbs.</div>
+      <div><span class="time">0:24</span><span class="highlight">Matte.</span></div>
+    </div>
+
+    <div class="mockup-panel">
+      <p class="panel-title">— Coach's Chair · Tanaka —</p>
+      <div class="stat-line"><span>Composure</span><span class="val">7 / 10 ↓</span></div>
+      <div class="stat-line"><span>Right grip</span><span class="val">5 / 10 ↓↓</span></div>
+      <div class="stat-line"><span>Left grip</span><span class="val">8 / 10</span></div>
+      <div class="stat-line"><span>Read speed</span><span class="val">6 / 10</span></div>
+      <div class="stat-line"><span>Trust in coach</span><span class="val">9 / 10</span></div>
+      <div style="margin-top: 14px;">
+        <p class="panel-title" style="margin-bottom: 4px;">Issue two instructions</p>
+        <span class="instr-btn">A. Switch stance</span>
+        <span class="instr-btn active">B. Break his grip</span>
+        <span class="instr-btn">C. Stay patient</span>
+        <span class="instr-btn active">D. Go to the ground</span>
+        <span class="instr-btn">E. Tighten up</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="pull-quote" style="margin-top: 18px;">The screen feels like reading a judo book under a single warm bulb. That's the target. Everything lands.</p>
+</div>
+
+<!-- =================================================================== -->
+<!-- 7. TONE OF VOICE                                                   -->
+<!-- =================================================================== -->
+<div class="section">
+  <h2><span class="num">7</span>Tone of Voice</h2>
+  <p class="section-intro">How Hajime talks — in menus, in match prose, on a tooltip, in the title screen tagline.</p>
+
+  <div class="voice-grid">
+    <div class="voice-card">
+      <div class="vlabel">Is</div>
+      <em>Observational.</em> Sportswriter. The game narrates what happened; it does not editorialize.
+    </div>
+    <div class="voice-card">
+      <div class="vlabel">Is not</div>
+      Hyped. No exclamation marks. No "EPIC" or "CRUSHED."
+    </div>
+    <div class="voice-card">
+      <div class="vlabel">Is</div>
+      <em>Specific.</em> "Right hand to the lapel." Not "grapples for grip."
+    </div>
+    <div class="voice-card">
+      <div class="vlabel">Is not</div>
+      Jargon-dense. Japanese terms are used where they are the real word (ippon, matte, kuzushi) and explained once, in-world.
+    </div>
+    <div class="voice-card">
+      <div class="vlabel">Is</div>
+      <em>Reverent about the ritual.</em> Hajime begins every match. The bow happens. The word matters.
+    </div>
+    <div class="voice-card">
+      <div class="vlabel">Is not</div>
+      Solemn to a fault. A match can end funny. A judoka can be young and goofy. The dojo has warmth.
+    </div>
+  </div>
+</div>
+
+<!-- =================================================================== -->
+<!-- 8. RECOMMENDATION                                                  -->
+<!-- =================================================================== -->
+<div class="reco">
+  <h2><span class="num">8</span>Recommendation</h2>
+  <p class="section-intro">One pick, said plainly.</p>
+
+  <p><strong>Direction:</strong> Palette 01 — Basement Sanctuary. Typography Pairing A — the literary serif. Art Direction: the Hybrid (photo backgrounds, drawn characters). Wordmark: Option A or C — the serif-based versions; the lowercase "hajime." has quiet personality and would age well.</p>
+
+  <p>The reason is simple: <strong>the source dojo is warm</strong>. Cranford JKC is not a cool, distant, museum-catalog place. It is amber light and trophy wood and three generations of a family teaching in a basement. If the identity tries to be Tokyo-editorial, it will be pretty and it will be <em>wrong</em>. The warmth is the whole thing. Lead with it.</p>
+
+  <p>The photograph question is real, and I think the answer is <strong>yes, eventually</strong>. If Nick Yonezuka ever says yes to letting you photograph the dojo — and it would be a conversation worth having — then the basement of Cranford JKC becomes the dojo of Hajime. The emotional payload of that is enormous. And if not, the warm drawn version of it still works.</p>
+
+  <p style="margin-top: 16px;"><strong>Proposed next step:</strong> take this kit into Claude Design (if you have access) or back into this chat, and make two things — a title card and a match-screen mockup, both in this direction. Once those exist as images you'd actually print, the identity is locked.</p>
+</div>
+
+<footer>
+  End of kit · Hajime · visual identity exploration · April 17, 2026 · made with respect for the Yonezuka family and the dojo on South Avenue West
+</footer>
+
+</body>
+</html>

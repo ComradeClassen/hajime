@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 160" width="420" height="160">
+  <defs>
+    
+  </defs>
+
+  
+  <text class="kanji" x="22" y="118" font-size="130" letter-spacing="-0.02em">始</text>
+
+  
+  <polygon points="150,30 172,26 168,48 152,48" fill="#8a2a1c" transform="rotate(-18 160 40)"></polygon>
+
+  
+  <text class="w" x="408" y="82" font-size="56" text-anchor="end" letter-spacing="-0.01em">Hajime</text>
+
+  
+  <text class="w" x="360" y="118" font-size="18" text-anchor="end" font-style="italic" fill="#4a3f2e" letter-spacing="0.08em">始め</text>
+
+  
+  <rect x="374" y="100" width="26" height="26" fill="#8a2a1c" rx="1" transform="rotate(-5 387 113)"></rect>
+  <text class="stamp" x="387" y="121" font-size="17" text-anchor="middle" transform="rotate(-5 387 113)">始</text>
+</svg>

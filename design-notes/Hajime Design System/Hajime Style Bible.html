@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>Hajime — Style Bible v1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Shippori+Mincho:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* core palette */
+    --sumi:        #15140f;   /* sumi ink — primary text, near-black warm */
+    --sumi-2:      #2a261d;
+    --washi:       #f3ede0;   /* washi paper — primary surface */
+    --washi-2:     #e8e0cd;
+    --washi-3:     #d8cfb8;
+    --tatami:      #6f7a4a;   /* tatami green — institutional/calm */
+    --tatami-deep: #4d5634;
+    --tatami-pale: #b6bf94;
+    --shu:         #b8331f;   /* vermilion — referee, danger, score */
+    --shu-deep:    #8a2615;
+    --gold:        #b08a3a;   /* aged brass — promotions, awards (rare) */
+    --rule:        #c4b896;   /* hairline rules on washi */
+    --rule-strong: #8a8260;
+    --shadow:      0 1px 0 rgba(21,20,15,.05), 0 12px 32px -16px rgba(21,20,15,.18);
+
+    --serif-display: "Fraunces", "Shippori Mincho", Georgia, serif;
+    --serif-body:    "Source Serif 4", Georgia, serif;
+    --sans:          "Inter", system-ui, sans-serif;
+    --mono:          "JetBrains Mono", ui-monospace, monospace;
+    --jp:            "Shippori Mincho", "Hiragino Mincho ProN", serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--washi);color:var(--sumi);font-family:var(--serif-body);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  body{
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #f8f2e6 0%, transparent 60%),
+      radial-gradient(1000px 800px at 110% 110%, #efe6d2 0%, transparent 50%),
+      var(--washi);
+    background-attachment: fixed;
+  }
+
+  .page{ max-width:1180px; margin:0 auto; padding:88px 64px 120px; }
+
+  /* ---------- masthead ---------- */
+  .masthead{
+    display:grid; grid-template-columns: 1fr auto; align-items:end;
+    border-bottom: 2px solid var(--sumi);
+    padding-bottom: 28px;
+    margin-bottom: 56px;
+  }
+  .mast-eyebrow{ font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--sumi-2); opacity:.75; margin-bottom:14px;}
+  .mast-title{
+    font-family: var(--serif-display); font-weight:400;
+    font-size: 96px; line-height:.92; letter-spacing:-.02em;
+    font-variation-settings: "opsz" 144;
+  }
+  .mast-title em{ font-style: italic; font-weight:300; color:var(--shu-deep); }
+  .mast-sub{ margin-top: 16px; font-family: var(--serif-body); font-style:italic; font-size: 19px; color: var(--sumi-2); max-width: 56ch;}
+  .mast-meta{
+    text-align:right; font-family:var(--mono); font-size:11px; color:var(--sumi-2);
+    letter-spacing:.08em; line-height:1.7;
+  }
+  .mast-meta b{ color:var(--shu-deep); font-weight:500; letter-spacing:.18em; text-transform:uppercase; display:block; margin-bottom:6px;}
+
+  /* japanese stamp */
+  .stamp{
+    display:inline-block;
+    background: var(--shu);
+    color: #f7eedd;
+    font-family: var(--jp);
+    font-size: 28px;
+    width: 64px; height: 64px;
+    line-height: 64px;
+    text-align:center;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 2px #f7eedd, 0 0 0 1px var(--shu-deep);
+    transform: rotate(-3deg);
+  }
+
+  /* ---------- section ---------- */
+  section{ margin-top: 88px;}
+  .sec-head{ display:grid; grid-template-columns: 80px 1fr; gap: 28px; align-items:baseline; margin-bottom: 36px;}
+  .sec-num{ font-family: var(--mono); font-size: 12px; color: var(--shu-deep); letter-spacing:.18em;}
+  .sec-num span{display:block; font-family: var(--serif-display); font-style:italic; font-weight:300; font-size:54px; color:var(--sumi); margin-top: -6px; line-height:1;}
+  .sec-title{ font-family: var(--serif-display); font-weight:500; font-size: 42px; line-height: 1.05; letter-spacing:-.015em;}
+  .sec-kicker{ font-family: var(--serif-body); font-style:italic; color:var(--sumi-2); font-size:18px; margin-top:8px; max-width: 64ch;}
+
+  /* ---------- mission ---------- */
+  .mission{
+    background:
+      linear-gradient(180deg, transparent 0, rgba(184,51,31,.04) 100%),
+      var(--washi-2);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--shu);
+    padding: 40px 48px;
+    position:relative;
+  }
+  .mission p{ font-family: var(--serif-display); font-weight:400; font-size: 26px; line-height: 1.45; max-width: 64ch; letter-spacing:-.005em;}
+  .mission p + p{ margin-top: 18px; font-family:var(--serif-body); font-size:18px; color:var(--sumi-2); font-style: italic; }
+  .mission .corner{ position:absolute; top:14px; right:18px; font-family: var(--mono); font-size:10px; letter-spacing:.18em; color:var(--shu-deep);}
+
+  /* ---------- palette ---------- */
+  .palette{ display:grid; grid-template-columns: repeat(12, 1fr); gap: 0; border: 1px solid var(--rule); }
+  .swatch{ grid-column: span 3; aspect-ratio: 4/3; padding: 18px 20px; display:flex; flex-direction:column; justify-content:space-between; position:relative; border-right:1px solid rgba(0,0,0,.08); border-bottom:1px solid rgba(0,0,0,.08); }
+  .swatch:last-child{ border-right:none;}
+  .sw-name{ font-family: var(--serif-display); font-weight:500; font-size:22px; line-height:1.05;}
+  .sw-jp{ font-family: var(--jp); font-size: 15px; opacity:.75; margin-left:6px;}
+  .sw-hex{ font-family: var(--mono); font-size: 11px; letter-spacing:.06em; opacity:.85;}
+  .sw-use{ font-family: var(--serif-body); font-style: italic; font-size: 13px; line-height: 1.35; max-width: 22ch;}
+  .sw-light .sw-name, .sw-light .sw-hex, .sw-light .sw-use{ color: var(--sumi);}
+  .sw-dark  .sw-name, .sw-dark  .sw-hex, .sw-dark  .sw-use{ color: var(--washi);}
+
+  /* color rationale list */
+  .palette-rationale{ margin-top: 28px; display:grid; grid-template-columns: repeat(2, 1fr); gap: 32px 56px;}
+  .pr-item{ border-top: 1px solid var(--rule-strong); padding-top: 14px;}
+  .pr-name{ font-family:var(--serif-display); font-weight:500; font-size:18px;}
+  .pr-name em{ font-family: var(--mono); font-style: normal; font-size:11px; color: var(--sumi-2); margin-left:8px; letter-spacing:.06em;}
+  .pr-use{ font-family: var(--serif-body); font-size: 15px; line-height:1.5; color: var(--sumi-2); margin-top: 4px;}
+  .pr-use b{ color: var(--sumi); font-weight:600;}
+
+  /* ---------- typography ---------- */
+  .type-grid{ display:grid; grid-template-columns: repeat(3, 1fr); gap: 0; border:1px solid var(--rule);}
+  .type-card{ padding: 36px 32px 32px; border-right: 1px solid var(--rule); background: var(--washi-2);}
+  .type-card:last-child{ border-right:none;}
+  .type-card.recommended{ background: var(--washi); position:relative;}
+  .type-card.recommended::before{
+    content:"RECOMMENDED";
+    position:absolute; top:-1px; left:-1px; right:-1px;
+    background: var(--sumi); color: var(--washi);
+    font-family: var(--mono); font-size: 10px; letter-spacing:.22em; text-align:center; padding: 6px 0;
+  }
+  .type-card.recommended{ padding-top: 60px;}
+  .tc-eyebrow{ font-family: var(--mono); font-size:10px; letter-spacing:.18em; text-transform:uppercase; color: var(--shu-deep); margin-bottom:10px;}
+  .tc-name{ font-family: var(--serif-display); font-size: 32px; font-weight:500; line-height:1;}
+  .tc-pair{ font-family: var(--mono); font-size:11px; color:var(--sumi-2); margin-top:6px; letter-spacing:.04em;}
+  .tc-spec{
+    margin-top: 28px; padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    font-family:var(--serif-body); font-size:14px; color: var(--sumi-2); line-height:1.55;
+  }
+  .tc-spec b{ color:var(--sumi); font-weight:600;}
+
+  .tc-sample{ margin: 24px 0;}
+  .tc-sample .display{ font-size: 56px; line-height:.95; letter-spacing:-.02em; font-weight:500;}
+  .tc-sample .display em{ font-style:italic; font-weight:300;}
+  .tc-sample .body{ margin-top: 14px; font-size: 15px; line-height: 1.5; color:var(--sumi-2); max-width: 28ch;}
+
+  /* per-typeface samples */
+  .face-fraunces .display{ font-family: "Fraunces", serif; }
+  .face-fraunces .body   { font-family: "Source Serif 4", serif; }
+  .face-mincho   .display{ font-family: "Shippori Mincho", serif; }
+  .face-mincho   .body   { font-family: "Source Serif 4", serif; }
+  .face-cormorant .display{ font-family: "Fraunces", serif; font-variation-settings:"opsz" 144, "SOFT" 30; }
+  .face-cormorant .body   { font-family: "Inter", sans-serif; font-weight:400; }
+
+  /* ---------- hierarchy spec ---------- */
+  .hierarchy{
+    border: 1px solid var(--rule);
+    background: var(--washi-2);
+    padding: 0;
+  }
+  .hier-row{ display:grid; grid-template-columns: 88px 1fr 220px; gap:0; align-items:center; padding: 22px 28px; border-bottom: 1px solid var(--rule); }
+  .hier-row:last-child{ border-bottom:none;}
+  .hier-row:nth-child(odd){ background: rgba(255,255,255,.35);}
+  .hier-tag{ font-family: var(--mono); font-size:11px; letter-spacing:.14em; color:var(--shu-deep);}
+  .hier-spec{ font-family:var(--mono); font-size:11px; color:var(--sumi-2); text-align:right;}
+  .hier-spec b{ color:var(--sumi);}
+
+  .hier-row .h-h1{ font-family:var(--serif-display); font-size: 56px; font-weight:500; line-height:1; letter-spacing:-.02em;}
+  .hier-row .h-h2{ font-family:var(--serif-display); font-size: 32px; font-weight:500; line-height:1.05;}
+  .hier-row .h-h3{ font-family:var(--serif-display); font-size: 22px; font-weight:600; font-style:italic;}
+  .hier-row .h-body{ font-family:var(--serif-body); font-size: 17px; line-height:1.55; color:var(--sumi-2); max-width: 60ch;}
+  .hier-row .h-caption{ font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--shu-deep);}
+  .hier-row .h-prose{ font-family:var(--serif-body); font-style: italic; font-size: 15px; color: var(--sumi-2);}
+  .hier-row .h-stat{ font-family:var(--mono); font-size: 13px; color: var(--sumi);}
+  .hier-row .h-stat .ok{ color:#3b6b34;}
+  .hier-row .h-stat .warn{ color: var(--shu);}
+
+  /* hierarchy diagram strip */
+  .hier-strip{ margin-top: 32px; display:grid; grid-template-columns: repeat(5, 1fr); gap: 18px;}
+  .hier-strip .step{
+    background: var(--washi);
+    border:1px solid var(--rule);
+    padding: 16px 18px;
+    position:relative;
+  }
+  .hier-strip .step .num{ font-family: var(--mono); font-size: 10px; color:var(--shu-deep); letter-spacing:.18em;}
+  .hier-strip .step .ttl{ font-family:var(--serif-display); font-size:18px; font-weight:500; margin-top: 4px;}
+  .hier-strip .step .sub{ font-family:var(--serif-body); font-style:italic; font-size:13px; color:var(--sumi-2); margin-top:6px; line-height:1.4;}
+
+  /* ---------- principles / rules ---------- */
+  .rules{ display:grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--rule); border:1px solid var(--rule);}
+  .rule-card{ background: var(--washi-2); padding: 28px 32px;}
+  .rule-card .num{ font-family:var(--mono); font-size:11px; color: var(--shu-deep); letter-spacing:.18em;}
+  .rule-card .ttl{ font-family:var(--serif-display); font-size:22px; font-weight:500; margin-top:4px;}
+  .rule-card p{ font-family:var(--serif-body); font-size:15px; line-height:1.55; color:var(--sumi-2); margin-top:10px;}
+  .rule-card .doline{ display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-top:14px; font-family:var(--mono); font-size:11px; line-height:1.5;}
+  .doline .do{ color:#3b6b34;}
+  .doline .dont{ color: var(--shu);}
+  .doline b{ display:block; letter-spacing:.16em; margin-bottom:4px;}
+
+  /* ---------- footer ---------- */
+  .colophon{
+    margin-top: 96px; padding-top: 28px; border-top: 1px solid var(--sumi);
+    display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 32px;
+    font-family:var(--mono); font-size:11px; color:var(--sumi-2); letter-spacing:.06em;
+  }
+  .colophon b{ display:block; color: var(--shu-deep); letter-spacing:.18em; margin-bottom:8px;}
+
+  /* hairline divider */
+  hr.rule{ border:none; border-top:1px solid var(--rule-strong); margin: 36px 0;}
+
+  /* prose example block (showing actual voice) */
+  .voice-grid{ display:grid; grid-template-columns: repeat(3,1fr); gap: 24px;}
+  .voice{ background: var(--washi-2); border:1px solid var(--rule); padding: 22px 24px; }
+  .voice .label{ font-family:var(--mono); font-size:10px; color: var(--shu-deep); letter-spacing:.18em;}
+  .voice .name{ font-family:var(--serif-display); font-size:18px; font-weight:600; margin-top:4px;}
+  .voice .sample{ margin-top: 12px; font-family:var(--serif-body); font-size:14px; line-height:1.5;}
+  .voice.match .sample{ font-family: var(--mono); font-size:12px; line-height: 1.55;}
+  .voice.coach .sample{ font-style: italic; color: var(--sumi);}
+  .voice.dojo  .sample{ color: var(--sumi); }
+
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- MASTHEAD -->
+  <header class="masthead">
+    <div>
+      <div class="mast-eyebrow">Style Bible · v1 · April 26, 2026</div>
+      <h1 class="mast-title">Hajime <em>始め</em></h1>
+      <p class="mast-sub">The visual and verbal grammar for everything HAJIME makes — pitch decks, in-game UI, marketing, build docs. Inheriting nothing by default. Establishing it here so the deck doesn't.</p>
+    </div>
+    <div class="mast-meta">
+      <b>Document</b>
+      Author · Design lead<br/>
+      Status · Draft for review<br/>
+      Supersedes · "old deck" implied system<br/>
+      Next · Pitch deck v2 inherits from this
+    </div>
+  </header>
+
+  <!-- WHY THIS EXISTS -->
+  <section style="margin-top:0">
+    <div class="sec-head">
+      <div class="sec-num">01<span>i.</span></div>
+      <div>
+        <h2 class="sec-title">Why this comes before the deck</h2>
+        <p class="sec-kicker">The old pitch deck inherited its visual language by default — generic dark UI, neon stat panels, sci‑fi grid. It read like every other indie sim. Twenty minutes here saves a full deck rewrite later. Lock the bible. The deck inherits.</p>
+      </div>
+    </div>
+
+    <div class="rules">
+      <div class="rule-card">
+        <div class="num">RULE · 01</div>
+        <div class="ttl">Judo, not e-sports.</div>
+        <p>Hajime is a sport with deep roots, formal etiquette, and an understated culture. The writing respects that — and so does the visual system. No hype voice. No announcer. No neon. No drop shadows pretending to be depth.</p>
+      </div>
+      <div class="rule-card">
+        <div class="num">RULE · 02</div>
+        <div class="ttl">The dojo is the default surface.</div>
+        <p>Washi paper, sumi ink, tatami green, the single vermilion stamp. The interface reads as a sensei's notebook first, a sports broadcast second, a video game last. Even the deck.</p>
+      </div>
+      <div class="rule-card">
+        <div class="num">RULE · 03</div>
+        <div class="ttl">Physics resolves; prose marks.</div>
+        <p>The simulation never announces itself. The visual system never announces itself either. Hairlines, not borders. Italic asides, not callouts. One stamp of color, not three.</p>
+      </div>
+      <div class="rule-card">
+        <div class="num">RULE · 04</div>
+        <div class="ttl">Either choice is okay — but commit.</div>
+        <p>Two typeface candidates. One palette. One hierarchy. Pick now, cut the others, document the reasoning. The discipline is what makes the system feel like one thing across two years of building.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- MISSION -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">02<span>ii.</span></div>
+      <div>
+        <h2 class="sec-title">Mission for the deck</h2>
+        <p class="sec-kicker">One paragraph. Everything the deck must communicate. Everything else is noise.</p>
+      </div>
+    </div>
+    <div class="mission">
+      <span class="corner">MISSION · ONE PARAGRAPH</span>
+      <p>HAJIME is a coaching simulator about running a judo dojo across decades — a Football Manager for a sport that values restraint, where the central mechanic is the scarcity of your attention. The deck must communicate three things: that the <em>dojo loop</em> is the game (not the matches that happen inside it); that the simulation is real all the way down (combinatorial physics, a grip graph, students with hidden inner lives); and that this is a <em>2–3 year solo build</em> by a designer who is choosing the right shape of project over a faster one. The reader should leave understanding that Hajime is not "a judo game" — it is the systemic biography of an institution, told through one sensei's working life.</p>
+      <p>Tone: the deck reads like the master document feels. Quiet, specific, confident. No hype voice. Every claim is grounded in a system that exists or will. The reader should feel like a knowledgeable friend has just sat down with them and walked them carefully through what they have been building.</p>
+    </div>
+  </section>
+
+  <!-- PALETTE -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">03<span>iii.</span></div>
+      <div>
+        <h2 class="sec-title">Palette &amp; named uses</h2>
+        <p class="sec-kicker">Six colors. Each with a job. The vermilion is the only loud one — and it stays rare on purpose, the way a referee's flag stays rare. Whites and blacks are warm, paper-toned, never sterile.</p>
+      </div>
+    </div>
+
+    <div class="palette">
+      <div class="swatch sw-light" style="background:#f3ede0">
+        <div>
+          <div class="sw-name">Washi <span class="sw-jp">和紙</span></div>
+          <div class="sw-hex">#F3EDE0 · oklch(.93 .017 84)</div>
+        </div>
+        <div class="sw-use">Primary surface. The page. The mat. Default everything that is not text.</div>
+      </div>
+      <div class="swatch sw-light" style="background:#e8e0cd">
+        <div>
+          <div class="sw-name">Washi-2 <span class="sw-jp">和紙弐</span></div>
+          <div class="sw-hex">#E8E0CD</div>
+        </div>
+        <div class="sw-use">Recessed surface. Cards, panels, the hierarchy of "this is contained."</div>
+      </div>
+      <div class="swatch sw-dark"  style="background:#15140f">
+        <div>
+          <div class="sw-name" style="color:#f3ede0">Sumi <span class="sw-jp" style="color:#f3ede0">墨</span></div>
+          <div class="sw-hex">#15140F · oklch(.18 .01 80)</div>
+        </div>
+        <div class="sw-use">All primary text. Hairline rules at full strength. The voice of the document.</div>
+      </div>
+      <div class="swatch sw-light" style="background:#6f7a4a; color:#f3ede0">
+        <div>
+          <div class="sw-name" style="color:#f3ede0">Tatami <span class="sw-jp" style="color:#f3ede0">畳</span></div>
+          <div class="sw-hex" style="color:#e8e0cd">#6F7A4A</div>
+        </div>
+        <div class="sw-use" style="color:#e8e0cd">Institutional. The dojo loop, calendar, schedule. Where work gets done.</div>
+      </div>
+
+      <div class="swatch sw-dark" style="background:#b8331f">
+        <div>
+          <div class="sw-name" style="color:#f3ede0">Shu <span class="sw-jp" style="color:#f3ede0">朱</span></div>
+          <div class="sw-hex" style="color:#f3ede0">#B8331F · oklch(.51 .163 33)</div>
+        </div>
+        <div class="sw-use">Vermilion. Referee, score, the stamp. <b>Use sparingly.</b> Less than 5% of any view.</div>
+      </div>
+      <div class="swatch sw-light" style="background:#b08a3a; color:#15140f">
+        <div>
+          <div class="sw-name">Shinchu <span class="sw-jp">真鍮</span></div>
+          <div class="sw-hex">#B08A3A</div>
+        </div>
+        <div class="sw-use">Aged brass. Promotions, lineage, awards. Even rarer than vermilion.</div>
+      </div>
+      <div class="swatch sw-light" style="background:#c4b896">
+        <div>
+          <div class="sw-name">Rule <span class="sw-jp">罫</span></div>
+          <div class="sw-hex">#C4B896</div>
+        </div>
+        <div class="sw-use">Hairline rules, dividers, table grid. Quiet structure.</div>
+      </div>
+      <div class="swatch sw-dark" style="background:#4d5634">
+        <div>
+          <div class="sw-name" style="color:#f3ede0">Tatami-deep <span class="sw-jp" style="color:#f3ede0">深畳</span></div>
+          <div class="sw-hex" style="color:#e8e0cd">#4D5634</div>
+        </div>
+        <div class="sw-use" style="color:#e8e0cd">Headers on tatami panels. Charts. Long shadows.</div>
+      </div>
+    </div>
+
+    <div class="palette-rationale">
+      <div class="pr-item">
+        <div class="pr-name">No pure black. No pure white. <em>by intent</em></div>
+        <div class="pr-use">Sumi #15140F is warm-tinted near-black; Washi #F3EDE0 is the color of unbleached paper. The result is a document that reads as <b>made by a human in a real room</b>, not generated by software in the dark.</div>
+      </div>
+      <div class="pr-item">
+        <div class="pr-name">Tatami green is the institutional voice. <em>not the loud one</em></div>
+        <div class="pr-use">The dojo's identity color is green, because tatami is green, because the calmest part of the room is the most important part. Football Manager uses purple for the same reason — calendar, work, structure.</div>
+      </div>
+      <div class="pr-item">
+        <div class="pr-name">Vermilion is the score. <em>and only that</em></div>
+        <div class="pr-use">Shu #B8331F appears: <b>match score state, referee actions, the antagonist's escalation, error states, the cover-stamp.</b> Never as a section background. Never as a button fill on more than one button per view.</div>
+      </div>
+      <div class="pr-item">
+        <div class="pr-name">Brass is the lineage. <em>rarer still</em></div>
+        <div class="pr-use">Shinchu appears: <b>belt promotions, the founding lineage seal, championship medals, the succession event.</b> If the deck has no slide about lineage, brass does not appear in the deck.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TYPOGRAPHY -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">04<span>iv.</span></div>
+      <div>
+        <h2 class="sec-title">Typeface candidates</h2>
+        <p class="sec-kicker">Three serif families auditioned. Each pairs with one workhorse body and one mono. Recommendation marked. The deck commits to one before slide one is laid out.</p>
+      </div>
+    </div>
+
+    <div class="type-grid">
+      <!-- A -->
+      <div class="type-card recommended face-fraunces">
+        <div class="tc-eyebrow">Candidate A — display</div>
+        <div class="tc-name">Fraunces</div>
+        <div class="tc-pair">+ Source Serif 4 (body) · JetBrains Mono (data)</div>
+        <div class="tc-sample">
+          <div class="display">The <em>twins</em><br/>arrive.</div>
+          <div class="body">Within the first month of a new dojo, two boys walk in together. The recognition lands. The lineage is felt history now, not a stat.</div>
+        </div>
+        <div class="tc-spec">
+          <b>Why.</b> Variable optical sizes mean one family handles the 96px masthead and the 18px section kicker without a second face. Soft humanist contrast — no Didone glamour, no slab toughness. Reads as <b>literary, not corporate</b>. Strong italic. Pairs with Source Serif's quieter body voice.
+        </div>
+      </div>
+      <!-- B -->
+      <div class="type-card face-mincho">
+        <div class="tc-eyebrow">Candidate B — display</div>
+        <div class="tc-name">Shippori Mincho</div>
+        <div class="tc-pair">+ Source Serif 4 (body) · JetBrains Mono (data)</div>
+        <div class="tc-sample">
+          <div class="display">The <em>twins</em><br/>arrive.</div>
+          <div class="body">Within the first month of a new dojo, two boys walk in together. The recognition lands. The lineage is felt history now, not a stat.</div>
+        </div>
+        <div class="tc-spec">
+          <b>Why consider.</b> A Japanese mincho with a working Latin set. Signals the cultural register honestly — the game <i>is</i> about a Japanese sport. <b>Why not lead with it.</b> Mincho's Latin glyphs are pleasant but not as expressive in headlines; risks reading as a "Japan‑themed product" rather than a serious work. Better used as an accent (chapter numerals, the <i>始め</i> stamp, JP captions).
+        </div>
+      </div>
+      <!-- C -->
+      <div class="type-card face-cormorant">
+        <div class="tc-eyebrow">Candidate C — display</div>
+        <div class="tc-name">Fraunces SOFT</div>
+        <div class="tc-pair">+ Inter (body) · JetBrains Mono (data)</div>
+        <div class="tc-sample">
+          <div class="display">The <em>twins</em><br/>arrive.</div>
+          <div class="body">Within the first month of a new dojo, two boys walk in together. The recognition lands. The lineage is felt history now, not a stat.</div>
+        </div>
+        <div class="tc-spec">
+          <b>Why consider.</b> Same family as A, but rounder optical axis + Inter for body. More approachable, more <i>game</i>, less <i>essay</i>. <b>Why not lead with it.</b> Inter is on every SaaS landing page in 2026. The deck should not look like one.
+        </div>
+      </div>
+    </div>
+
+    <hr class="rule" />
+
+    <div class="palette-rationale" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="pr-item">
+        <div class="pr-name">Display <em>Fraunces · 300–600 · opsz 144</em></div>
+        <div class="pr-use">Slide titles, section heads, the masthead. Italic for specific words inside titles — <i>twins, hajime, sensei.</i> Never used below 22px.</div>
+      </div>
+      <div class="pr-item">
+        <div class="pr-name">Body <em>Source Serif 4 · 400–600 · opsz 14</em></div>
+        <div class="pr-use">Paragraph text, captions, slide bodies. Generous leading (1.5–1.55). Pretty text-wrap on. Max 64ch line length.</div>
+      </div>
+      <div class="pr-item">
+        <div class="pr-name">Data &amp; UI <em>JetBrains Mono · 400–500</em></div>
+        <div class="pr-use">Match logs, stat panels, calendar grid, build-status tags, eyebrow labels. <b>Letter-spacing 0.14–0.22em</b> uppercase for all-caps labels.</div>
+      </div>
+    </div>
+
+    <div class="palette-rationale" style="grid-template-columns: 1fr 1fr; margin-top: 20px;">
+      <div class="pr-item">
+        <div class="pr-name">Accent <em>Shippori Mincho · 400–600</em></div>
+        <div class="pr-use">Reserved for actual Japanese characters: 始め on the cover, 道場 in section dividers, calligraphy plates over photo. Never set Latin in Mincho in this system.</div>
+      </div>
+      <div class="pr-item">
+        <div class="pr-name">Forbidden <em>do not use</em></div>
+        <div class="pr-use"><b>Inter for headlines, Roboto anywhere, Arial, Helvetica Neue, system-ui, Montserrat, Poppins.</b> They are the visual language of the old deck and every other indie deck. We are not them.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HIERARCHY -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">05<span>v.</span></div>
+      <div>
+        <h2 class="sec-title">Stated visual hierarchy</h2>
+        <p class="sec-kicker">Five levels. One scale. Every slide of the deck — and every screen of the eventual game — uses these and nothing else. The hierarchy <i>is</i> the design system.</p>
+      </div>
+    </div>
+
+    <div class="hierarchy">
+      <div class="hier-row">
+        <div class="hier-tag">L1 · TITLE</div>
+        <div class="h-h1">The dojo <em style="font-style:italic;font-weight:300;">loop</em></div>
+        <div class="hier-spec">Fraunces 500 · <b>56–96px</b><br/>opsz 144 · letter -.02em<br/>Sumi on Washi</div>
+      </div>
+      <div class="hier-row">
+        <div class="hier-tag">L2 · SECTION</div>
+        <div class="h-h2">Attention scarcity at every scale</div>
+        <div class="hier-spec">Fraunces 500 · <b>32–42px</b><br/>opsz 96 · letter -.015em<br/>Sumi · 1.05 leading</div>
+      </div>
+      <div class="hier-row">
+        <div class="hier-tag">L3 · SUB</div>
+        <div class="h-h3">Three students. One chair.</div>
+        <div class="hier-spec">Fraunces italic 600 · <b>22px</b><br/>Used as kicker / pull-quote<br/>Sumi-2</div>
+      </div>
+      <div class="hier-row">
+        <div class="hier-tag">L4 · BODY</div>
+        <div class="h-body">Inside a randori session, ten students on the mat produce five sparring pairs and you can watch one. Across a week, fifteen students need conversations and you have time for three.</div>
+        <div class="hier-spec">Source Serif 400 · <b>16–18px</b><br/>1.5–1.55 leading<br/>Sumi-2 · max 64ch</div>
+      </div>
+      <div class="hier-row">
+        <div class="hier-tag">L5 · LABEL</div>
+        <div class="h-caption">RING 2 · PHASE 1 · CALENDAR</div>
+        <div class="hier-spec">JetBrains Mono 500 · <b>10–12px</b><br/>letter .14–.22em<br/>Shu-deep on Washi</div>
+      </div>
+      <div class="hier-row">
+        <div class="hier-tag">L+ · PROSE</div>
+        <div class="h-prose">"Tanaka steps in. Right hand reaches for the lapel. Sato's left hand intercepts — pistol grip on the sleeve."</div>
+        <div class="hier-spec">Source Serif italic 400 · <b>15–17px</b><br/>Used for in-game match prose<br/>Sumi · 1.6 leading</div>
+      </div>
+      <div class="hier-row">
+        <div class="hier-tag">L+ · DATA</div>
+        <div class="h-stat">Composure 7/10 <span class="warn">↓</span> · Right grip 5/10 <span class="warn">↓↓</span> · Trust in coach 9/10 <span class="ok">●</span></div>
+        <div class="hier-spec">JetBrains Mono 400 · <b>13px</b><br/>Match panel · roster grid<br/>Sumi · tabular nums</div>
+      </div>
+    </div>
+
+    <div class="hier-strip">
+      <div class="step"><div class="num">01 · OPEN</div><div class="ttl">Cover</div><div class="sub">L1 title, L5 label, the <em>始め</em> stamp. No body copy.</div></div>
+      <div class="step"><div class="num">02 · SET</div><div class="ttl">Section</div><div class="sub">L2 + L3 + one block of L4. White space wins.</div></div>
+      <div class="step"><div class="num">03 · SHOW</div><div class="ttl">Anchoring scene</div><div class="sub">L+ prose + L+ data side-by-side. The system speaking.</div></div>
+      <div class="step"><div class="num">04 · TELL</div><div class="ttl">Argument</div><div class="sub">L2 + L4. One claim, supported by one paragraph. Stop.</div></div>
+      <div class="step"><div class="num">05 · CLOSE</div><div class="ttl">Ask</div><div class="sub">L1 — usually one sentence — over Washi-2. Stamp.</div></div>
+    </div>
+  </section>
+
+  <!-- VOICE -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">06<span>vi.</span></div>
+      <div>
+        <h2 class="sec-title">Three voices, one system</h2>
+        <p class="sec-kicker">From the master doc's tone rules. The bible carries them so the deck does not have to invent a voice mid-slide.</p>
+      </div>
+    </div>
+
+    <div class="voice-grid">
+      <div class="voice match">
+        <div class="label">VOICE · MATCH LOG</div>
+        <div class="name">Knowledgeable sportswriter</div>
+        <div class="sample">0:18  Tanaka attempts seoi-nage —<br/>      → Sato sprawls. Hips back. Throw stuffed.<br/>      → Slight scramble. Ne-waza window: 11%.<br/>      → Both stand. Grips reset.</div>
+      </div>
+      <div class="voice coach">
+        <div class="label">VOICE · COACH WINDOW</div>
+        <div class="name">Intimate, slightly worried</div>
+        <div class="sample">"He went for his strongest throw too early. Sato read it. The grip fight is going against him on the right side."</div>
+      </div>
+      <div class="voice dojo">
+        <div class="label">VOICE · DOJO PROSE</div>
+        <div class="name">Sunday evening, the notepad</div>
+        <div class="sample">Marco showed up early again. He has been quiet about the tournament — three conversations in and I still don't know if he wants to go. His grip is improving but only against the lighter partners.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE TWO CALLS -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">07<span>vii.</span></div>
+      <div>
+        <h2 class="sec-title">The two calls — <em>始め</em> and <em>待て</em></h2>
+        <p class="sec-kicker">Hajime and Matte are not labels in this system. They are typographic events. The whole interface — game, deck, marketing — bends around them. The bible commits to how they feel before any surface uses them.</p>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--rule); border:1px solid var(--rule);">
+      <!-- HAJIME -->
+      <div style="background: var(--washi); padding: 56px 48px 48px; position:relative; overflow:hidden;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:.22em; color:var(--shu-deep);">CALL · 01 · THE BEGINNING</div>
+        <div style="font-family: var(--jp); font-weight: 700; font-size: 220px; line-height: .85; color: var(--sumi); letter-spacing:-.02em; margin: 28px 0 12px; position:relative;">
+          始め
+          <span style="position:absolute; top:8px; right:0; font-family:var(--serif-display); font-size: 96px; font-style:italic; font-weight:300; color:var(--shu); letter-spacing:-.02em;">Hajime.</span>
+        </div>
+        <div style="font-family:var(--serif-body); font-style:italic; font-size:18px; color: var(--sumi-2); max-width: 38ch; margin-top: 24px; line-height:1.45;">
+          The referee's call that starts the match — and the call that names the game. When Hajime fires on a surface, <b style="color:var(--sumi);font-style:normal;">everything else recedes.</b> The world the player was watching becomes the world the player is in.
+        </div>
+        <hr class="rule" style="margin:28px 0 20px;" />
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 18px; font-family:var(--mono); font-size:11px; line-height:1.55; color: var(--sumi-2);">
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">SCALE</b>180–280px display. Larger than any L1 title in the system. Always the largest object on its surface.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">FACE</b>Shippori Mincho 700 for 始め · Fraunces italic 300 for the romaji. Set together, never separately.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">COLOR</b>Sumi for the kanji, Shu for the romaji. The only place the two colors touch each other directly.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">MOTION</b>In-game: snaps in, holds 800ms, decays to a corner timestamp. In static media: full-bleed, alone, no caption above it.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">DEMANDS</b>Attention. The player's eye is taken. The next thing they see is consequential.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">FREQUENCY</b>Once per round, once per session intro, once on the deck cover, once on the press kit. Always feels like the first thing.</div>
+        </div>
+      </div>
+
+      <!-- MATTE -->
+      <div style="background: var(--washi-2); padding: 56px 48px 48px; position:relative; overflow:hidden;">
+        <div style="font-family:var(--mono); font-size:10px; letter-spacing:.22em; color:var(--shu-deep);">CALL · 02 · THE PAUSE</div>
+        <div style="font-family: var(--jp); font-weight: 500; font-size: 220px; line-height: .85; color: var(--sumi-2); letter-spacing:-.02em; margin: 28px 0 12px; position:relative; opacity:.92;">
+          待て
+          <span style="position:absolute; top:8px; right:0; font-family:var(--serif-display); font-size: 96px; font-style:italic; font-weight:300; color: var(--tatami-deep); letter-spacing:-.02em;">Matte.</span>
+        </div>
+        <div style="font-family:var(--serif-body); font-style:italic; font-size:18px; color: var(--sumi-2); max-width: 38ch; margin-top: 24px; line-height:1.45;">
+          The referee's call that suspends the match. <b style="color:var(--sumi);font-style:normal;">Equal weight to Hajime, opposite job.</b> When Matte fires, the player exhales. The action stops. The chair becomes a place to think.
+        </div>
+        <hr class="rule" style="margin:28px 0 20px;" />
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 18px; font-family:var(--mono); font-size:11px; line-height:1.55; color: var(--sumi-2);">
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">SCALE</b>Same as Hajime. Never smaller. Same display rectangle. The pair is symmetric.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">FACE</b>Shippori Mincho 500 (lighter weight than Hajime) · Fraunces italic 300 in tatami-deep.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">COLOR</b>Sumi-2 (softer) on Washi-2 (recessed). The release is in the contrast drop, not in a different palette.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">MOTION</b>Decelerates in. Holds longer than Hajime — 1.4–2s. The player is meant to sit with it. Then the coach window opens beneath.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">PERMITS</b>Rest. The next-thing-to-do is now a choice, not a reaction. Instructions can be issued. Conversations can begin.</div>
+          <div><b style="color:var(--sumi); display:block; letter-spacing:.18em; margin-bottom:6px;">FREQUENCY</b>Many times per match. Many times per session. Used as the deck's "section break" punctuation between Hajime-weight ideas.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="palette-rationale" style="margin-top:28px;">
+      <div class="pr-item">
+        <div class="pr-name">The pair, not the calls. <em>they live together</em></div>
+        <div class="pr-use">Hajime is never used without Matte being part of the system. The deck cover is Hajime; the closing slide is Matte. The press kit's first image is Hajime; the last sentence is Matte. They are <b>parentheses around everything Hajime makes.</b></div>
+      </div>
+      <div class="pr-item">
+        <div class="pr-name">Never decoration. <em>always punctuation</em></div>
+        <div class="pr-use">If a surface uses Hajime as a graphic flourish — a watermark, a pattern, a corner ornament — the system has been violated. The call <b>only ever appears at the moment it would actually be called.</b> Begin a thing. Suspend a thing. Nothing else.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DON'TS -->
+  <section>
+    <div class="sec-head">
+      <div class="sec-num">08<span>viii.</span></div>
+      <div>
+        <h2 class="sec-title">What the deck must <em style="font-style:italic;color:#8a2615;">not</em> look like</h2>
+        <p class="sec-kicker">The old deck's defaults, named explicitly so they cannot sneak back in.</p>
+      </div>
+    </div>
+
+    <div class="rules">
+      <div class="rule-card">
+        <div class="num">DON'T · 01</div>
+        <div class="ttl">Dark mode by default.</div>
+        <p>Hajime's surface is paper. Dark backgrounds belong to the in-game match overlay only — not slides, not the website, not the press kit. The deck is a document, not a console UI.</p>
+        <div class="doline">
+          <div class="do"><b>DO</b>Washi #F3EDE0 surface, Sumi text.</div>
+          <div class="dont"><b>DON'T</b>#0E0E12 background with neon stat bars.</div>
+        </div>
+      </div>
+      <div class="rule-card">
+        <div class="num">DON'T · 02</div>
+        <div class="ttl">Stock-game iconography.</div>
+        <p>No swords, no dojo gates rendered in SVG, no katana silhouettes, no Japanese-flag motifs. The lineage is in the type and the stamp. Imagery is photographic, archival, or absent.</p>
+        <div class="doline">
+          <div class="do"><b>DO</b>B&amp;W archival photo, full-bleed, with caption.</div>
+          <div class="dont"><b>DON'T</b>SVG katana crossing a torii gate.</div>
+        </div>
+      </div>
+      <div class="rule-card">
+        <div class="num">DON'T · 03</div>
+        <div class="ttl">"Sim" stat decoration.</div>
+        <p>Hajime is a serious sim. The deck is not. Stat panels appear only where they are <b>showing the actual game</b> — never as decorative trim around a marketing claim.</p>
+        <div class="doline">
+          <div class="do"><b>DO</b>One real stat block, captioned as a screen.</div>
+          <div class="dont"><b>DON'T</b>Three radar charts of made-up numbers.</div>
+        </div>
+      </div>
+      <div class="rule-card">
+        <div class="num">DON'T · 04</div>
+        <div class="ttl">Loud color anywhere but the score.</div>
+        <p>Vermilion only on the things vermilion is for. Tatami green is the workhorse. If a slide needs three colors to communicate, the slide needs less content, not more color.</p>
+        <div class="doline">
+          <div class="do"><b>DO</b>One stamp of Shu per spread, max.</div>
+          <div class="dont"><b>DON'T</b>Gradient backgrounds. Ever.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COLOPHON -->
+  <footer class="colophon">
+    <div><b>STATUS</b>Style Bible · v1 · April 26, 2026 · Draft for review</div>
+    <div><b>NEXT</b>Pitch deck v2 inherits this. Cover slide first. One slide. Then review again before going further.</div>
+    <div><b>OWNERSHIP</b>This file is the source of truth. Master doc references it. <em>始め</em></div>
+  </footer>
+
+</div>
+</body>
+</html>

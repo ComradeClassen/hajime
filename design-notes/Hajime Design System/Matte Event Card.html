@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1920" />
+<title>Hajime — Matte Event Card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Shippori+Mincho:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --sumi:#15140f; --sumi-2:#2a261d; --sumi-3:#4a4538;
+  --washi:#f3ede0; --washi-2:#e8e0cd; --washi-3:#d8cfb8;
+  --tatami:#6f7a4a; --tatami-deep:#4d5634; --tatami-pale:#b6bf94;
+  --shu:#b8331f; --shu-deep:#8a2615; --gold:#b08a3a;
+  --rule:#c4b896; --rule-strong:#8a8260;
+  --serif-display:"Fraunces",Georgia,serif;
+  --serif-body:"Source Serif 4",Georgia,serif;
+  --sans:"Inter",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+  --jp:"Shippori Mincho","Hiragino Mincho ProN",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{
+  width:1920px; height:1080px; overflow:hidden;
+  background:var(--washi);
+  color:var(--sumi);
+  font-family:var(--serif-body);
+  -webkit-font-smoothing:antialiased;
+}
+body{
+  background:
+    radial-gradient(1400px 600px at 0% 0%, #f8f2e6 0%, transparent 55%),
+    radial-gradient(1200px 800px at 110% 110%, #efe6d2 0%, transparent 50%),
+    var(--washi);
+  position:relative;
+  padding:64px 96px;
+}
+
+/* ===== TOP CHROME (broadcast strip) ===== */
+.broadcast{
+  display:grid; grid-template-columns: auto 1fr auto; gap:32px; align-items:center;
+  padding-bottom:18px; border-bottom:1px solid var(--rule-strong);
+  margin-bottom:28px;
+}
+.broad-left{
+  display:flex; align-items:center; gap:18px;
+  font-family:var(--mono); font-size:12px; letter-spacing:.18em; color:var(--sumi-2); text-transform:uppercase;
+}
+.broad-left .logo{
+  font-family:var(--jp); font-size:22px; color:var(--shu); font-weight:600;
+  background:var(--washi-2); padding:6px 12px; border:1px solid var(--shu); letter-spacing:.06em;
+}
+.broad-left .logo-r{font-family:var(--serif-display); font-style:italic; font-weight:400; font-size:18px; color:var(--shu-deep); letter-spacing:.02em; margin-left:-6px;}
+.broad-left b{color:var(--sumi); font-weight:500; margin-right:6px;}
+.broad-mid{
+  text-align:center;
+  font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.2em; text-transform:uppercase;
+}
+.broad-mid b{color:var(--shu-deep); display:block; font-weight:500; letter-spacing:.24em; font-size:13px;}
+.broad-right{
+  font-family:var(--mono); font-size:11px; color:var(--sumi-3); letter-spacing:.16em; text-transform:uppercase; text-align:right; line-height:1.7;
+}
+.broad-right b{color:var(--shu-deep); font-weight:500;}
+
+/* ===== TITLE BAR ===== */
+.title-bar{
+  display:grid; grid-template-columns: 1fr auto; gap:24px; align-items:end;
+  margin-bottom:36px;
+}
+.tb-left .ek{
+  font-family:var(--mono); font-size:13px; letter-spacing:.22em; color:var(--shu-deep); text-transform:uppercase; margin-bottom:10px;
+}
+.tb-left .ek b{color:var(--sumi); font-weight:500; margin-right:10px;}
+.tb-left h1{
+  font-family:var(--serif-display); font-weight:400; font-size:64px; line-height:1; letter-spacing:-.018em; color:var(--sumi);
+  font-variation-settings:"opsz" 144;
+}
+.tb-left h1 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.tb-right{
+  text-align:right;
+  font-family:var(--mono); font-size:11px; color:var(--sumi-2); letter-spacing:.14em; text-transform:uppercase; line-height:1.7;
+}
+.tb-right b{color:var(--sumi); font-weight:500; display:block; letter-spacing:.18em; margin-bottom:2px;}
+
+/* ===== MAIN GRID ===== */
+.frame{
+  display:grid; grid-template-columns: 1fr 720px; gap:48px;
+  height: calc(100vh - 64px - 64px - 60px - 100px - 80px); /* approx */
+  height: 720px;
+}
+
+/* ===== LEFT — the Matte typographic event ===== */
+.matte-card{
+  background: var(--washi-2);
+  border:1px solid var(--rule);
+  position:relative;
+  padding:56px 64px 48px;
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+.matte-card::before{
+  content:""; position:absolute; left:0; top:0; bottom:0; width:6px;
+  background: linear-gradient(180deg, var(--tatami-deep) 0%, var(--tatami) 100%);
+}
+.mc-meta{
+  display:grid; grid-template-columns:1fr auto; gap:18px; align-items:baseline;
+  font-family:var(--mono); font-size:12px; letter-spacing:.2em; color:var(--shu-deep); text-transform:uppercase;
+  margin-bottom:8px;
+}
+.mc-meta b{color:var(--sumi); font-weight:500; letter-spacing:.18em;}
+.mc-meta .stamp{
+  display:inline-block; background:var(--shu); color:var(--washi); font-family:var(--jp); font-style:normal;
+  font-size:14px; padding:4px 10px; letter-spacing:.06em; margin-left:8px;
+}
+.mc-call{
+  position:relative;
+  font-family:var(--jp); font-weight:500; font-size:300px; line-height:.85;
+  color:var(--sumi-2); letter-spacing:-.02em; opacity:.95;
+  margin:8px 0 0;
+}
+.mc-call .roman{
+  position:absolute; top:18px; right:0;
+  font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:140px;
+  color:var(--tatami-deep); letter-spacing:-.025em; line-height:.85;
+}
+.mc-call .roman .stop{color:var(--shu-deep);}
+.mc-prose{
+  font-family:var(--serif-body); font-style:italic; font-size:24px; line-height:1.45; color:var(--sumi-2);
+  max-width:38ch; margin-top:36px;
+}
+.mc-prose b{color:var(--sumi); font-style:normal; font-weight:600;}
+.mc-divider{
+  height:1px; background:var(--rule-strong); margin:32px 0 26px;
+}
+.mc-state{
+  display:grid; grid-template-columns: repeat(3, 1fr); gap:0; border:1px solid var(--rule);
+}
+.mc-state .cell{
+  padding:18px 20px; border-right:1px solid var(--rule); background:var(--washi);
+}
+.mc-state .cell:last-child{border-right:none;}
+.mc-state .lbl{font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--shu-deep); text-transform:uppercase; margin-bottom:8px;}
+.mc-state .v{font-family:var(--serif-display); font-weight:500; font-size:28px; line-height:1.15; color:var(--sumi); letter-spacing:-.005em;}
+.mc-state .v .small{font-size:14px; color:var(--sumi-3); font-weight:400; letter-spacing:.04em; margin-left:4px; font-style:italic;}
+.mc-state .v em{font-style:italic; font-weight:400; color:var(--shu-deep);}
+
+/* ===== RIGHT — the chair: what the coach can do ===== */
+.chair{
+  background:var(--washi);
+  border:1px solid var(--rule);
+  position:relative;
+  display:flex; flex-direction:column;
+  overflow:hidden;
+}
+.chair-head{
+  padding:22px 28px;
+  border-bottom:1px solid var(--rule-strong);
+  background:var(--washi-2);
+  display:grid; grid-template-columns:1fr auto; gap:18px; align-items:baseline;
+}
+.chair-head .ek{font-family:var(--mono); font-size:11px; letter-spacing:.22em; color:var(--shu-deep); text-transform:uppercase;}
+.chair-head .h{font-family:var(--serif-display); font-style:italic; font-weight:400; font-size:24px; color:var(--sumi); letter-spacing:-.005em; margin-top:4px;}
+.chair-head .clock{
+  font-family:var(--mono); font-size:13px; color:var(--sumi-2); letter-spacing:.14em; text-align:right; line-height:1.6;
+}
+.chair-head .clock b{color:var(--shu); display:block; font-size:18px; font-weight:500; letter-spacing:.18em; margin-bottom:2px;}
+
+.judoka-row{
+  display:grid; grid-template-columns: 1fr auto 1fr; gap:0; padding:24px 28px; border-bottom:1px solid var(--rule);
+}
+.judoka{
+  display:flex; flex-direction:column; gap:6px;
+}
+.judoka.right{align-items:flex-end; text-align:right;}
+.judoka .corner{font-family:var(--mono); font-size:10px; letter-spacing:.22em; text-transform:uppercase;}
+.judoka.left .corner{color:var(--washi); background:var(--sumi); padding:3px 8px; align-self:flex-start; letter-spacing:.18em;}
+.judoka.right .corner{color:var(--washi); background:var(--shu); padding:3px 8px; align-self:flex-end; letter-spacing:.18em;}
+.judoka .name{font-family:var(--serif-display); font-weight:500; font-size:24px; line-height:1.1; color:var(--sumi); letter-spacing:-.005em;}
+.judoka .name em{font-style:italic; font-weight:400; color:var(--shu-deep);}
+.judoka .meta{font-family:var(--mono); font-size:11px; color:var(--sumi-3); letter-spacing:.14em; line-height:1.5; text-transform:uppercase;}
+.judoka .meta b{color:var(--sumi); font-weight:500;}
+.judoka .dojo{font-family:var(--serif-body); font-style:italic; font-size:13px; color:var(--sumi-3);}
+.judoka .you{
+  margin-top:4px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.22em; color:var(--gold); text-transform:uppercase;
+}
+.score-mid{
+  display:flex; flex-direction:column; align-items:center; gap:6px; padding:0 24px; min-width:160px;
+}
+.score-mid .vs{font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:20px; color:var(--sumi-3);}
+.score-mid .score{
+  display:grid; grid-template-columns: 1fr auto 1fr; gap:14px; align-items:center;
+  font-family:var(--serif-display); font-weight:500; font-size:64px; line-height:1; letter-spacing:-.025em;
+}
+.score-mid .score .a{color:var(--sumi); text-align:right;}
+.score-mid .score .b{color:var(--shu); text-align:left;}
+.score-mid .score .dash{font-family:var(--mono); font-size:30px; font-weight:400; color:var(--sumi-3); letter-spacing:0;}
+.score-mid .lbl{font-family:var(--mono); font-size:9px; letter-spacing:.22em; color:var(--sumi-3); text-transform:uppercase;}
+
+/* coach actions */
+.actions{
+  flex:1;
+  padding:18px 28px 22px;
+  display:flex; flex-direction:column; gap:10px;
+}
+.actions .head{
+  font-family:var(--mono); font-size:11px; letter-spacing:.2em; color:var(--shu-deep); text-transform:uppercase;
+  padding-bottom:10px; border-bottom:1px dashed var(--rule);
+  margin-bottom:6px;
+}
+.action{
+  display:grid; grid-template-columns: 36px 1fr auto; gap:14px; align-items:center;
+  padding:11px 12px; border:1px solid var(--rule); background:var(--washi-2);
+  cursor:default;
+}
+.action.primary{background:var(--washi); border-color:var(--sumi); border-width:1.5px;}
+.action .key{
+  font-family:var(--mono); font-size:11px; color:var(--sumi); letter-spacing:.06em;
+  border:1px solid var(--rule-strong); padding:3px 0; text-align:center; background:var(--washi);
+  font-weight:500;
+}
+.action .body{font-family:var(--serif-body); font-size:15px; line-height:1.35; color:var(--sumi-2);}
+.action .body b{color:var(--sumi);}
+.action .body em{color:var(--shu-deep); font-style:italic;}
+.action .arrow{font-family:var(--mono); font-size:14px; color:var(--sumi-3);}
+.action.primary .arrow{color:var(--shu);}
+.action.notice{background:transparent; border-style:dashed;}
+.action.notice .body{font-style:italic; color:var(--sumi-3);}
+
+/* footer note */
+.note-row{
+  margin-top:auto; padding:14px 28px 18px; border-top:1px solid var(--rule);
+  font-family:var(--serif-body); font-style:italic; font-size:13px; color:var(--sumi-3); line-height:1.5;
+  background:var(--washi-2);
+}
+.note-row b{color:var(--shu-deep); font-style:normal; font-weight:500; letter-spacing:.06em;}
+
+/* ===== BOTTOM CHROME ===== */
+.bottom{
+  position:absolute; left:96px; right:96px; bottom:38px;
+  display:grid; grid-template-columns: 1fr auto 1fr; gap:24px; align-items:center;
+  font-family:var(--mono); font-size:10px; color:var(--sumi-3); letter-spacing:.18em; text-transform:uppercase;
+  padding-top:14px; border-top:1px solid var(--rule);
+}
+.bottom .left{text-align:left;}
+.bottom .center{text-align:center;}
+.bottom .center b{color:var(--shu-deep); font-weight:500; letter-spacing:.22em;}
+.bottom .right{text-align:right;}
+
+</style>
+</head>
+<body>
+
+  <!-- broadcast strip -->
+  <div class="broadcast">
+    <div class="broad-left">
+      <span class="logo">始<span class="logo-r">Hajime</span></span>
+      <span><b>EVENT CARD</b>· The pause</span>
+    </div>
+    <div class="broad-mid">
+      <b>RHEINLAND U21 OPEN · 2027</b>
+      Köln · Sporthalle 3 · Mat A · Round of 16
+    </div>
+    <div class="broad-right">
+      <b>SAT · 14 NOV 2027</b>
+      14:38:22 local · official feed
+    </div>
+  </div>
+
+  <!-- title -->
+  <div class="title-bar">
+    <div class="tb-left">
+      <div class="ek"><b>HERO ARTIFACT · 02</b>What a consequential event looks like, inside the dojo loop</div>
+      <h1>The <em>pause.</em></h1>
+    </div>
+    <div class="tb-right">
+      <b>STATUS</b>
+      Round paused · referee call<br/>
+      Coach window open · 24-second budget<br/>
+      Mat 待機 · spectators muted
+    </div>
+  </div>
+
+  <div class="frame">
+
+    <!-- LEFT · the matte event itself -->
+    <div class="matte-card">
+      <div class="mc-meta">
+        <span><b>CALL</b>02 · the pause</span>
+        <span>by referee · K. Schäfer<span class="stamp">待</span></span>
+      </div>
+
+      <div class="mc-call">
+        待て
+        <span class="roman">Matte<span class="stop">.</span></span>
+      </div>
+
+      <p class="mc-prose">
+        The action stops. Tori is in a tight grip, near the edge — the referee resets the line. <b>For twenty-four seconds the chair becomes a place to think.</b> The next thing said matters more than anything that happened in the last forty.
+      </p>
+
+      <div class="mc-divider"></div>
+
+      <div class="mc-state">
+        <div class="cell">
+          <div class="lbl">Round time</div>
+          <div class="v">2:14<span class="small">/4:00</span></div>
+        </div>
+        <div class="cell">
+          <div class="lbl">Score</div>
+          <div class="v">Wazari · <em>—</em></div>
+        </div>
+        <div class="cell">
+          <div class="lbl">Stamina · your judoka</div>
+          <div class="v">62%<span class="small">declining</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT · the chair (what the coach does) -->
+    <div class="chair">
+      <div class="chair-head">
+        <div>
+          <div class="ek">THE CHAIR · 24-SEC WINDOW</div>
+          <div class="h">What you can <em>say</em>, before the next Hajime.</div>
+        </div>
+        <div class="clock">
+          <b>0:24</b>
+          counting down
+        </div>
+      </div>
+
+      <div class="judoka-row">
+        <div class="judoka left">
+          <span class="corner">WHITE · YOUR JUDOKA</span>
+          <div class="name">Anya <em>Volkov</em></div>
+          <div class="meta">−63KG · <b>Brown · 2nd kyū</b> · age 20</div>
+          <div class="dojo">Umana Judo · year 4</div>
+          <div class="you">↳ THE PLAYER YOU ARE COACHING</div>
+        </div>
+        <div class="score-mid">
+          <span class="vs">vs.</span>
+          <div class="score">
+            <span class="a">1</span>
+            <span class="dash">—</span>
+            <span class="b">0</span>
+          </div>
+          <span class="lbl">Wazari · Ippon</span>
+        </div>
+        <div class="judoka right">
+          <span class="corner">BLUE · OPPONENT</span>
+          <div class="name">M. <em>Yamashita</em></div>
+          <div class="meta">−63KG · <b>Black · 1st dan</b> · age 22</div>
+          <div class="dojo">Frankfurt Hochschule</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <div class="head">Issue at most one — silence is also a choice</div>
+
+        <div class="action primary">
+          <div class="key">A</div>
+          <div class="body"><b>Reset the grip.</b> Tell her to break and re-establish on the lapel. <em>Costs trust if she's already trying.</em></div>
+          <div class="arrow">▸</div>
+        </div>
+
+        <div class="action">
+          <div class="key">B</div>
+          <div class="body"><b>Go for the throw on the next ko-uchi.</b> She knows the setup — you've drilled it for two months.</div>
+          <div class="arrow">▸</div>
+        </div>
+
+        <div class="action">
+          <div class="key">C</div>
+          <div class="body"><b>Settle.</b> She has the lead. Stall the clock. <em>Wins the match. May not feel like a win.</em></div>
+          <div class="arrow">▸</div>
+        </div>
+
+        <div class="action notice">
+          <div class="key" style="background:transparent; border-color:var(--rule);">—</div>
+          <div class="body">Say nothing. Let her find it. <em>Sometimes the most expensive thing you can spend is a word.</em></div>
+          <div class="arrow">·</div>
+        </div>
+      </div>
+
+      <div class="note-row">
+        <b>NOTE · </b>The match window can never be larger than the chair window. Whatever you say here is read by every other student in your dojo by Tuesday.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- bottom chrome -->
+  <div class="bottom">
+    <div class="left">EVENT CARD · v0.2 · APR 26 2026</div>
+    <div class="center"><b>HAJIME · 始 · The match is one event among many</b></div>
+    <div class="right">RING 1 → DOJO LOOP · INSIDE</div>
+  </div>
+
+</body>
+</html>

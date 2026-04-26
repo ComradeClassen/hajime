@@ -1,0 +1,282 @@
+/* ============================================================
+   HAJIME DESIGN SYSTEM — colors_and_type.css
+   Direction: Basement Sanctuary (Palette 01) · Literary Serif
+   ============================================================
+   A coaching simulation rooted in a basement dojo. The identity
+   is warm, ink-dark, amber-lit. Reads like a book about judo.
+   ============================================================ */
+
+/* ---------- Webfonts ---------- */
+/* Primary serif — Google Fonts substitute for Iowan Old Style.
+   Sorts Mill Goudy is the nearest open-source match: warm,
+   old-style, booky proportions. FLAG: swap to licensed Iowan
+   or Hoefler Text for final production.
+   Mono: IBM Plex Mono (substitute for SF Mono).
+   Broadcast sans: Inter Tight (substitute for Helvetica Neue Light). */
+@import url('https://fonts.googleapis.com/css2?family=Sorts+Mill+Goudy:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=Inter+Tight:wght@300;400;500;600&display=swap');
+
+:root {
+  /* ===================================================
+     COLOR TOKENS — Basement Sanctuary
+     =================================================== */
+
+  /* Base palette — raw values */
+  --ink-black:     #1a1410;   /* NEVER use pure #000. This is our black. */
+  --ink-soft:      #2b241c;   /* Ink-on-ink, deeper shadow */
+  --mat-green:     #4a5838;   /* Tatami, training UI surfaces */
+  --mat-green-lo:  #3a4530;   /* Mat shadow */
+  --mat-green-hi:  #5a6a46;   /* Mat highlight */
+  --trophy-wood:   #6b4a2e;   /* Frames, trophy cases, wooden racks */
+  --trophy-wood-lo:#4d341f;
+  --oxblood:       #7b2418;   /* Urgency: ippon calls, exit sign, shido */
+  --oxblood-lo:    #5a1a11;
+  --amber-bulb:    #d4a04a;   /* The only warm light — primary accent */
+  --amber-glow:    #e8ba66;   /* Amber hover / glow */
+  --amber-dim:     #8a6a30;   /* Amber at rest */
+  --gi-cream:      #f5edd8;   /* Body text on ink, the judogi */
+  --gi-cream-soft: #e6dcc3;
+  --paper:         #efe6d0;   /* Document/menu surfaces */
+  --paper-card:    #faf4e2;   /* Card fill on paper */
+  --paper-dark:    #d8cdb0;   /* Paper border */
+  --ink-light:     #8a7a5c;   /* Muted label on paper */
+
+  /* ===================================================
+     SEMANTIC COLORS — use these in components, not raw
+     =================================================== */
+
+  /* Backgrounds (dark mode — the sanctuary) */
+  --bg:            var(--ink-black);
+  --bg-elev-1:     #221c16;           /* Panel lifted from bg */
+  --bg-elev-2:     #2d251d;           /* Card on panel */
+  --bg-mat:        var(--mat-green);  /* Training/match surface */
+
+  /* Backgrounds (light mode — the document) */
+  --bg-paper:      var(--paper);
+  --bg-card:       var(--paper-card);
+
+  /* Foreground (on ink) */
+  --fg:            var(--gi-cream);           /* Primary body text */
+  --fg-muted:      rgba(245, 237, 216, 0.65); /* Secondary */
+  --fg-dim:        rgba(245, 237, 216, 0.4);  /* Tertiary, captions */
+  --fg-accent:     var(--amber-bulb);         /* Highlight, numerics */
+  --fg-danger:     var(--oxblood);            /* Ippon, shido */
+
+  /* Foreground (on paper) */
+  --fg-paper:      var(--ink-black);
+  --fg-paper-soft: var(--ink-soft);
+  --fg-paper-mute: var(--ink-light);
+
+  /* Borders & rules */
+  --border-ink:    rgba(212, 160, 74, 0.3);   /* Amber hairline on ink */
+  --border-ink-strong: rgba(212, 160, 74, 0.55);
+  --border-paper:  var(--paper-dark);
+  --border-dotted: rgba(212, 160, 74, 0.22);
+
+  /* State */
+  --hover-veil:    rgba(245, 237, 216, 0.06); /* Tint overlay on ink */
+  --press-veil:    rgba(245, 237, 216, 0.12);
+  --focus-ring:    var(--amber-bulb);
+
+  /* ===================================================
+     TYPOGRAPHY
+     =================================================== */
+
+  --font-serif: "Sorts Mill Goudy", "Iowan Old Style", "Palatino Linotype", Palatino, "Hoefler Text", Georgia, serif;
+  --font-sans:  "Inter Tight", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono:  "IBM Plex Mono", "SF Mono", Menlo, "Courier New", monospace;
+
+  /* Weights — the serif is a single-weight face; weight lives in contrast */
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-bold:    600;
+
+  /* Scale — modular, booky. The serif wants air. */
+  --fs-micro:   11px;   /* Kicker, label caps */
+  --fs-caption: 12px;   /* Caption, metadata */
+  --fs-small:   13px;   /* Mono readouts, small UI */
+  --fs-body:    15px;   /* Body prose */
+  --fs-body-lg: 17px;   /* Pull quote */
+  --fs-h3:      20px;   /* Sub-head */
+  --fs-h2:      24px;   /* Section head */
+  --fs-h1:      34px;   /* Page title */
+  --fs-display: 46px;   /* Wordmark, title card */
+
+  --lh-tight:   1.15;
+  --lh-snug:    1.4;
+  --lh-normal:  1.6;
+  --lh-loose:   1.75;
+
+  --ls-kicker:  0.22em;  /* Uppercase micro labels */
+  --ls-label:   0.14em;  /* Uppercase small labels */
+  --ls-broadcast: 0.08em; /* Uppercase broadcast chrome */
+  --ls-tight:   -0.01em; /* Display tightening */
+
+  /* ===================================================
+     SPACING — 4px base, booky rhythm
+     =================================================== */
+  --s-0:  0;
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  20px;
+  --s-6:  24px;
+  --s-8:  32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* ===================================================
+     RADII — small, booky. The game is printed, not glossy.
+     =================================================== */
+  --r-0:  0;
+  --r-1:  2px;   /* Pills, chips */
+  --r-2:  3px;   /* Default card */
+  --r-3:  4px;   /* Section, major surface */
+  --r-full: 999px;
+
+  /* ===================================================
+     SHADOWS — low, print-offset, not diffused glows
+     =================================================== */
+  --shadow-print:    2px 3px 0 rgba(60, 45, 20, 0.06);   /* Paper card */
+  --shadow-print-lg: 3px 4px 0 rgba(60, 45, 20, 0.12);
+  --shadow-ink:      0 2px 12px rgba(0, 0, 0, 0.35);      /* On dark surfaces */
+  --shadow-bulb:     0 0 24px rgba(212, 160, 74, 0.18);   /* Amber glow (use sparingly) */
+
+  /* ===================================================
+     TRANSITIONS — quick, honest, no bounce
+     =================================================== */
+  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-out:      cubic-bezier(0.2, 0.6, 0.25, 1);
+  --dur-fast:  120ms;
+  --dur-med:   220ms;
+  --dur-slow:  400ms;
+
+  /* ===================================================
+     LAYOUT
+     =================================================== */
+  --measure:      68ch;   /* Prose line length */
+  --measure-narrow: 52ch;
+  --container:    1080px; /* Document max width */
+}
+
+/* ===================================================
+   SEMANTIC TYPE CLASSES — use these, not raw fonts
+   =================================================== */
+
+.h-display {
+  font-family: var(--font-serif);
+  font-size: var(--fs-display);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-tight);
+  font-weight: var(--fw-regular);
+}
+
+.h1 {
+  font-family: var(--font-serif);
+  font-size: var(--fs-h1);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.005em;
+  font-weight: var(--fw-regular);
+  margin: 0;
+}
+
+.h2 {
+  font-family: var(--font-serif);
+  font-size: var(--fs-h2);
+  line-height: var(--lh-snug);
+  font-weight: var(--fw-regular);
+  margin: 0;
+}
+
+.h3 {
+  font-family: var(--font-serif);
+  font-size: var(--fs-h3);
+  line-height: var(--lh-snug);
+  font-weight: var(--fw-regular);
+  margin: 0;
+}
+
+.body {
+  font-family: var(--font-serif);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+}
+
+.body-italic {
+  font-family: var(--font-serif);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  font-style: italic;
+}
+
+.pull-quote {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: var(--fs-body-lg);
+  line-height: var(--lh-snug);
+  border-left: 2px solid currentColor;
+  padding: 4px 0 4px 16px;
+  max-width: var(--measure-narrow);
+  opacity: 0.85;
+}
+
+.kicker {
+  font-family: var(--font-serif);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-kicker);
+  text-transform: uppercase;
+  color: var(--fg-paper-mute);
+}
+
+.label {
+  font-family: var(--font-serif);
+  font-size: 10px;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-paper-mute);
+}
+
+/* Mono — the numeric/readout voice */
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  letter-spacing: 0.02em;
+}
+
+.mono-xs {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* Broadcast — the tournament-chrome voice */
+.broadcast {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  letter-spacing: var(--ls-broadcast);
+  text-transform: uppercase;
+}
+
+/* Japanese subtitle accent — where Japanese characters appear */
+.jp {
+  font-family: var(--font-serif);
+  font-style: italic;
+  letter-spacing: 0.1em;
+}
+
+/* ===================================================
+   CONVENIENCE — bg themes
+   =================================================== */
+.theme-sanctuary {
+  background: var(--bg);
+  color: var(--fg);
+}
+.theme-paper {
+  background: var(--bg-paper);
+  color: var(--fg-paper);
+}
+.theme-mat {
+  background: var(--bg-mat);
+  color: var(--gi-cream);
+}

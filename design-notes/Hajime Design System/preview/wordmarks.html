@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;padding:0;background:var(--bg-paper);color:var(--fg-paper);font-family:var(--font-serif);}
+  .card{padding:20px 22px;display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:14px;}
+
+  .w{
+    position:relative;
+    min-height:130px;
+    padding:22px 20px;
+    border-radius:2px;
+    display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;
+    overflow:hidden;
+  }
+
+  /* Washi / rice paper surface with subtle fibers */
+  .washi{
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(180,150,90,0.10), transparent 60%),
+      radial-gradient(ellipse at 75% 85%, rgba(80,50,10,0.07), transparent 55%),
+      repeating-linear-gradient(92deg, rgba(80,50,10,0.025) 0 1px, transparent 1px 3px),
+      #f2e9cf;
+    border:1px solid #d8cdb0;
+    box-shadow: 2px 3px 0 rgba(60,45,20,0.05);
+  }
+
+  /* Primary Sumi-e lockup */
+  .sumi-serif{
+    font-family:var(--font-serif);
+    font-size:46px;
+    line-height:1;
+    letter-spacing:-0.005em;
+    color:#1a1410;
+    position:relative;
+    display:inline-block;
+  }
+  /* Ink-bleed: a soft shadow behind the wordmark, like ink soaking into paper */
+  .sumi-serif::before{
+    content:"Hajime";
+    position:absolute;
+    inset:0;
+    color:rgba(26,20,16,0.18);
+    filter: blur(1.6px);
+    transform: translate(0.6px, 0.8px);
+    z-index:-1;
+  }
+
+  /* Horizontal brush stroke under the mark */
+  .brush{
+    margin:14px 0 8px;
+    width:140px;height:10px;
+    background:
+      radial-gradient(ellipse 70px 3px at 20% 50%, #1a1410 0%, rgba(26,20,16,0.85) 50%, transparent 85%),
+      radial-gradient(ellipse 40px 2px at 80% 50%, rgba(26,20,16,0.6) 0%, transparent 85%);
+    filter: blur(0.2px);
+  }
+
+  /* Kanji + hanko */
+  .kanji-row{display:flex;align-items:center;gap:10px;margin-top:2px;}
+  .kanji{
+    font-family: "Hiragino Mincho Pro", "Yu Mincho", "Songti SC", "Noto Serif JP", var(--font-serif);
+    font-size:19px;
+    letter-spacing:0.18em;
+    color:#1a1410;
+    opacity:0.82;
+  }
+  .hanko{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:26px;height:26px;
+    background:#8a2a1c;
+    color:#f5edd8;
+    font-family:"Hiragino Mincho Pro","Yu Mincho","Songti SC","Noto Serif JP",var(--font-serif);
+    font-size:13px;
+    letter-spacing:0;
+    border-radius:2px;
+    box-shadow: inset 0 0 0 2px rgba(245,237,216,0.25);
+    /* Rough ink-stamp edge */
+    mask-image: radial-gradient(circle at 30% 30%, black 60%, transparent 75%), radial-gradient(circle at 70% 70%, black 60%, transparent 78%);
+    mask-composite: add;
+    -webkit-mask-composite: source-over;
+    transform: rotate(-4deg);
+  }
+
+  .tag{
+    font-family:var(--font-mono);
+    font-size:9px;
+    letter-spacing:0.12em;
+    color:rgba(26,20,16,0.45);
+    margin-top:14px;
+    text-transform:uppercase;
+  }
+
+  /* Variant B — ink on washi, kanji dominant */
+  .kanji-primary{
+    font-family:"Hiragino Mincho Pro","Yu Mincho","Songti SC","Noto Serif JP",var(--font-serif);
+    font-size:56px;
+    line-height:1;
+    letter-spacing:0.06em;
+    color:#1a1410;
+    position:relative;
+    display:inline-block;
+  }
+  .kanji-primary::before{
+    content:"始";
+    position:absolute;inset:0;
+    color:rgba(26,20,16,0.22);
+    filter:blur(2px);
+    transform: translate(1px, 1.2px);
+    z-index:-1;
+  }
+  .romaji-small{
+    font-family:var(--font-serif);
+    font-style:italic;
+    font-size:13px;
+    color:#4a3f2e;
+    letter-spacing:0.08em;
+    margin-top:8px;
+  }
+
+  /* Variant C — vertical stack, brush wash */
+  .stack{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  }
+  .brush-wash{
+    position:absolute;
+    left:50%;top:50%;
+    transform:translate(-50%,-50%);
+    width:90px;height:90px;
+    border-radius:50%;
+    background:
+      radial-gradient(circle at 40% 40%, rgba(26,20,16,0.10) 0%, transparent 65%);
+    filter: blur(3px);
+    pointer-events:none;
+  }
+  .vert-kanji{
+    font-family:"Hiragino Mincho Pro","Yu Mincho","Songti SC","Noto Serif JP",var(--font-serif);
+    font-size:22px;
+    color:#1a1410;
+    letter-spacing:0.2em;
+    opacity:0.7;
+    margin-bottom:2px;
+  }
+  .stack .sumi-serif{font-size:34px;}
+  .stack .sumi-serif::before{filter:blur(1.2px);transform:translate(0.5px,0.6px);}
+</style></head>
+<body>
+<div class="card">
+
+  <!-- PRIMARY -->
+  <div class="w washi">
+    <div class="sumi-serif">Hajime</div>
+    <div class="brush"></div>
+    <div class="kanji-row">
+      <div class="kanji">始め</div>
+      <div class="hanko">始</div>
+    </div>
+    <div class="tag">A · primary lockup</div>
+  </div>
+
+  <!-- SECONDARY — kanji forward -->
+  <div class="w washi">
+    <div class="kanji-primary">始</div>
+    <div class="romaji-small">— hajime —</div>
+    <div class="tag">A · kanji-forward</div>
+  </div>
+
+  <!-- VERTICAL -->
+  <div class="w washi">
+    <div class="brush-wash"></div>
+    <div class="stack">
+      <div class="vert-kanji">始 め</div>
+      <div class="sumi-serif">Hajime</div>
+    </div>
+    <div class="tag">A · vertical</div>
+  </div>
+
+</div></body></html>

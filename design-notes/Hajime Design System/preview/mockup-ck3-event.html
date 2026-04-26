@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Hajime · CK3-style event popup</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;padding:0;background:#120d09;color:#f5edd8;font-family:var(--font-serif);min-height:100vh;}
+  /* Backdrop: darkened match still behind the popup */
+  .backdrop{
+    position:fixed;inset:0;
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(212,160,74,0.10), transparent 55%),
+      linear-gradient(180deg, #0f0a06 0%, #1a1410 100%);
+  }
+  /* A faint match still — two figures mid-grip behind the panel, out of focus */
+  .match-still{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    opacity:0.35;filter:blur(3px) saturate(0.7);
+  }
+  .match-still svg{width:72%;max-width:800px;height:auto;}
+
+  .wrap{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:36px 20px;}
+
+  /* The event card — paradox-style frame */
+  .event{
+    position:relative;width:min(680px, 96vw);
+    background:
+      radial-gradient(ellipse at 30% 0%, rgba(180,150,90,0.08), transparent 60%),
+      #1e1612;
+    border:1px solid #3a2a1c;
+    box-shadow:
+      0 0 0 1px #0a0806,
+      0 0 0 4px #2a1f16,
+      0 0 0 5px #4a3520,
+      0 16px 40px rgba(0,0,0,0.7);
+  }
+  /* Ornate gold corners */
+  .corner{position:absolute;width:28px;height:28px;border:2px solid #b8984c;opacity:0.85;}
+  .corner.tl{top:-2px;left:-2px;border-right:none;border-bottom:none;}
+  .corner.tr{top:-2px;right:-2px;border-left:none;border-bottom:none;}
+  .corner.bl{bottom:-2px;left:-2px;border-right:none;border-top:none;}
+  .corner.br{bottom:-2px;right:-2px;border-left:none;border-top:none;}
+
+  /* Title banner */
+  .banner{
+    position:relative;text-align:center;
+    padding:14px 40px 12px;
+    background:linear-gradient(180deg, #3a2a1c 0%, #2a1f16 100%);
+    border-bottom:1px solid #4a3520;
+  }
+  .banner::before, .banner::after{
+    content:"";position:absolute;top:50%;width:32px;height:1px;background:#b8984c;opacity:0.7;
+  }
+  .banner::before{left:16px;}
+  .banner::after{right:16px;}
+  .banner .kick{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.24em;color:#b8984c;text-transform:uppercase;margin:0 0 2px;}
+  .banner h2{font-family:var(--font-serif);font-weight:400;font-size:26px;margin:0;letter-spacing:-0.005em;color:#f5edd8;}
+
+  /* Illustrated scene (the hero image) */
+  .scene{
+    position:relative;height:300px;overflow:hidden;
+    background:#0f0a06;border-bottom:1px solid #3a2a1c;
+  }
+  .scene svg{display:block;width:100%;height:100%;}
+  /* Vignette */
+  .scene::after{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.55) 100%);
+    pointer-events:none;
+  }
+  /* Caption overlay */
+  .caption{
+    position:absolute;left:14px;bottom:10px;
+    font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:0.18em;
+    color:rgba(245,237,216,0.55);text-transform:uppercase;
+  }
+
+  /* Prose body */
+  .body{padding:22px 32px 4px;font-size:15px;line-height:1.65;color:rgba(245,237,216,0.92);font-family:var(--font-serif);}
+  .body p{margin:0 0 12px;}
+  .body em{color:#d4a04a;font-style:italic;}
+  .body .hl{color:#d4a04a;}
+
+  /* Decision list */
+  .decisions{padding:8px 22px 22px;display:flex;flex-direction:column;gap:8px;}
+  .decision{
+    display:flex;align-items:flex-start;gap:14px;
+    padding:12px 16px;
+    background:linear-gradient(180deg, rgba(212,160,74,0.04), rgba(212,160,74,0.01));
+    border:1px solid #3a2a1c;
+    border-left:3px solid #d4a04a;
+    cursor:pointer;
+    transition:all 120ms;
+    font-family:var(--font-serif);
+  }
+  .decision:hover{border-left-color:#e8b868;background:rgba(212,160,74,0.08);}
+  .decision .letter{
+    flex-shrink:0;width:22px;height:22px;border:1px solid #b8984c;color:#d4a04a;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:0;
+  }
+  .decision .txt{flex:1;}
+  .decision .title{font-size:14px;color:#f5edd8;margin-bottom:2px;}
+  .decision .sub{font-size:12px;color:rgba(245,237,216,0.6);font-style:italic;line-height:1.5;}
+  .decision .cost{
+    flex-shrink:0;font-family:'IBM Plex Mono',monospace;font-size:10px;
+    color:#d4a04a;opacity:0.8;letter-spacing:0.12em;text-transform:uppercase;align-self:center;
+  }
+
+  /* Footer timer / fighter strip */
+  .foot{
+    padding:10px 22px;
+    display:flex;justify-content:space-between;align-items:center;
+    font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;
+    color:rgba(245,237,216,0.55);text-transform:uppercase;
+    border-top:1px solid #3a2a1c;
+    background:linear-gradient(180deg, #1a1410 0%, #120d09 100%);
+  }
+  .foot .who{color:#d4a04a;}
+  .timer{color:#d4a04a;}
+  .timer .bar{display:inline-block;width:80px;height:3px;background:rgba(212,160,74,0.2);margin-left:8px;vertical-align:middle;position:relative;}
+  .timer .bar::after{content:"";position:absolute;left:0;top:0;bottom:0;width:62%;background:#d4a04a;}
+
+  .sec-header{padding:14px 32px 0;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.22em;color:#b8984c;text-transform:uppercase;}
+</style></head>
+<body>
+<div class="backdrop"></div>
+
+<div class="match-still">
+  <!-- Faint high-res match still behind the event popup -->
+  <svg viewBox="0 0 1000 600">
+    <defs>
+      <radialGradient id="glow" cx="50%" cy="0%" r="70%">
+        <stop offset="0%" stop-color="#d4a04a" stop-opacity="0.35"/>
+        <stop offset="50%" stop-color="#d4a04a" stop-opacity="0.08"/>
+        <stop offset="100%" stop-color="#d4a04a" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect x="0" y="0" width="1000" height="600" fill="#1a1410"/>
+    <ellipse cx="500" cy="0" rx="420" ry="320" fill="url(#glow)"/>
+    <!-- tatami floor -->
+    <polygon points="60,380 940,380 1100,600 -100,600" fill="#4a5838"/>
+    <polygon points="60,380 940,380 1100,600 -100,600" fill="none" stroke="#3a4528" stroke-width="2"/>
+    <line x1="90" y1="420" x2="910" y2="420" stroke="#7b2418" stroke-width="4" opacity="0.6"/>
+    <!-- two judoka silhouettes in grip -->
+    <g transform="translate(420,180)">
+      <rect x="0" y="60" width="60" height="180" fill="#f5edd8" stroke="#1a1410" stroke-width="3"/>
+      <rect x="0" y="160" width="60" height="16" fill="#1a1410"/>
+      <rect x="60" y="80" width="80" height="20" fill="#f5edd8" stroke="#1a1410" stroke-width="3"/>
+      <circle cx="30" cy="40" r="26" fill="#e8c9a6" stroke="#1a1410" stroke-width="3"/>
+    </g>
+    <g transform="translate(540,160)">
+      <rect x="0" y="80" width="60" height="200" fill="#2e4a6b" stroke="#1a1410" stroke-width="3"/>
+      <rect x="0" y="180" width="60" height="16" fill="#1a1410"/>
+      <rect x="-60" y="100" width="80" height="20" fill="#2e4a6b" stroke="#1a1410" stroke-width="3"/>
+      <circle cx="30" cy="60" r="26" fill="#e8c9a6" stroke="#1a1410" stroke-width="3"/>
+    </g>
+  </svg>
+</div>
+
+<div class="wrap">
+  <div class="event">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+
+    <div class="banner">
+      <p class="kick">Matte · end of exchange 1</p>
+      <h2>The coach rises from his chair</h2>
+    </div>
+
+    <div class="scene">
+      <!-- High-quality illustrated scene: coach rising, backs of judoka in BG, amber bulb overhead -->
+      <svg viewBox="0 0 680 300" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="bulb2" cx="55%" cy="0%" r="65%">
+            <stop offset="0%" stop-color="#f5d890" stop-opacity="0.55"/>
+            <stop offset="45%" stop-color="#d4a04a" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#1a1410" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#5a6842"/>
+            <stop offset="100%" stop-color="#3a4528"/>
+          </linearGradient>
+          <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4a3520"/>
+            <stop offset="100%" stop-color="#2e2218"/>
+          </linearGradient>
+        </defs>
+
+        <!-- back wall -->
+        <rect x="0" y="0" width="680" height="200" fill="url(#wall)"/>
+        <!-- bulb glow -->
+        <ellipse cx="370" cy="-40" rx="360" ry="240" fill="url(#bulb2)"/>
+        <!-- hanging bulb -->
+        <line x1="370" y1="0" x2="370" y2="28" stroke="#4a3520" stroke-width="1"/>
+        <circle cx="370" cy="34" r="8" fill="#f5d890"/>
+        <circle cx="370" cy="34" r="14" fill="#f5d890" opacity="0.3"/>
+        <!-- trophy shelf -->
+        <rect x="30" y="90" width="260" height="4" fill="#6b4a2e"/>
+        <rect x="60" y="68" width="10" height="22" fill="#b8984c"/>
+        <rect x="90" y="60" width="12" height="30" fill="#b8984c"/>
+        <rect x="130" y="72" width="10" height="18" fill="#7b2418"/>
+        <rect x="160" y="66" width="12" height="24" fill="#b8984c"/>
+        <rect x="200" y="70" width="10" height="20" fill="#b8984c"/>
+        <rect x="230" y="60" width="14" height="30" fill="#7b2418"/>
+        <!-- kanji banner on the wall -->
+        <rect x="440" y="40" width="80" height="110" fill="#f5edd8" opacity="0.95"/>
+        <text x="480" y="90" font-family="Hiragino Mincho Pro, Yu Mincho, serif" font-weight="900" font-size="48" fill="#1a1410" text-anchor="middle">始</text>
+        <text x="480" y="130" font-family="Hiragino Mincho Pro, Yu Mincho, serif" font-weight="900" font-size="36" fill="#1a1410" text-anchor="middle">道</text>
+
+        <!-- floor -->
+        <polygon points="0,200 680,200 680,300 0,300" fill="url(#floor)"/>
+        <!-- mat weave -->
+        <g stroke="#3a4528" stroke-width="1" opacity="0.6">
+          <line x1="0" y1="220" x2="680" y2="220"/>
+          <line x1="0" y1="240" x2="680" y2="240"/>
+          <line x1="0" y1="260" x2="680" y2="260"/>
+        </g>
+        <!-- red mat edge -->
+        <rect x="0" y="212" width="680" height="4" fill="#7b2418" opacity="0.8"/>
+
+        <!-- Backs of two judoka in the mid-distance -->
+        <g transform="translate(210,120)">
+          <!-- Sato (white) -->
+          <rect x="0" y="24" width="46" height="66" fill="#f5edd8" stroke="#1a1410" stroke-width="1.6"/>
+          <rect x="0" y="62" width="46" height="6" fill="#1a1410"/>
+          <rect x="8" y="88" width="12" height="40" fill="#f5edd8" stroke="#1a1410" stroke-width="1.4"/>
+          <rect x="26" y="88" width="12" height="40" fill="#f5edd8" stroke="#1a1410" stroke-width="1.4"/>
+          <circle cx="23" cy="16" r="14" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.6"/>
+          <path d="M10 10 Q23 0 36 10 Q36 20 34 22 Q30 14 23 14 Q16 14 12 22 Q10 20 10 10 Z" fill="#1a1410"/>
+          <!-- extended arm -->
+          <rect x="42" y="38" width="26" height="10" fill="#f5edd8" stroke="#1a1410" stroke-width="1.4"/>
+          <circle cx="72" cy="43" r="5" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.2"/>
+        </g>
+        <g transform="translate(320,110)">
+          <!-- Tanaka (blue) -->
+          <rect x="0" y="28" width="48" height="70" fill="#2e4a6b" stroke="#1a1410" stroke-width="1.6"/>
+          <rect x="0" y="70" width="48" height="6" fill="#1a1410"/>
+          <rect x="8" y="96" width="14" height="44" fill="#f5edd8" stroke="#1a1410" stroke-width="1.4"/>
+          <rect x="28" y="96" width="14" height="44" fill="#f5edd8" stroke="#1a1410" stroke-width="1.4"/>
+          <circle cx="24" cy="20" r="14" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.6"/>
+          <path d="M10 14 Q24 4 38 14 Q38 22 36 24 Q32 18 24 18 Q16 18 12 24 Q10 22 10 14 Z" fill="#2a1f18"/>
+          <!-- extended arm toward Sato -->
+          <rect x="-24" y="40" width="26" height="10" fill="#2e4a6b" stroke="#1a1410" stroke-width="1.4"/>
+          <circle cx="-26" cy="45" r="5" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.2"/>
+        </g>
+
+        <!-- Referee on the far edge, arm raised calling matte -->
+        <g transform="translate(540,140)">
+          <!-- Rim light behind ref so he pops off the wall -->
+          <rect x="-4" y="-18" width="36" height="112" fill="#d4a04a" opacity="0.12"/>
+          <rect x="0" y="40" width="22" height="50" fill="#2a1f16" stroke="#0f0a06" stroke-width="1.4"/>
+          <rect x="0" y="24" width="22" height="22" fill="#f5edd8" stroke="#0f0a06" stroke-width="1.4"/>
+          <rect x="8" y="24" width="6" height="22" fill="#7b2418"/>
+          <circle cx="11" cy="14" r="11" fill="#e8c9a6" stroke="#0f0a06" stroke-width="1.4"/>
+          <rect x="0" y="2" width="22" height="10" fill="#1a1410" stroke="#0f0a06" stroke-width="1.2"/>
+          <!-- arm up -->
+          <rect x="18" y="-8" width="8" height="34" fill="#2a1f16" stroke="#0f0a06" stroke-width="1"/>
+          <rect x="18" y="-14" width="10" height="10" fill="#e8c9a6" stroke="#0f0a06" stroke-width="1.2"/>
+        </g>
+
+        <!-- Foreground: coach rising from chair, left-of-center, back to camera -->
+        <g transform="translate(60,130)">
+          <!-- chair back -->
+          <rect x="-6" y="80" width="68" height="60" fill="#6b4a2e" stroke="#1a1410" stroke-width="1.8"/>
+          <rect x="-6" y="74" width="68" height="10" fill="#4a321f" stroke="#1a1410" stroke-width="1.8"/>
+          <!-- chair leg -->
+          <rect x="2" y="138" width="6" height="28" fill="#4a321f"/>
+          <rect x="50" y="138" width="6" height="28" fill="#4a321f"/>
+
+          <!-- coach (rising — mid-stand, slightly bent forward) -->
+          <rect x="14" y="34" width="40" height="70" fill="#6b4a2e" stroke="#1a1410" stroke-width="1.8"/>
+          <rect x="28" y="38" width="6" height="36" fill="#7b2418"/>
+          <!-- trousers -->
+          <rect x="16" y="104" width="18" height="54" fill="#2a1f16" stroke="#1a1410" stroke-width="1.6"/>
+          <rect x="36" y="104" width="18" height="54" fill="#2a1f16" stroke="#1a1410" stroke-width="1.6"/>
+          <!-- arm reaching forward (gesturing toward fighter) -->
+          <rect x="52" y="50" width="30" height="10" fill="#6b4a2e" stroke="#1a1410" stroke-width="1.6"/>
+          <circle cx="86" cy="55" r="7" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.4"/>
+          <!-- other arm tucked -->
+          <rect x="2" y="56" width="14" height="22" fill="#6b4a2e" stroke="#1a1410" stroke-width="1.6"/>
+          <!-- head (back-three-quarter, turned slightly toward mat) -->
+          <circle cx="34" cy="22" r="16" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.6"/>
+          <path d="M18 18 Q20 4 34 2 Q50 4 50 18 Q48 20 44 18 Q40 14 34 14 Q28 14 24 18 Q20 20 18 18 Z" fill="#3a2a22"/>
+          <!-- glasses profile hint -->
+          <rect x="42" y="22" width="6" height="3" fill="#1a1410"/>
+        </g>
+
+        <!-- dust mote specks in light -->
+        <circle cx="380" cy="60" r="1.5" fill="#f5d890" opacity="0.8"/>
+        <circle cx="420" cy="90" r="1" fill="#f5d890" opacity="0.6"/>
+        <circle cx="330" cy="110" r="1.2" fill="#f5d890" opacity="0.7"/>
+        <circle cx="500" cy="80" r="1" fill="#f5d890" opacity="0.5"/>
+      </svg>
+      <div class="caption">ILL. COACH'S CHAIR · RD 1 · 0:24</div>
+    </div>
+
+    <div class="body">
+      <p>Tanaka went for <em>seoi-nage</em> off a grip he never finished earning. Sato sprawled clean. The referee called <em>matte</em> and both fighters reset.</p>
+      <p>You catch Tanaka's eye as he walks back. His <span class="hl">right-grip number is falling.</span> You have two words before the referee calls <em>hajime</em>.</p>
+    </div>
+
+    <div class="sec-header">Two instructions</div>
+    <div class="decisions">
+      <div class="decision">
+        <div class="letter">A</div>
+        <div class="txt">
+          <div class="title">Break his grip</div>
+          <div class="sub">"Strip the pistol grip before you even think about another throw."</div>
+        </div>
+        <div class="cost">+ grip · − tempo</div>
+      </div>
+      <div class="decision">
+        <div class="letter">B</div>
+        <div class="txt">
+          <div class="title">Stay patient</div>
+          <div class="sub">"Don't force it. Let him come to you. Read first, then move."</div>
+        </div>
+        <div class="cost">+ composure</div>
+      </div>
+      <div class="decision">
+        <div class="letter">C</div>
+        <div class="txt">
+          <div class="title">Go to the ground</div>
+          <div class="sub">"If he bites on the next throw, don't let him up. Take him to ne-waza."</div>
+        </div>
+        <div class="cost">+ risk · + reward</div>
+      </div>
+      <div class="decision">
+        <div class="letter">D</div>
+        <div class="txt">
+          <div class="title">Switch stance</div>
+          <div class="sub">"Go southpaw. Make his pistol grip meaningless."</div>
+        </div>
+        <div class="cost">− familiarity</div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <span><span class="who">Tanaka</span> · –73 kg · rd 1</span>
+      <span class="timer">PICK TWO BEFORE HAJIME <span class="bar"></span> 0:12</span>
+    </div>
+  </div>
+</div>
+</body></html>

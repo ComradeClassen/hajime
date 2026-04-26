@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Hajime · Pixel-sprite match view</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;padding:0;background:#120d09;color:#f5edd8;font-family:var(--font-serif);min-height:100vh;}
+  .frame{max-width:1040px;margin:0 auto;padding:28px 24px 48px;}
+  .kicker{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.22em;text-transform:uppercase;color:#b8984c;margin:0 0 6px;}
+  h1{font-family:var(--font-serif);font-weight:400;font-size:26px;margin:0 0 4px;}
+  .sub{font-style:italic;font-size:13px;color:rgba(245,237,216,0.65);margin:0 0 22px;max-width:72ch;line-height:1.55;}
+
+  /* Top score strip — broadcast sans */
+  .strip{
+    display:grid;grid-template-columns:1fr auto 1fr;gap:18px;align-items:center;
+    padding:12px 18px;background:#0f0a06;border:1px solid #2a1f16;border-bottom:none;
+    font-family:var(--font-sans);font-weight:300;font-size:12px;letter-spacing:0.16em;text-transform:uppercase;
+  }
+  .strip .left{color:#d4a04a;text-align:left;}
+  .strip .mid{font-family:var(--font-serif);letter-spacing:0;text-transform:none;font-size:14px;color:#f5edd8;text-align:center;}
+  .strip .mid .score{font-family:'IBM Plex Mono',monospace;color:#d4a04a;font-size:15px;margin:0 8px;}
+  .strip .right{color:#d4a04a;text-align:right;}
+
+  /* The stage — clean side-view scene */
+  .stage{
+    position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;
+    background:#1a1410;border:1px solid #2a1f16;
+    image-rendering:pixelated;
+  }
+  .stage svg{position:absolute;inset:0;width:100%;height:100%;display:block;}
+
+  /* Annotation overlay */
+  .annot{
+    position:absolute;font-family:'IBM Plex Mono',monospace;
+    font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#d4a04a;
+    pointer-events:none;
+  }
+  .annot .line{
+    position:absolute;background:#d4a04a;opacity:0.7;
+  }
+  .annot .dot{
+    position:absolute;width:8px;height:8px;border:1.5px solid #d4a04a;border-radius:50%;
+    background:rgba(212,160,74,0.15);
+  }
+  .annot .label{
+    position:absolute;padding:3px 7px;background:rgba(15,10,6,0.92);
+    border:1px solid rgba(212,160,74,0.4);white-space:nowrap;
+  }
+
+  /* Bottom HUD */
+  .hud{
+    display:grid;grid-template-columns:220px 1fr 220px;gap:0;
+    border:1px solid #2a1f16;border-top:none;
+    background:#0f0a06;
+  }
+  .hud > div{padding:14px 16px;}
+  .hud .side{background:#0f0a06;}
+  .hud .center{background:#120d09;border-left:1px solid #2a1f16;border-right:1px solid #2a1f16;}
+  .hud h4{
+    margin:0 0 10px;font-family:'IBM Plex Mono',monospace;font-weight:400;
+    font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#b8984c;
+  }
+  .hud .name{font-family:var(--font-serif);font-size:16px;color:#f5edd8;margin-bottom:6px;}
+  .hud .name .dot{display:inline-block;width:8px;height:8px;margin-right:6px;vertical-align:middle;}
+
+  .stats{display:flex;flex-direction:column;gap:5px;}
+  .stat{display:flex;align-items:center;gap:8px;font-size:11px;color:rgba(245,237,216,0.7);font-family:'IBM Plex Mono',monospace;letter-spacing:0.04em;}
+  .stat .k{width:64px;text-transform:uppercase;font-size:9px;letter-spacing:0.14em;color:#b8984c;}
+  .stat .bar{flex:1;height:6px;background:#2a1f16;position:relative;}
+  .stat .bar::after{content:"";position:absolute;left:0;top:0;bottom:0;background:#d4a04a;}
+  .stat[data-v="9"] .bar::after{width:90%;}
+  .stat[data-v="8"] .bar::after{width:80%;}
+  .stat[data-v="7"] .bar::after{width:70%;}
+  .stat[data-v="6"] .bar::after{width:60%;}
+  .stat[data-v="5"] .bar::after{width:50%;}
+  .stat[data-v="4"] .bar::after{width:40%;background:#c97c3a;}
+  .stat[data-v="3"] .bar::after{width:30%;background:#7b2418;}
+  .stat .v{width:28px;text-align:right;color:#f5edd8;font-size:11px;}
+
+  .prose{font-family:var(--font-serif);font-size:13px;line-height:1.6;color:rgba(245,237,216,0.9);}
+  .prose .ln{display:flex;gap:10px;margin-bottom:4px;}
+  .prose .t{font-family:'IBM Plex Mono',monospace;font-size:10px;color:#b8984c;flex-shrink:0;width:32px;padding-top:2px;}
+  .prose em{color:#d4a04a;font-style:italic;}
+
+  /* Legend beneath */
+  .legend{
+    margin-top:18px;display:grid;grid-template-columns:repeat(4, 1fr);gap:14px;
+    font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(245,237,216,0.55);
+  }
+  .legend .item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:#1a1410;border:1px solid #2a1f16;}
+  .legend .n{color:#d4a04a;font-weight:600;}
+  .legend .d{color:rgba(245,237,216,0.75);font-family:var(--font-serif);letter-spacing:0;text-transform:none;font-size:11px;line-height:1.45;margin-top:3px;font-style:italic;}
+</style></head>
+<body>
+<div class="frame">
+
+  <p class="kicker">Mockup · 04 · in-match screen</p>
+  <h1>Match view — side-on pixel sprite</h1>
+  <p class="sub">A clean broadcast-style cross-section. Two fighters center-mat, warm basement light from above, coach's corner bottom-left, prose stream bottom-center, live stats bottom-right. Callouts label each moving part.</p>
+
+  <!-- Top broadcast strip -->
+  <div class="strip">
+    <div class="left">Round 1 · –73 kg · Pool B</div>
+    <div class="mid">Tanaka <span class="score">0&nbsp;&nbsp;:&nbsp;&nbsp;0</span> Sato</div>
+    <div class="right">0:24 · Matte</div>
+  </div>
+
+  <!-- The match stage -->
+  <div class="stage">
+    <svg viewBox="0 0 1040 585" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <radialGradient id="bulb" cx="50%" cy="0%" r="60%">
+          <stop offset="0%" stop-color="#f5d890" stop-opacity="0.55"/>
+          <stop offset="40%" stop-color="#d4a04a" stop-opacity="0.15"/>
+          <stop offset="100%" stop-color="#1a1410" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2a1f16"/>
+          <stop offset="100%" stop-color="#120d09"/>
+        </linearGradient>
+        <linearGradient id="mat" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#5a6842"/>
+          <stop offset="100%" stop-color="#3a4528"/>
+        </linearGradient>
+      </defs>
+
+      <!-- back wall -->
+      <rect x="0" y="0" width="1040" height="380" fill="url(#wall)"/>
+      <!-- bulb glow -->
+      <ellipse cx="520" cy="-20" rx="520" ry="320" fill="url(#bulb)"/>
+      <!-- hanging bulb -->
+      <line x1="520" y1="0" x2="520" y2="36" stroke="#4a3520" stroke-width="1.5"/>
+      <circle cx="520" cy="44" r="10" fill="#f5d890"/>
+      <circle cx="520" cy="44" r="18" fill="#f5d890" opacity="0.25"/>
+
+      <!-- Trophy shelf left -->
+      <rect x="40" y="170" width="280" height="5" fill="#6b4a2e"/>
+      <rect x="40" y="140" width="280" height="5" fill="#6b4a2e"/>
+      <g fill="#b8984c" stroke="#1a1410" stroke-width="1">
+        <rect x="70" y="146" width="10" height="24"/>
+        <rect x="100" y="140" width="14" height="30"/>
+        <rect x="140" y="148" width="10" height="22"/>
+      </g>
+      <g fill="#7b2418" stroke="#1a1410" stroke-width="1">
+        <rect x="170" y="144" width="12" height="26"/>
+        <rect x="210" y="148" width="10" height="22"/>
+      </g>
+      <g fill="#b8984c" stroke="#1a1410" stroke-width="1">
+        <rect x="240" y="140" width="14" height="30"/>
+        <rect x="280" y="146" width="10" height="24"/>
+      </g>
+      <!-- shelf supports -->
+      <rect x="44" y="175" width="4" height="22" fill="#4a321f"/>
+      <rect x="312" y="175" width="4" height="22" fill="#4a321f"/>
+
+      <!-- Kanji banner right wall -->
+      <rect x="740" y="90" width="140" height="200" fill="#f5edd8"/>
+      <rect x="740" y="90" width="140" height="200" fill="none" stroke="#4a3520" stroke-width="2"/>
+      <text x="810" y="160" font-family="Hiragino Mincho Pro, Yu Mincho, serif" font-weight="900" font-size="72" fill="#1a1410" text-anchor="middle">始</text>
+      <text x="810" y="250" font-family="Hiragino Mincho Pro, Yu Mincho, serif" font-weight="900" font-size="56" fill="#1a1410" text-anchor="middle">道</text>
+
+      <!-- Floor / mat -->
+      <rect x="0" y="380" width="1040" height="205" fill="url(#mat)"/>
+      <!-- Red mat border line -->
+      <rect x="0" y="390" width="1040" height="6" fill="#7b2418" opacity="0.85"/>
+      <!-- mat weave lines -->
+      <g stroke="#3a4528" stroke-width="1" opacity="0.55">
+        <line x1="0" y1="420" x2="1040" y2="420"/>
+        <line x1="0" y1="450" x2="1040" y2="450"/>
+        <line x1="0" y1="480" x2="1040" y2="480"/>
+        <line x1="0" y1="510" x2="1040" y2="510"/>
+        <line x1="0" y1="540" x2="1040" y2="540"/>
+      </g>
+      <!-- panel seams -->
+      <g stroke="#3a4528" stroke-width="1" opacity="0.45">
+        <line x1="200" y1="390" x2="200" y2="585"/>
+        <line x1="420" y1="390" x2="420" y2="585"/>
+        <line x1="620" y1="390" x2="620" y2="585"/>
+        <line x1="840" y1="390" x2="840" y2="585"/>
+      </g>
+
+      <!-- Referee far right, arm raised -->
+      <g transform="translate(910,300)">
+        <rect x="0" y="72" width="28" height="68" fill="#1a1410"/>
+        <rect x="0" y="48" width="28" height="30" fill="#f5edd8" stroke="#1a1410" stroke-width="1.5"/>
+        <rect x="11" y="48" width="6" height="30" fill="#7b2418"/>
+        <circle cx="14" cy="34" r="13" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.5"/>
+        <rect x="0" y="18" width="28" height="10" fill="#3a2a22" stroke="#1a1410" stroke-width="1.5"/>
+        <!-- raised arm -->
+        <rect x="22" y="-6" width="9" height="44" fill="#1a1410"/>
+        <rect x="20" y="-14" width="13" height="10" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.4"/>
+      </g>
+
+      <!-- FIGHTER 1 - Tanaka (blue gi, left, right hand to lapel) -->
+      <g transform="translate(410,260)">
+        <!-- Back leg, bent forward stance -->
+        <rect x="16" y="160" width="22" height="80" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <!-- Front leg -->
+        <rect x="44" y="160" width="22" height="80" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <!-- Feet -->
+        <rect x="14" y="236" width="26" height="6" fill="#1a1410"/>
+        <rect x="42" y="236" width="26" height="6" fill="#1a1410"/>
+        <!-- Torso (blue gi) -->
+        <rect x="10" y="60" width="68" height="110" fill="#2e4a6b" stroke="#1a1410" stroke-width="2"/>
+        <!-- Gi lapels crossing -->
+        <polygon points="10,60 44,60 44,170 10,170" fill="#2e4a6b" stroke="#1a1410" stroke-width="2"/>
+        <polygon points="44,60 78,60 78,170 44,170" fill="#3a5a80" stroke="#1a1410" stroke-width="2"/>
+        <line x1="44" y1="60" x2="44" y2="170" stroke="#1a1410" stroke-width="2"/>
+        <!-- Obi (belt) black -->
+        <rect x="8" y="148" width="72" height="14" fill="#1a1410"/>
+        <rect x="8" y="148" width="72" height="14" fill="none" stroke="#0a0604" stroke-width="1"/>
+        <!-- Back arm (bent, gripping sleeve) -->
+        <rect x="-12" y="76" width="24" height="16" fill="#2e4a6b" stroke="#1a1410" stroke-width="2"/>
+        <rect x="-14" y="76" width="14" height="46" fill="#2e4a6b" stroke="#1a1410" stroke-width="2"/>
+        <circle cx="-7" cy="128" r="7" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.5"/>
+        <!-- Forward arm (extended, gripping Sato's lapel) -->
+        <rect x="78" y="74" width="60" height="18" fill="#2e4a6b" stroke="#1a1410" stroke-width="2"/>
+        <rect x="132" y="68" width="20" height="28" fill="#2e4a6b" stroke="#1a1410" stroke-width="2"/>
+        <circle cx="142" cy="82" r="9" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.5"/>
+        <!-- Head -->
+        <rect x="24" y="16" width="42" height="48" fill="#e8c9a6" stroke="#1a1410" stroke-width="2"/>
+        <!-- Hair (black, flat-top) -->
+        <rect x="22" y="12" width="46" height="18" fill="#1a1410"/>
+        <rect x="20" y="14" width="4" height="22" fill="#1a1410"/>
+        <rect x="66" y="14" width="4" height="22" fill="#1a1410"/>
+        <!-- Eyes - stern -->
+        <rect x="32" y="38" width="6" height="3" fill="#1a1410"/>
+        <rect x="52" y="38" width="6" height="3" fill="#1a1410"/>
+        <!-- Mouth tight -->
+        <rect x="38" y="52" width="14" height="2" fill="#1a1410"/>
+        <!-- Name plate -->
+        <rect x="14" y="-10" width="66" height="16" fill="#0f0a06" stroke="#d4a04a" stroke-width="1"/>
+        <text x="47" y="2" font-family="IBM Plex Mono, monospace" font-size="9" fill="#d4a04a" text-anchor="middle" letter-spacing="1">TANAKA</text>
+      </g>
+
+      <!-- FIGHTER 2 - Sato (white gi, right, pistol grip on Tanaka's sleeve) -->
+      <g transform="translate(580,260)">
+        <!-- Legs -->
+        <rect x="16" y="160" width="22" height="80" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <rect x="44" y="160" width="22" height="80" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <!-- Feet -->
+        <rect x="14" y="236" width="26" height="6" fill="#1a1410"/>
+        <rect x="42" y="236" width="26" height="6" fill="#1a1410"/>
+        <!-- Torso (white gi) -->
+        <rect x="10" y="60" width="68" height="110" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <polygon points="10,60 44,60 44,170 10,170" fill="#e8dfc0" stroke="#1a1410" stroke-width="2"/>
+        <polygon points="44,60 78,60 78,170 44,170" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <line x1="44" y1="60" x2="44" y2="170" stroke="#1a1410" stroke-width="2"/>
+        <!-- Brown belt -->
+        <rect x="8" y="148" width="72" height="14" fill="#6b4a2e"/>
+        <rect x="8" y="148" width="72" height="14" fill="none" stroke="#4a321f" stroke-width="1"/>
+        <!-- Back arm (bent, raised for posture) -->
+        <rect x="70" y="68" width="26" height="16" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <rect x="88" y="52" width="14" height="40" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <circle cx="95" cy="46" r="8" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.5"/>
+        <!-- Forward arm — PISTOL GRIP on Tanaka's sleeve, stiff & extended -->
+        <rect x="-60" y="76" width="70" height="16" fill="#f5edd8" stroke="#1a1410" stroke-width="2"/>
+        <!-- Gripping fist -->
+        <rect x="-78" y="72" width="22" height="22" fill="#e8c9a6" stroke="#1a1410" stroke-width="1.5"/>
+        <!-- Head -->
+        <rect x="24" y="16" width="42" height="48" fill="#e8c9a6" stroke="#1a1410" stroke-width="2"/>
+        <!-- Hair -->
+        <rect x="22" y="12" width="46" height="14" fill="#2a1f16"/>
+        <rect x="20" y="12" width="50" height="6" fill="#2a1f16"/>
+        <!-- Eyes -->
+        <rect x="32" y="38" width="6" height="3" fill="#1a1410"/>
+        <rect x="52" y="38" width="6" height="3" fill="#1a1410"/>
+        <!-- Mouth open, focused -->
+        <rect x="38" y="52" width="14" height="3" fill="#1a1410"/>
+        <!-- Name plate -->
+        <rect x="14" y="-10" width="66" height="16" fill="#0f0a06" stroke="#d4a04a" stroke-width="1"/>
+        <text x="47" y="2" font-family="IBM Plex Mono, monospace" font-size="9" fill="#d4a04a" text-anchor="middle" letter-spacing="1">SATO</text>
+      </g>
+
+      <!-- Contact flash at grip point -->
+      <g transform="translate(720,340)">
+        <circle cx="0" cy="0" r="14" fill="none" stroke="#d4a04a" stroke-width="2" opacity="0.7"/>
+        <circle cx="0" cy="0" r="6" fill="#d4a04a" opacity="0.9"/>
+      </g>
+
+      <!-- Dust motes -->
+      <circle cx="560" cy="80" r="1.4" fill="#f5d890" opacity="0.8"/>
+      <circle cx="480" cy="110" r="1.1" fill="#f5d890" opacity="0.6"/>
+      <circle cx="600" cy="140" r="1.2" fill="#f5d890" opacity="0.65"/>
+      <circle cx="420" cy="70" r="1" fill="#f5d890" opacity="0.5"/>
+
+    </svg>
+
+    <!-- ANNOTATIONS — teaching the scene -->
+    <!-- 1 · Amber bulb -->
+    <div class="annot" style="top:6%;left:50%;">
+      <div class="dot" style="left:0;top:0;"></div>
+      <div class="line" style="left:4px;top:14px;width:1px;height:40px;"></div>
+      <div class="label" style="left:10px;top:50px;">① Warm bulb — only light source</div>
+    </div>
+
+    <!-- 2 · Kanji banner -->
+    <div class="annot" style="top:22%;left:82%;">
+      <div class="dot" style="left:0;top:0;"></div>
+      <div class="line" style="left:-48px;top:4px;width:48px;height:1px;"></div>
+      <div class="label" style="left:-210px;top:-5px;">② 始道 — "the way begins"</div>
+    </div>
+
+    <!-- 3 · Trophy shelf -->
+    <div class="annot" style="top:28%;left:17%;">
+      <div class="dot" style="left:0;top:0;"></div>
+      <div class="line" style="left:6px;top:-22px;width:1px;height:22px;"></div>
+      <div class="label" style="left:-18px;top:-40px;">③ Trophy shelf</div>
+    </div>
+
+    <!-- 4 · Grip contact point -->
+    <div class="annot" style="top:58%;left:68%;">
+      <div class="dot" style="left:0;top:0;"></div>
+      <div class="line" style="left:8px;top:4px;width:80px;height:1px;"></div>
+      <div class="label" style="left:90px;top:-6px;">④ Active grip — Sato's pistol on sleeve</div>
+    </div>
+
+    <!-- 5 · Referee -->
+    <div class="annot" style="top:54%;left:91%;">
+      <div class="dot" style="left:0;top:0;"></div>
+      <div class="line" style="left:-44px;top:4px;width:44px;height:1px;"></div>
+      <div class="label" style="left:-190px;top:-5px;">⑤ Referee · calls matte</div>
+    </div>
+
+    <!-- 6 · Mat edge red line -->
+    <div class="annot" style="top:68%;left:8%;">
+      <div class="dot" style="left:0;top:0;"></div>
+      <div class="line" style="left:6px;top:4px;width:70px;height:1px;"></div>
+      <div class="label" style="left:80px;top:-6px;">⑥ Red danger line</div>
+    </div>
+
+  </div>
+
+  <!-- Bottom HUD -->
+  <div class="hud">
+    <div class="side">
+      <div class="name"><span class="dot" style="background:#2e4a6b;"></span>Tanaka · –73 kg</div>
+      <h4>Live stats</h4>
+      <div class="stats">
+        <div class="stat" data-v="7"><span class="k">Composure</span><span class="bar"></span><span class="v">7</span></div>
+        <div class="stat" data-v="5"><span class="k">R. grip</span><span class="bar"></span><span class="v">5</span></div>
+        <div class="stat" data-v="8"><span class="k">L. grip</span><span class="bar"></span><span class="v">8</span></div>
+        <div class="stat" data-v="6"><span class="k">Read</span><span class="bar"></span><span class="v">6</span></div>
+        <div class="stat" data-v="9"><span class="k">Trust</span><span class="bar"></span><span class="v">9</span></div>
+      </div>
+    </div>
+
+    <div class="center">
+      <h4>Match prose · round 1</h4>
+      <div class="prose">
+        <div class="ln"><span class="t">0:14</span><span>Grip battle. Both hands engaged. Forearms fatiguing.</span></div>
+        <div class="ln"><span class="t">0:18</span><span>Tanaka attempts <em>seoi-nage</em> — Sato sprawls. <em>Throw stuffed.</em></span></div>
+        <div class="ln"><span class="t">0:22</span><span>Sato attacks <em>o-uchi-gari</em> — Tanaka's left leg absorbs.</span></div>
+        <div class="ln"><span class="t">0:24</span><span><em>Matte.</em></span></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="name"><span class="dot" style="background:#f5edd8;"></span>Sato · –73 kg</div>
+      <h4>Live stats</h4>
+      <div class="stats">
+        <div class="stat" data-v="8"><span class="k">Composure</span><span class="bar"></span><span class="v">8</span></div>
+        <div class="stat" data-v="9"><span class="k">R. grip</span><span class="bar"></span><span class="v">9</span></div>
+        <div class="stat" data-v="6"><span class="k">L. grip</span><span class="bar"></span><span class="v">6</span></div>
+        <div class="stat" data-v="7"><span class="k">Read</span><span class="bar"></span><span class="v">7</span></div>
+        <div class="stat" data-v="6"><span class="k">Trust</span><span class="bar"></span><span class="v">6</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend explaining the six callouts -->
+  <div class="legend">
+    <div class="item"><span class="n">①</span><div><span>Bulb</span><div class="d">Single amber light source overhead. All other lighting falls off into ink black.</div></div></div>
+    <div class="item"><span class="n">②</span><div><span>Kanji 始道</span><div class="d">Wall banner — translates "the way begins." Same kanji as the game title.</div></div></div>
+    <div class="item"><span class="n">③</span><div><span>Trophy shelf</span><div class="d">Legacy of the dojo. Passive UI — clicking opens the Wall of Champions.</div></div></div>
+    <div class="item"><span class="n">④</span><div><span>Grip state</span><div class="d">Amber dot marks the live grip contact. Brightens on engagement, dims on break.</div></div></div>
+    <div class="item"><span class="n">⑤</span><div><span>Referee</span><div class="d">Pixel sprite at the mat edge. Raises hand to call matte / ippon / hansoku.</div></div></div>
+    <div class="item"><span class="n">⑥</span><div><span>Danger line</span><div class="d">Red perimeter. Stepping off loses a point. Matters in close contests.</div></div></div>
+  </div>
+
+</div>
+</body></html>

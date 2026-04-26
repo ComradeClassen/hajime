@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  html,body{margin:0;padding:0;background:var(--bg-paper);color:var(--fg-paper);font-family:var(--font-serif);}
+  .card{padding:18px 22px;}
+  h4{font-family:var(--font-serif);font-weight:400;font-size:15px;margin:0 0 4px;letter-spacing:-0.005em;}
+  .sub{font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:rgba(26,20,16,0.5);margin:0 0 14px;}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12.5px;line-height:1.55;}
+  .cell{background:#faf4e2;border:1px solid #d8cdb0;border-radius:3px;padding:10px 12px;}
+  .lab{font-size:9px;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:4px;}
+  .is .lab{color:#4a5838;}
+  .isnt .lab{color:#7b2418;}
+  em{font-style:italic;color:var(--fg-paper);}
+
+  .say{
+    margin-top:14px;
+    background:#1a1410;color:#f5edd8;
+    border-radius:3px;padding:14px 16px;
+    font-family:var(--font-serif);font-style:italic;font-size:14px;line-height:1.65;
+    position:relative;
+  }
+  .say .tick{
+    font-family:'IBM Plex Mono',monospace;font-style:normal;color:#d4a04a;
+    font-size:11px;letter-spacing:0.05em;margin-right:8px;
+  }
+  .say .hl{color:#d4a04a;font-style:normal;}
+  .caption{
+    font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:0.18em;
+    text-transform:uppercase;color:rgba(245,237,216,0.45);
+    position:absolute;top:10px;right:14px;
+  }
+</style></head><body>
+<div class="card">
+  <h4>Voice — like Neil Adams on commentary</h4>
+  <p class="sub">Present tense · technical · warm · never hyped</p>
+
+  <div class="cols">
+    <div class="cell is"><div class="lab">is</div><em>Present tense.</em> "He's reaching for the lapel." Not "he reached."</div>
+    <div class="cell isnt"><div class="lab">is not</div>Past-tense recap. The match is happening now.</div>
+
+    <div class="cell is"><div class="lab">is</div><em>Technically specific.</em> Names the grip, the foot, the direction of kuzushi.</div>
+    <div class="cell isnt"><div class="lab">is not</div>Vague action verbs. No "attacks," "grapples," "battles."</div>
+
+    <div class="cell is"><div class="lab">is</div><em>Warm &amp; knowing.</em> A former champion who's felt this exact grip before.</div>
+    <div class="cell isnt"><div class="lab">is not</div>Hyped. No exclamation marks. No "EPIC." No "CRUSHED."</div>
+
+    <div class="cell is"><div class="lab">is</div><em>Allowed small asides.</em> "Now this is interesting." "Watch his back foot."</div>
+    <div class="cell isnt"><div class="lab">is not</div>Jargon-walled. Japanese used only where it's the real word — ippon, matte, kuzushi.</div>
+  </div>
+
+  <div class="say">
+    <span class="caption">Sample commentary</span>
+    <div><span class="tick">0:09</span>He's got the high collar now. Deep grip. And that's the grip he wants — you'll see why in a second.</div>
+    <div style="margin-top:6px;"><span class="tick">0:18</span>Seoi-nage — <span class="hl">stuffed.</span> Sato saw it coming. Now, watch his back foot on the reset…</div>
+  </div>
+</div>
+</body></html>

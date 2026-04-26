@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <defs>
+    <radialGradient id="wash" cx="42%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#1a1410" stop-opacity="0.16"></stop>
+      <stop offset="70%" stop-color="#1a1410" stop-opacity="0"></stop>
+    </radialGradient>
+  </defs>
+  
+  <circle cx="78" cy="78" r="60" fill="url(#wash)"></circle>
+  
+  <text x="80" y="112" font-family="Hiragino Mincho Pro, Yu Mincho, Songti SC, Noto Serif JP, serif" font-weight="900" font-size="124" fill="#1a1410" fill-opacity="0.22" text-anchor="middle" filter="blur(1.6)" transform="translate(1,1.2)">始</text>
+  
+  <text x="80" y="112" font-family="Hiragino Mincho Pro, Yu Mincho, Songti SC, Noto Serif JP, serif" font-weight="900" font-size="124" fill="#1a1410" text-anchor="middle">始</text>
+  
+  <g transform="translate(124,124) rotate(-6)">
+    <rect x="-14" y="-14" width="28" height="28" fill="#8a2a1c" rx="1"></rect>
+    <text x="0" y="5" font-family="Hiragino Mincho Pro, Yu Mincho, Songti SC, Noto Serif JP, serif" font-weight="900" font-size="18" fill="#f5edd8" text-anchor="middle">始</text>
+  </g>
+</svg>

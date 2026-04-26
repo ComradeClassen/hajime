@@ -1,0 +1,1507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1920" />
+<title>Hajime — Working Deck v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Shippori+Mincho:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="deck-stage.js" defer></script>
+<style>
+:root{
+  --sumi:        #15140f;
+  --sumi-2:      #2a261d;
+  --sumi-3:      #4a4538;
+  --washi:       #f3ede0;
+  --washi-2:     #e8e0cd;
+  --washi-3:     #d8cfb8;
+  --tatami:      #6f7a4a;
+  --tatami-deep: #4d5634;
+  --tatami-pale: #b6bf94;
+  --shu:         #b8331f;
+  --shu-deep:    #8a2615;
+  --gold:        #b08a3a;
+  --rule:        #c4b896;
+  --rule-strong: #8a8260;
+
+  --serif-display: "Fraunces", "Shippori Mincho", Georgia, serif;
+  --serif-body:    "Source Serif 4", Georgia, serif;
+  --sans:          "Inter", system-ui, sans-serif;
+  --mono:          "JetBrains Mono", ui-monospace, monospace;
+  --jp:            "Shippori Mincho", "Hiragino Mincho ProN", serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:var(--sumi);color:var(--sumi);font-family:var(--serif-body);}
+
+deck-stage > section{
+  width:1920px; height:1080px;
+  position:relative; overflow:hidden;
+  background:var(--washi);
+  color:var(--sumi);
+  font-family:var(--serif-body);
+}
+
+/* shared chrome */
+.pad{ padding:96px 128px; height:100%; box-sizing:border-box; display:flex; flex-direction:column;}
+.eyebrow{font-family:var(--mono); font-size:16px; letter-spacing:.22em; color:var(--shu-deep); text-transform:uppercase; margin-bottom:18px;}
+.eyebrow b{font-weight:600; color:var(--sumi); margin-right:10px;}
+.lede{font-family:var(--serif-body); font-style:italic; font-size:26px; color:var(--sumi-2); line-height:1.45; max-width:48ch; text-wrap:pretty;}
+.body{font-family:var(--serif-body); font-size:21px; color:var(--sumi-2); line-height:1.55; max-width:54ch; text-wrap:pretty;}
+.body b{color:var(--sumi);}
+.body em{font-style:italic; color:var(--shu-deep);}
+.tiny{font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.12em;}
+
+/* footer chrome (consistent across slides) */
+.foot{
+  position:absolute; left:128px; right:128px; bottom:42px;
+  display:flex; justify-content:space-between; align-items:center;
+  font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.18em; text-transform:uppercase;
+}
+.foot .brand{color:var(--shu-deep);}
+.foot .brand .jp{font-family:var(--jp); margin-right:8px; font-style:normal; letter-spacing:.06em; color:var(--shu);}
+.foot .pos{font-variant-numeric:tabular-nums;}
+
+/* dark variant for slides that want sanctuary feel */
+.dark{ background:var(--sumi); color:var(--washi);}
+.dark .body{color:rgba(243,237,224,.78);}
+.dark .body b{color:var(--washi);}
+.dark .body em{color:#e3a058;}
+.dark .lede{color:rgba(243,237,224,.85);}
+.dark .eyebrow{color:#e3a058;}
+.dark .eyebrow b{color:var(--washi);}
+.dark .tiny{color:rgba(243,237,224,.5);}
+.dark .foot{color:rgba(243,237,224,.4);}
+.dark .foot .brand{color:#e3a058;}
+
+/* small reusable bits */
+.rule-h{height:1px; background:var(--rule); margin:0;}
+.rule-h.strong{background:var(--rule-strong);}
+.rule-h.shu{height:2px; background:var(--shu);}
+.dark .rule-h{background:rgba(243,237,224,.18);}
+.dark .rule-h.strong{background:rgba(243,237,224,.35);}
+
+/* ============================================================
+   SLIDE 1 — Cold open · rainy Tuesday, basement
+   ============================================================ */
+.s-cold{background:#0c0a07; color:var(--washi); padding:0;}
+
+/* room shell: walls + ceiling + floor in perspective */
+.s-cold .scene{
+  position:absolute; inset:0;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 70%, rgba(212,160,74,.18) 0%, transparent 70%),
+    linear-gradient(180deg, #07060a 0%, #100c08 38%, #1a140d 70%, #0d0a07 100%);
+}
+
+/* high strip of street-level basement windows showing rainy night */
+.s-cold .windows{
+  position:absolute; left:0; right:0; top:0; height:170px;
+  background:
+    linear-gradient(180deg, #07060a 0%, #0a0908 70%, transparent 100%);
+  display:flex; align-items:center; justify-content:center; gap:28px;
+  padding: 30px 100px 0;
+  z-index:2;
+}
+.s-cold .win{
+  flex:1; max-width:340px; height:88px;
+  position:relative;
+  background:
+    linear-gradient(180deg, #1d2735 0%, #2a3a4f 50%, #1a2230 100%);
+  border:1px solid #0a0907;
+  box-shadow: inset 0 0 0 4px #0d0a07, inset 0 0 18px rgba(0,0,0,.7);
+  overflow:hidden;
+}
+.s-cold .win::before{
+  /* rain streaks on glass */
+  content:""; position:absolute; inset:0;
+  background:
+    repeating-linear-gradient(105deg,
+      transparent 0 6px,
+      rgba(180,200,220,.18) 6px 7px,
+      transparent 7px 22px),
+    repeating-linear-gradient(98deg,
+      transparent 0 14px,
+      rgba(180,200,220,.08) 14px 15px,
+      transparent 15px 50px);
+  opacity:.85;
+}
+.s-cold .win::after{
+  /* horizontal mullion */
+  content:""; position:absolute; left:0; right:0; top:50%; height:3px;
+  background:#0d0a07;
+  box-shadow: 0 -1px 0 rgba(255,255,255,.04);
+}
+.s-cold .win .car{
+  position:absolute; bottom:8px; height:6px; border-radius:2px;
+  background:#f7d68a; box-shadow:0 0 8px 2px rgba(247,214,138,.55);
+}
+.s-cold .win .car.a{ left:18%; width:14px; }
+.s-cold .win .car.b{ left:55%; width:10px; opacity:.7; }
+.s-cold .win .tail{
+  position:absolute; bottom:8px; height:6px; border-radius:2px;
+  background:#b8331f; box-shadow:0 0 6px 1px rgba(184,51,31,.55);
+}
+.s-cold .win .tail.a{ left:38%; width:10px; }
+
+/* concrete wall band below the windows */
+.s-cold .wall{
+  position:absolute; left:0; right:0; top:170px; bottom:46%;
+  background:
+    linear-gradient(180deg, #14110c 0%, #1a160f 60%, #100c08 100%);
+  border-top:1px solid #0a0907;
+  border-bottom:1px solid #060504;
+}
+.s-cold .wall::before{
+  /* faint horizontal mortar lines */
+  content:""; position:absolute; inset:0; opacity:.18;
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0 78px,
+      rgba(120,100,70,.5) 78px 79px,
+      transparent 79px 158px);
+}
+
+/* tatami floor: panels + black borders + perspective */
+.s-cold .floor{
+  position:absolute; left:0; right:0; bottom:0; height:46%;
+  background:
+    linear-gradient(180deg, #2a2014 0%, #1a140d 100%);
+  perspective: 1200px;
+  perspective-origin: 50% 0%;
+}
+.s-cold .tatami{
+  position:absolute; left:50%; bottom:18px; transform:translateX(-50%) rotateX(58deg);
+  transform-origin: 50% 100%;
+  width:1280px; height:540px;
+  display:grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap:6px;
+  padding:8px;
+  background:#0a0806;
+  box-shadow:
+    inset 0 0 0 4px #0a0806,
+    inset 0 30px 50px rgba(0,0,0,.55),
+    0 -30px 80px rgba(212,160,74,.10);
+}
+.s-cold .tatami .panel{
+  background:
+    linear-gradient(180deg, #5e6a3c 0%, #4d5634 60%, #3a4427 100%);
+  position:relative;
+  box-shadow: inset 0 0 0 1px #2a3017, inset 0 0 12px rgba(0,0,0,.35);
+}
+.s-cold .tatami .panel::after{
+  /* tatami weave texture */
+  content:""; position:absolute; inset:0; opacity:.4;
+  background:
+    repeating-linear-gradient(90deg,
+      transparent 0 4px,
+      rgba(0,0,0,.18) 4px 5px,
+      transparent 5px 10px);
+}
+
+/* benches flanking the mat */
+.s-cold .bench{
+  position:absolute; bottom:16%;
+  width:240px; height:42px;
+  background:
+    linear-gradient(180deg, #2a2218 0%, #1a140d 100%);
+  border-top:2px solid #3a2f1f;
+  box-shadow: 0 8px 18px rgba(0,0,0,.65), inset 0 0 0 1px #0a0806;
+}
+.s-cold .bench.l{ left:90px; transform: skewY(8deg); }
+.s-cold .bench.r{ right:90px; transform: skewY(-8deg); }
+.s-cold .bench .leg{
+  position:absolute; bottom:-32px; width:6px; height:32px;
+  background:#1a140d; box-shadow: 0 0 0 1px #0a0806;
+}
+.s-cold .bench .leg.a{ left:24px; }
+.s-cold .bench .leg.b{ right:24px; }
+
+/* gear hung on the wall */
+.s-cold .gi{
+  position:absolute; top:198px; width:46px; height:78px;
+  background: linear-gradient(180deg, #d8cfb8 0%, #b8b09a 100%);
+  box-shadow: 0 4px 8px rgba(0,0,0,.55), inset 0 0 0 1px #8a8270;
+  z-index:3;
+}
+.s-cold .gi::before{
+  content:""; position:absolute; left:-3px; right:-3px; top:-4px; height:6px;
+  background:#3a3022;
+}
+.s-cold .gi.a{ left:120px; transform: rotate(-2deg); }
+.s-cold .gi.b{ left:172px; transform: rotate(1deg); height:74px;}
+.s-cold .gi.c{ right:170px; transform: rotate(-1deg); height:80px;}
+.s-cold .gi.d{ right:118px; transform: rotate(2deg); height:72px;}
+
+/* a stair shadow at the top-right corner suggesting descent */
+.s-cold .stair{
+  position:absolute; top:170px; right:0; width:240px; height:200px;
+  background:
+    linear-gradient(135deg, transparent 0%, transparent 30%, rgba(0,0,0,.55) 31%, rgba(0,0,0,.7) 60%, rgba(0,0,0,.4) 100%),
+    repeating-linear-gradient(180deg,
+      transparent 0 22px,
+      rgba(0,0,0,.4) 22px 24px,
+      transparent 24px 46px);
+  pointer-events:none;
+  z-index:3;
+}
+
+/* hanging bulb above the mat */
+.s-cold .bulb{
+  position:absolute; left:50%; top:200px; transform:translateX(-50%);
+  width:6px; height:130px; background:linear-gradient(180deg, #2a261d, #1a1410);
+  z-index:4;
+}
+.s-cold .bulb::after{
+  content:""; position:absolute; left:50%; top:130px; transform:translateX(-50%);
+  width:48px; height:48px; border-radius:50%;
+  background: radial-gradient(circle at 50% 40%, #fff2c2 0%, #f7d68a 25%, #d4a04a 55%, #6a4f20 85%, #2a1f10 100%);
+  box-shadow: 0 0 60px 22px rgba(247,214,138,.32), 0 0 180px 80px rgba(212,160,74,.10);
+}
+
+/* drifting dust over the bulb cone */
+.s-cold .rain{
+  position:absolute; inset:0; opacity:.18; z-index:5;
+  background:
+    repeating-linear-gradient(105deg,
+      transparent 0 28px,
+      rgba(243,237,224,.06) 28px 29px,
+      transparent 29px 110px);
+  pointer-events:none;
+}
+
+.s-cold .copy{
+  position:absolute; left:128px; bottom:140px; max-width:38ch; z-index:8;
+}
+.s-cold .copy .stamp{
+  display:inline-block; font-family:var(--jp); font-size:22px;
+  background:var(--shu); color:#f7eedd;
+  padding:8px 14px; letter-spacing:.06em; margin-bottom:24px;
+  box-shadow: inset 0 0 0 2px #f7eedd, 0 0 0 1px var(--shu-deep);
+  transform:rotate(-2deg);
+}
+.s-cold .copy .head{
+  font-family:var(--serif-display); font-weight:300; font-size:64px; line-height:1.05; letter-spacing:-.015em;
+  color:var(--washi); margin-bottom:24px;
+  text-shadow: 0 2px 24px rgba(0,0,0,.6);
+}
+.s-cold .copy .head em{font-style:italic; font-weight:300; color:#e3a058;}
+.s-cold .copy .prose{
+  font-family:var(--serif-body); font-style:italic; font-size:24px; line-height:1.55; color:rgba(243,237,224,.78); max-width:38ch;
+  text-shadow: 0 2px 18px rgba(0,0,0,.6);
+}
+.s-cold .copy .prose .br{display:block; height:14px;}
+.s-cold .session-tag{
+  position:absolute; right:128px; top:96px; text-align:right; z-index:8;
+  font-family:var(--mono); font-size:13px; letter-spacing:.2em; color:rgba(243,237,224,.6); line-height:1.8;
+  text-shadow: 0 2px 12px rgba(0,0,0,.7);
+}
+.s-cold .session-tag b{color:#e3a058; font-weight:500; display:block; letter-spacing:.24em;}
+
+/* ============================================================
+   SLIDE 2 — HAJIME · the call
+   ============================================================ */
+.s-title{padding:0;}
+.s-title .left{
+  position:absolute; left:0; top:0; bottom:0; width:55%;
+  padding:120px 80px 240px 128px;
+  display:flex; flex-direction:column; justify-content:center;
+  z-index:2;
+}
+.s-title .right{
+  position:absolute; right:0; top:0; bottom:0; width:50%;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 50%, rgba(243,237,224,1) 0%, var(--washi-2) 100%);
+  display:flex; align-items:center; justify-content:center;
+  border-left:1px solid var(--rule);
+  z-index:1;
+}
+.s-title .right .big-jp{
+  font-family:var(--jp); font-weight:600; font-size:840px;
+  line-height:.85; color:var(--sumi); letter-spacing:-.02em;
+  position:relative;
+}
+.s-title .right .big-jp::after{
+  content:""; position:absolute; right:-30px; top:60px; width:90px; height:90px;
+  background:var(--shu); border-radius:50%;
+  box-shadow: inset 0 0 0 6px var(--washi);
+}
+.s-title .wm-eyebrow{
+  font-family:var(--mono); font-size:14px; letter-spacing:.28em; color:var(--shu-deep); text-transform:uppercase;
+  margin-bottom:32px;
+}
+.s-title .wm-eyebrow b{color:var(--sumi); margin-right:14px; font-weight:600;}
+.s-title h1{
+  font-family: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+  font-weight:600; font-size:200px; line-height:.86; letter-spacing:-.025em;
+  color:var(--sumi); margin-bottom:18px;
+}
+.s-title h1 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-title .pron{
+  font-family:var(--serif-body); font-style:italic; font-size:30px; color:var(--sumi-2); margin-bottom:48px;
+}
+.s-title .pron .ipa{font-family:var(--mono); font-style:normal; font-size:18px; color:var(--sumi-3); letter-spacing:.08em; margin-left:14px;}
+.s-title .meaning{
+  border-top:2px solid var(--sumi); padding-top:28px; max-width:42ch;
+}
+.s-title .meaning .mh{
+  font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--shu-deep); margin-bottom:14px;
+}
+.s-title .meaning p{
+  font-family:var(--serif-body); font-style:italic; font-size:22px; line-height:1.5; color:var(--sumi-2);
+}
+.s-title .meaning p + p{margin-top:14px;}
+.s-title .meaning p em{color:var(--shu-deep); font-style:italic;}
+.s-title .doc-meta{
+  position:absolute; left:128px; bottom:160px;
+  font-family:var(--mono); font-size:11px; letter-spacing:.16em; color:var(--sumi-3); line-height:1.7;
+  text-align:left; max-width:30ch;
+  background:var(--washi); padding:14px 18px 0 0; border-top:1px solid var(--rule);
+  z-index:3;
+}
+.s-title .doc-meta b{color:var(--shu-deep); font-weight:500; display:block; margin-bottom:4px;}
+
+/* ============================================================
+   SLIDE 3 — Orientation (for outside readers)
+   ============================================================ */
+.s-orient{}
+.s-orient .head-row{
+  display:grid; grid-template-columns:auto 1fr; gap:28px; align-items:baseline;
+  border-bottom:2px solid var(--sumi); padding-bottom:24px; margin-bottom:48px;
+}
+.s-orient .head-num{
+  font-family:var(--mono); font-size:14px; color:var(--shu-deep); letter-spacing:.2em;
+}
+.s-orient .head-num span{
+  display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:64px;
+  color:var(--sumi); line-height:1; margin-top:-2px;
+}
+.s-orient h2{
+  font-family:var(--serif-display); font-weight:400; font-size:80px; line-height:1; letter-spacing:-.018em;
+  color:var(--sumi);
+}
+.s-orient h2 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-orient .grid{
+  display:grid; grid-template-columns: 1fr 1fr; gap:48px 80px; flex:1; align-content:start;
+}
+.s-orient .qa{}
+.s-orient .qa .q{
+  font-family:var(--serif-display); font-weight:500; font-size:30px; line-height:1.2; letter-spacing:-.005em;
+  color:var(--sumi); margin-bottom:14px;
+}
+.s-orient .qa .q em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-orient .qa .a{
+  font-family:var(--serif-body); font-size:19px; line-height:1.5; color:var(--sumi-2); max-width:46ch;
+}
+.s-orient .qa .a b{color:var(--sumi);}
+.s-orient .qa .a em{font-style:italic; color:var(--shu-deep);}
+.s-orient .qa .tag{
+  display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--shu-deep);
+  border:1px solid var(--shu); padding:3px 7px; margin-bottom:12px; text-transform:uppercase;
+}
+.s-orient .footnote{
+  margin-top:32px; padding-top:20px; border-top:1px dashed var(--rule);
+  font-family:var(--serif-body); font-style:italic; font-size:17px; color:var(--sumi-3); max-width:80ch;
+}
+
+/* ============================================================
+   SLIDE 4 — The Loop (dojo center, match inside)
+   ============================================================ */
+.s-loop .head-row{
+  display:grid; grid-template-columns:auto 1fr auto; gap:28px; align-items:baseline;
+  border-bottom:2px solid var(--sumi); padding-bottom:24px; margin-bottom:36px;
+}
+.s-loop .head-num{font-family:var(--mono); font-size:14px; color:var(--shu-deep); letter-spacing:.2em;}
+.s-loop .head-num span{
+  display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:64px;
+  color:var(--sumi); line-height:1; margin-top:-2px;
+}
+.s-loop h2{font-family:var(--serif-display); font-weight:400; font-size:80px; line-height:1; letter-spacing:-.018em;}
+.s-loop h2 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-loop .head-meta{
+  font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.16em; line-height:1.6; text-align:right;
+}
+.s-loop .head-meta b{color:var(--shu-deep); font-weight:500; display:block;}
+
+.s-loop .body-row{display:grid; grid-template-columns: 720px 1fr; gap:80px; flex:1; align-items:center;}
+
+/* the diagram */
+.diagram{
+  position:relative; aspect-ratio:1/1; width:680px; margin:0 auto;
+}
+.diagram .ring{
+  position:absolute; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--mono); font-size:13px; letter-spacing:.18em; text-transform:uppercase;
+}
+.diagram .r-outer{
+  inset:0;
+  border:1px solid var(--rule);
+  background:
+    repeating-conic-gradient(from 0deg, var(--washi) 0 8deg, transparent 8deg 12deg);
+  background-color:transparent;
+}
+.diagram .r-week{
+  inset:60px;
+  border:1px dashed var(--rule-strong);
+}
+.diagram .r-session{
+  inset:140px;
+  border:1px solid var(--rule-strong);
+  background:var(--washi-2);
+}
+.diagram .r-pair{
+  inset:230px;
+  border:2px solid var(--tatami-deep);
+  background:var(--tatami-pale);
+}
+.diagram .r-match{
+  inset:290px;
+  border:3px solid var(--shu);
+  background:var(--washi);
+  box-shadow: 0 0 0 8px rgba(184,51,31,.08);
+}
+.diagram .r-match .core{
+  text-align:center;
+}
+.diagram .r-match .core .jp{font-family:var(--jp); font-size:38px; color:var(--shu); display:block; margin-bottom:4px; letter-spacing:.04em;}
+.diagram .r-match .core .lbl{font-family:var(--serif-display); font-style:italic; font-weight:400; font-size:22px; color:var(--sumi); letter-spacing:0;}
+.diagram .lbl-out{
+  position:absolute; font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase;
+  background:var(--washi); padding:2px 8px;
+}
+.diagram .lbl-out b{color:var(--shu-deep); font-weight:500;}
+
+/* loop right column */
+.loop-text{}
+.loop-text .pull{
+  font-family:var(--serif-display); font-weight:400; font-size:38px; line-height:1.18; letter-spacing:-.008em;
+  color:var(--sumi); margin-bottom:28px; max-width:24ch;
+}
+.loop-text .pull em{font-style:italic; color:var(--shu-deep); font-weight:300;}
+.loop-text p{
+  font-family:var(--serif-body); font-size:20px; line-height:1.55; color:var(--sumi-2); margin-bottom:18px; max-width:48ch;
+}
+.loop-text p b{color:var(--sumi);}
+.loop-text p em{font-style:italic; color:var(--shu-deep);}
+.loop-text .inversion{
+  margin-top:28px; padding:20px 24px; background:var(--washi-2); border-left:4px solid var(--shu);
+}
+.loop-text .inversion .il{
+  font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--shu-deep); text-transform:uppercase; margin-bottom:8px;
+}
+.loop-text .inversion p{
+  font-family:var(--serif-body); font-style:italic; font-size:18px; color:var(--sumi-2); margin:0;
+}
+
+/* ============================================================
+   SLIDE 5 — Five Principles
+   ============================================================ */
+.s-five .head-row{
+  display:grid; grid-template-columns:auto 1fr auto; gap:28px; align-items:baseline;
+  border-bottom:2px solid var(--sumi); padding-bottom:24px; margin-bottom:48px;
+}
+.s-five .head-num{font-family:var(--mono); font-size:14px; color:var(--shu-deep); letter-spacing:.2em;}
+.s-five .head-num span{display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:64px; color:var(--sumi); line-height:1; margin-top:-2px;}
+.s-five h2{font-family:var(--serif-display); font-weight:400; font-size:80px; line-height:1; letter-spacing:-.018em;}
+.s-five h2 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-five .head-meta{font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.16em; line-height:1.6; text-align:right;}
+.s-five .head-meta b{color:var(--shu-deep); font-weight:500; display:block;}
+
+.principles{display:grid; grid-template-columns:repeat(5, 1fr); gap:0; flex:1; align-items:stretch;}
+.principle{
+  position:relative; padding:36px 32px 32px;
+  border-right:1px solid var(--rule);
+  display:flex; flex-direction:column;
+}
+.principle:last-child{border-right:none;}
+.principle .num{
+  font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:104px; line-height:1;
+  color:var(--shu); margin-bottom:18px; letter-spacing:-.02em;
+}
+.principle .num .of{font-family:var(--mono); font-style:normal; font-size:13px; color:var(--sumi-3); letter-spacing:.16em; vertical-align:top; margin-left:4px;}
+.principle .name{
+  font-family:var(--serif-display); font-weight:500; font-size:28px; line-height:1.12; letter-spacing:-.005em;
+  color:var(--sumi); margin-bottom:14px; min-height:3em;
+}
+.principle .name em{font-style:italic; font-weight:400; color:var(--shu-deep);}
+.principle .body{
+  font-family:var(--serif-body); font-size:16px; line-height:1.5; color:var(--sumi-2); max-width:none;
+}
+.principle .body em{font-style:italic; color:var(--shu-deep);}
+.principle .body b{color:var(--sumi);}
+.principle .tag{
+  margin-top:auto; padding-top:18px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--sumi-3); text-transform:uppercase;
+  border-top:1px dashed var(--rule);
+}
+
+/* ============================================================
+   SLIDE 6 — Six Cultural Inputs
+   ============================================================ */
+.s-six .head-row{
+  display:grid; grid-template-columns:auto 1fr auto; gap:28px; align-items:baseline;
+  border-bottom:2px solid var(--sumi); padding-bottom:24px; margin-bottom:40px;
+}
+.s-six .head-num{font-family:var(--mono); font-size:14px; color:var(--shu-deep); letter-spacing:.2em;}
+.s-six .head-num span{display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:64px; color:var(--sumi); line-height:1; margin-top:-2px;}
+.s-six h2{font-family:var(--serif-display); font-weight:400; font-size:76px; line-height:1; letter-spacing:-.018em;}
+.s-six h2 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-six .head-meta{font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.16em; line-height:1.6; text-align:right;}
+.s-six .head-meta b{color:var(--shu-deep); font-weight:500; display:block;}
+
+.s-six .lede-row{
+  font-family:var(--serif-body); font-style:italic; font-size:22px; line-height:1.5; color:var(--sumi-2);
+  margin-bottom:36px; max-width:78ch;
+}
+.s-six .lede-row em{font-style:italic; color:var(--shu-deep);}
+
+.cult-grid{display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:1fr 1fr; gap:0; flex:1; border-top:1px solid var(--rule-strong);}
+.cult{
+  position:relative; padding:28px 32px;
+  border-right:1px solid var(--rule); border-bottom:1px solid var(--rule);
+  display:grid; grid-template-columns:64px 1fr; gap:18px; align-content:start;
+}
+.cult:nth-child(3n){border-right:none;}
+.cult:nth-child(n+4){border-bottom:none;}
+.cult .glyph{
+  width:56px; height:56px; border:1.5px solid var(--sumi); border-radius:2px;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--jp); font-size:26px; color:var(--sumi); background:var(--washi-2);
+  position:relative;
+}
+.cult .glyph .dot{position:absolute; top:-4px; right:-4px; width:10px; height:10px; background:var(--shu); border-radius:50%;}
+.cult .label{font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--shu-deep); text-transform:uppercase; margin-bottom:6px;}
+.cult .name{font-family:var(--serif-display); font-weight:500; font-size:24px; line-height:1.15; letter-spacing:-.005em; color:var(--sumi); margin-bottom:8px;}
+.cult .name em{font-style:italic; color:var(--shu-deep); font-weight:400;}
+.cult .desc{font-family:var(--serif-body); font-size:16px; line-height:1.5; color:var(--sumi-2);}
+.cult .desc em{font-style:italic; color:var(--shu-deep);}
+.cult .desc b{color:var(--sumi);}
+
+/* ============================================================
+   SLIDE 7 · 8 — Hero artifact slides (presented as documents)
+   ============================================================ */
+.s-hero{padding:0; background:var(--sumi); color:var(--washi);}
+.s-hero .hero-pad{ padding:48px 96px 110px; height:100%; display:flex; flex-direction:column;}
+
+.s-hero .hero-head{
+  display:grid; grid-template-columns:auto 1fr auto; gap:28px; align-items:baseline;
+  padding-bottom:22px; border-bottom:1px solid rgba(243,237,224,.22);
+  margin-bottom:30px;
+}
+.s-hero .hero-head .num{font-family:var(--mono); font-size:13px; color:#e3a058; letter-spacing:.22em;}
+.s-hero .hero-head .num span{display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:54px; color:var(--washi); line-height:1; margin-top:-2px;}
+.s-hero .hero-head h2{
+  font-family:var(--serif-display); font-weight:400; font-size:62px; line-height:1; letter-spacing:-.018em; color:var(--washi);
+}
+.s-hero .hero-head h2 em{font-style:italic; font-weight:300; color:#e3a058;}
+.s-hero .hero-head .meta{
+  text-align:right; font-family:var(--mono); font-size:11px; color:rgba(243,237,224,.55); letter-spacing:.16em; line-height:1.7; text-transform:uppercase;
+}
+.s-hero .hero-head .meta b{color:#e3a058; font-weight:500; display:block; letter-spacing:.22em;}
+
+.s-hero .hero-stage{
+  flex:1;
+  position:relative;
+  display:flex; align-items:center; justify-content:center;
+}
+.s-hero .doc-frame{
+  position:relative;
+  width:1632px; height:520px;
+  background:var(--washi);
+  box-shadow:
+    0 30px 80px rgba(0,0,0,.55),
+    0 0 0 1px rgba(243,237,224,.08);
+  overflow:hidden;
+}
+.s-hero .doc-frame iframe{
+  position:absolute; top:50%; left:50%;
+  width:1920px; height:1080px;
+  border:0;
+  transform: translate(-50%, -50%) scale(0.481);
+  transform-origin: center center;
+}
+.s-hero .doc-frame.fit-watched iframe{
+  width:1632px; height:820px;
+  transform: translate(-50%, -50%) scale(1);
+}
+.s-hero .doc-frame .corner-tag{
+  position:absolute; top:14px; right:18px;
+  font-family:var(--mono); font-size:10px; letter-spacing:.22em; color:var(--shu-deep); text-transform:uppercase;
+  background:rgba(243,237,224,.85); padding:4px 8px; pointer-events:none; z-index:5;
+}
+.s-hero .caption-row{
+  display:grid; grid-template-columns:1fr auto; gap:32px; align-items:flex-end;
+  margin-top:20px; margin-bottom:8px;
+}
+.s-hero .caption-row .left{max-width:64ch;}
+.s-hero .caption-row .h{
+  font-family:var(--serif-display); font-weight:400; font-style:italic; font-size:30px; line-height:1.25; color:var(--washi); letter-spacing:-.005em;
+}
+.s-hero .caption-row .h em{font-style:italic; color:#e3a058;}
+.s-hero .caption-row .sub{
+  margin-top:8px; font-family:var(--serif-body); font-size:17px; color:rgba(243,237,224,.7); line-height:1.5; max-width:64ch;
+}
+.s-hero .caption-row .sub em{color:#e3a058; font-style:italic;}
+.s-hero .caption-row .right{
+  text-align:right; font-family:var(--mono); font-size:11px; color:rgba(243,237,224,.55); letter-spacing:.18em; text-transform:uppercase; line-height:1.8;
+}
+.s-hero .caption-row .right b{color:#e3a058; font-weight:500; display:block;}
+
+.s-hero .foot{color:rgba(243,237,224,.4);}
+.s-hero .foot .brand{color:#e3a058;}
+
+/* ============================================================
+   SLIDE 9 — Multi-year arc + Anchoring Scenes
+   ============================================================ */
+.s-arc .head-row{
+  display:grid; grid-template-columns:auto 1fr auto; gap:28px; align-items:baseline;
+  border-bottom:2px solid var(--sumi); padding-bottom:24px; margin-bottom:48px;
+}
+.s-arc .head-num{font-family:var(--mono); font-size:14px; color:var(--shu-deep); letter-spacing:.2em;}
+.s-arc .head-num span{display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:64px; color:var(--sumi); line-height:1; margin-top:-2px;}
+.s-arc h2{font-family:var(--serif-display); font-weight:400; font-size:80px; line-height:1; letter-spacing:-.018em;}
+.s-arc h2 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-arc .head-meta{font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.16em; line-height:1.6; text-align:right;}
+.s-arc .head-meta b{color:var(--shu-deep); font-weight:500; display:block;}
+
+.timeline{
+  position:relative;
+  margin-top:24px; padding:36px 0 64px;
+}
+.timeline .axis{
+  position:absolute; left:0; right:0; top:78px; height:2px; background:var(--sumi);
+}
+.timeline .axis::before,
+.timeline .axis::after{
+  content:""; position:absolute; top:-5px; width:12px; height:12px; background:var(--washi); border:2px solid var(--sumi); border-radius:50%;
+}
+.timeline .axis::before{left:0;}
+.timeline .axis::after{right:0; background:var(--shu);}
+.tl-grid{
+  display:grid; grid-template-columns: repeat(6, 1fr); gap:0; position:relative;
+}
+.tl-stop{
+  position:relative; padding:0 12px;
+  display:flex; flex-direction:column; align-items:flex-start;
+}
+.tl-stop .yr{
+  font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--shu-deep); text-transform:uppercase; margin-bottom:8px;
+}
+.tl-stop .yr b{color:var(--sumi); font-weight:500; margin-right:8px;}
+.tl-stop .marker{
+  width:18px; height:18px; border-radius:50%; background:var(--washi); border:2px solid var(--sumi);
+  margin: 6px 0 18px;
+  position:relative;
+}
+.tl-stop.anchor .marker{ background:var(--shu); border-color:var(--shu-deep); box-shadow:0 0 0 4px rgba(184,51,31,.18);}
+.tl-stop.anchor .marker::after{
+  content:""; position:absolute; left:50%; top:-12px; transform:translateX(-50%);
+  width:1px; height:8px; background:var(--shu-deep);
+}
+.tl-stop .name{
+  font-family:var(--serif-display); font-weight:500; font-size:22px; line-height:1.15; letter-spacing:-.005em;
+  color:var(--sumi); margin-bottom:8px; max-width:18ch;
+}
+.tl-stop .name em{font-style:italic; color:var(--shu-deep); font-weight:400;}
+.tl-stop .desc{
+  font-family:var(--serif-body); font-size:14px; line-height:1.45; color:var(--sumi-2); max-width:22ch;
+}
+.tl-stop .desc em{font-style:italic; color:var(--shu-deep);}
+.tl-stop.anchor::before{
+  content:"★ ANCHORING SCENE";
+  position:absolute; top:-30px; left:12px;
+  font-family:var(--mono); font-size:9px; letter-spacing:.22em; color:var(--shu-deep);
+  background:var(--shu); color:var(--washi); padding:3px 8px;
+}
+.timeline{ padding-top:48px; }
+
+.arc-foot{
+  display:grid; grid-template-columns: 1fr 1fr 1fr; gap:48px; margin-top:36px; padding-top:24px; border-top:1px dashed var(--rule);
+}
+.arc-foot .col .ek{font-family:var(--mono); font-size:11px; letter-spacing:.18em; color:var(--shu-deep); text-transform:uppercase; margin-bottom:8px;}
+.arc-foot .col .ek b{color:var(--sumi); font-weight:500; margin-right:10px;}
+.arc-foot .col p{font-family:var(--serif-body); font-size:15px; line-height:1.5; color:var(--sumi-2); max-width:42ch;}
+.arc-foot .col p b{color:var(--sumi);}
+.arc-foot .col p em{font-style:italic; color:var(--shu-deep);}
+
+/* ============================================================
+   SLIDE 10 — Inner-life mechanic
+   ============================================================ */
+.s-bones .head-row{
+  display:grid; grid-template-columns:auto 1fr auto; gap:28px; align-items:baseline;
+  border-bottom:2px solid var(--sumi); padding-bottom:24px; margin-bottom:36px;
+}
+.s-bones .head-num{font-family:var(--mono); font-size:14px; color:var(--shu-deep); letter-spacing:.2em;}
+.s-bones .head-num span{display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:64px; color:var(--sumi); line-height:1; margin-top:-2px;}
+.s-bones h2{font-family:var(--serif-display); font-weight:400; font-size:72px; line-height:1; letter-spacing:-.018em;}
+.s-bones h2 em{font-style:italic; font-weight:300; color:var(--shu-deep);}
+.s-bones .head-meta{font-family:var(--mono); font-size:12px; color:var(--sumi-3); letter-spacing:.16em; line-height:1.6; text-align:right;}
+.s-bones .head-meta b{color:var(--shu-deep); font-weight:500; display:block;}
+
+.bones-lede{
+  font-family:var(--serif-body); font-style:italic; font-size:21px; line-height:1.4; color:var(--sumi-2);
+  max-width:96ch; margin-bottom:24px;
+}
+.bones-lede em{color:var(--shu-deep); font-style:italic;}
+.bones-lede b{color:var(--sumi); font-style:normal; font-weight:600;}
+
+.bones-grid{
+  display:grid; grid-template-columns: 1fr 80px 1fr; gap:0; flex:1;
+}
+.bone-col{
+  padding:24px 28px 22px; background:var(--washi-2); border:1px solid var(--rule); position:relative;
+}
+.bone-col.right{background:var(--washi);}
+.bone-col .tag{
+  display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--shu-deep); text-transform:uppercase;
+  border:1px solid var(--shu); padding:3px 9px; margin-bottom:12px; background:var(--washi);
+}
+.bone-col h3{
+  font-family:var(--serif-display); font-weight:500; font-size:28px; line-height:1.05; letter-spacing:-.008em; color:var(--sumi); margin-bottom:4px;
+}
+.bone-col h3 em{font-style:italic; font-weight:400; color:var(--shu-deep);}
+.bone-col .sub{font-family:var(--serif-body); font-style:italic; font-size:15px; color:var(--sumi-2); margin-bottom:14px; line-height:1.4;}
+.bone-col .item{
+  border-top:1px solid var(--rule); padding:10px 0;
+}
+.bone-col .item:last-child{padding-bottom:0;}
+.bone-col .item .nm{
+  display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:baseline; margin-bottom:3px;
+}
+.bone-col .item .nm .k{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--sumi-3); text-transform:uppercase;}
+.bone-col .item .nm .t{font-family:var(--serif-display); font-weight:500; font-size:17px; color:var(--sumi); letter-spacing:-.005em;}
+.bone-col .item .nm .t em{font-style:italic; color:var(--shu-deep); font-weight:400;}
+.bone-col .item .nm .h{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--shu-deep); text-transform:uppercase;}
+.bone-col .item p{font-family:var(--serif-body); font-size:13.5px; line-height:1.45; color:var(--sumi-2); max-width:46ch;}
+.bone-col .item p em{font-style:italic; color:var(--shu-deep);}
+
+.bones-bridge{
+  display:flex; align-items:center; justify-content:center;
+  position:relative;
+}
+.bones-bridge::before, .bones-bridge::after{
+  content:""; position:absolute; top:50%; height:1px; background:var(--rule-strong);
+  width:100%;
+}
+.bones-bridge .arrow{
+  position:relative; z-index:2; background:var(--washi);
+  font-family:var(--jp); font-size:36px; color:var(--shu); padding:14px 8px; line-height:1;
+  border:1px solid var(--rule);
+}
+.bones-bridge .arrow .small{
+  display:block; font-family:var(--mono); font-size:9px; letter-spacing:.22em; color:var(--sumi-3); margin-top:6px; text-align:center;
+}
+
+.pad.s-bones{ padding-bottom:90px; }
+
+/* inner-life mechanic grid (replaces the two-column shared-bones grid) */
+.inner-grid{
+  display:grid; grid-template-columns: 1fr 1fr; gap:24px;
+  flex:1;
+}
+.inner-card{
+  background:var(--washi-2);
+  border:1px solid var(--rule);
+  padding:24px 28px 22px;
+  position:relative;
+  display:flex; flex-direction:column;
+}
+.inner-card .tag{
+  display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--shu-deep); text-transform:uppercase;
+  border:1px solid var(--shu); padding:3px 9px; margin-bottom:14px; background:var(--washi);
+  align-self:flex-start;
+}
+.inner-card h3{
+  font-family:var(--serif-display); font-weight:500; font-size:30px; line-height:1.05; letter-spacing:-.008em; color:var(--sumi); margin-bottom:6px;
+}
+.inner-card h3 em{font-style:italic; font-weight:400; color:var(--shu-deep);}
+.inner-card .sub{
+  font-family:var(--serif-body); font-style:italic; font-size:16px; color:var(--sumi-2); margin-bottom:14px; line-height:1.4;
+  padding-bottom:12px; border-bottom:1px solid var(--rule);
+}
+.inner-card p:not(.sub){
+  font-family:var(--serif-body); font-size:15px; line-height:1.55; color:var(--sumi-2); max-width:46ch;
+}
+.inner-card p em{font-style:italic; color:var(--shu-deep);}
+.bones-foot{
+  margin-top:14px; padding-top:12px; border-top:1px solid var(--rule);
+  font-family:var(--serif-body); font-style:italic; font-size:15px; color:var(--sumi-2); line-height:1.45; max-width:none;
+}
+.bones-foot b{color:var(--shu-deep); font-style:normal; font-weight:600; margin-right:6px;}
+.bones-foot em{color:var(--shu-deep); font-style:italic;}
+
+/* ============================================================
+   SLIDE 11 — Honest scope
+   ============================================================ */
+.s-scope.dark{padding:0;}
+.s-scope.dark .pad{ padding:96px 128px; height:100%; box-sizing:border-box; display:flex; flex-direction:column;}
+.s-scope .head-row{
+  display:grid; grid-template-columns:auto 1fr auto; gap:28px; align-items:baseline;
+  border-bottom:2px solid rgba(243,237,224,.35); padding-bottom:24px; margin-bottom:40px;
+}
+.s-scope .head-num{font-family:var(--mono); font-size:14px; color:#e3a058; letter-spacing:.2em;}
+.s-scope .head-num span{display:block; font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:64px; color:var(--washi); line-height:1; margin-top:-2px;}
+.s-scope h2{font-family:var(--serif-display); font-weight:400; font-size:80px; line-height:1; letter-spacing:-.018em; color:var(--washi);}
+.s-scope h2 em{font-style:italic; font-weight:300; color:#e3a058;}
+.s-scope .head-meta{font-family:var(--mono); font-size:12px; color:rgba(243,237,224,.5); letter-spacing:.16em; line-height:1.6; text-align:right; text-transform:uppercase;}
+.s-scope .head-meta b{color:#e3a058; font-weight:500; display:block;}
+
+.scope-frame{
+  display:grid; grid-template-columns: 1fr 1fr; gap:60px; flex:1;
+}
+.scope-left .pull{
+  font-family:var(--serif-display); font-style:italic; font-weight:300; font-size:42px; line-height:1.18; color:var(--washi);
+  max-width:24ch; letter-spacing:-.008em; margin-bottom:32px;
+}
+.scope-left .pull em{color:#e3a058; font-style:italic;}
+.scope-left p{
+  font-family:var(--serif-body); font-size:19px; line-height:1.55; color:rgba(243,237,224,.78); max-width:48ch; margin-bottom:14px;
+}
+.scope-left p b{color:var(--washi);}
+.scope-left p em{font-style:italic; color:#e3a058;}
+
+.scope-tl{
+  display:flex; flex-direction:column; gap:0;
+  border-left:2px solid rgba(243,237,224,.25);
+  padding-left:32px;
+  position:relative;
+}
+.scope-stop{
+  position:relative; padding:8px 0 24px;
+}
+.scope-stop::before{
+  content:""; position:absolute; left:-40px; top:18px; width:14px; height:14px;
+  background:var(--sumi); border:2px solid rgba(243,237,224,.55); border-radius:50%;
+}
+.scope-stop.now::before{background:#e3a058; border-color:#e3a058; box-shadow:0 0 0 5px rgba(212,160,74,.18);}
+.scope-stop.checkpoint::before{background:var(--shu); border-color:var(--shu); box-shadow:0 0 0 5px rgba(184,51,31,.22);}
+.scope-stop.target::before{background:var(--washi); border-color:var(--washi); width:18px; height:18px; left:-42px; top:16px;}
+.scope-stop .when{
+  font-family:var(--mono); font-size:12px; letter-spacing:.18em; color:#e3a058; text-transform:uppercase; margin-bottom:6px;
+}
+.scope-stop .when b{color:var(--washi); font-weight:500; margin-right:10px; letter-spacing:.22em;}
+.scope-stop .what{
+  font-family:var(--serif-display); font-weight:400; font-size:28px; line-height:1.15; letter-spacing:-.005em; color:var(--washi);
+}
+.scope-stop .what em{font-style:italic; font-weight:300; color:#e3a058;}
+.scope-stop .why{
+  margin-top:6px;
+  font-family:var(--serif-body); font-style:italic; font-size:16px; line-height:1.5; color:rgba(243,237,224,.7); max-width:46ch;
+}
+.scope-stop .why em{color:#e3a058; font-style:italic;}
+
+/* speaker notes */
+
+/* speaker notes */
+</style>
+</head>
+<body>
+
+<deck-stage>
+
+<!-- ============================================================
+     SLIDE 1 · Cold open — rainy Tuesday, basement
+     ============================================================ -->
+<section class="s-cold" data-screen-label="01 Cold open">
+  <div class="scene"></div>
+
+  <!-- street-level windows: rainy night, cars passing -->
+  <div class="windows">
+    <div class="win">
+      <span class="car a"></span>
+      <span class="tail a"></span>
+    </div>
+    <div class="win">
+      <span class="car b"></span>
+    </div>
+    <div class="win">
+      <span class="car a"></span>
+    </div>
+    <div class="win">
+      <span class="tail a"></span>
+      <span class="car b"></span>
+    </div>
+  </div>
+
+  <!-- concrete wall band -->
+  <div class="wall"></div>
+
+  <!-- gi hung on the wall -->
+  <div class="gi a"></div>
+  <div class="gi b"></div>
+  <div class="gi c"></div>
+  <div class="gi d"></div>
+
+  <!-- staircase shadow descending into frame top-right -->
+  <div class="stair"></div>
+
+  <!-- floor + tatami panels -->
+  <div class="floor">
+    <div class="tatami">
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+      <div class="panel"></div><div class="panel"></div><div class="panel"></div><div class="panel"></div>
+    </div>
+  </div>
+
+  <!-- benches alongside the mat -->
+  <div class="bench l"><span class="leg a"></span><span class="leg b"></span></div>
+  <div class="bench r"><span class="leg a"></span><span class="leg b"></span></div>
+
+  <!-- hanging bulb -->
+  <div class="bulb"></div>
+
+  <!-- atmospheric drift -->
+  <div class="rain"></div>
+
+  <div class="session-tag">
+    <b>UMANA JUDO · BASEMENT</b>
+    Tuesday · 7:34 PM<br/>
+    Week 47 · Year 2<br/>
+    Adult randori · block 03 of 05
+  </div>
+
+  <div class="copy">
+    <span class="stamp">道場</span>
+    <div class="head">A rainy Tuesday<br/>in the <em>basement.</em></div>
+    <div class="prose">
+      Five pairs on the mat, fluorescents humming, the smell of old cotton and floor polish.
+      <span class="br"></span>
+      The match isn't the game. <em style="color:#e3a058;">This is.</em>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div><span class="brand"><span class="jp" style="font-family:var(--jp);">始</span>HAJIME</span> · WORKING DECK · v2 · APR 26 2026</div>
+    <div class="pos">01 / 11 · COLD OPEN</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 2 · HAJIME · the call
+     ============================================================ -->
+<section class="s-title" data-screen-label="02 Title">
+  <div class="right">
+    <div class="big-jp">始</div>
+  </div>
+  <div class="left">
+    <div class="wm-eyebrow"><b>HAJIME</b> renamed from Tachiwaza · April 16, 2026</div>
+    <h1>HAJIME<em>.</em></h1>
+    <div class="pron">hah-jee-meh <span class="ipa">/ha.dʑi.me/</span></div>
+    <div class="meaning">
+      <div class="mh">The referee's call</div>
+      <p>The word that <em>starts every match</em>. The bow is over, the grips have not yet engaged. One second of stillness before the work begins.</p>
+      <p>The game is everything that happens <em>before</em> the call is set, and everything that happens <em>after.</em></p>
+      <p>It is also the call that opens the <em>dojo</em>. The match is one of many things that happens inside the world the call opens.</p>
+    </div>
+  </div>
+  <div class="foot" style="bottom:42px;">
+    <div><span class="brand"><span class="jp">始</span>HAJIME</span> · TITLE · 始め</div>
+    <div class="pos">02 / 11 · THE CALL</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 3 · Orientation — for an outside reader
+     ============================================================ -->
+<section data-screen-label="03 Orientation">
+  <div class="pad s-orient">
+    <div class="head-row">
+      <div class="head-num">CHAPTER<span>03</span></div>
+      <h2>If you've never <em>opened</em> a deck like this before.</h2>
+    </div>
+    <div class="grid">
+      <div class="qa">
+        <span class="tag">FOR THE STRANGER</span>
+        <div class="q"><em>What</em> is judo?</div>
+        <div class="a">
+          A 19th-century Japanese martial art, now an Olympic sport. Two judoka in white gi grip each other's jackets and try to throw the other onto their back. A clean throw — <em>ippon</em> — ends the match instantly. There is etiquette: the bow, the silence, the referee's call.
+        </div>
+      </div>
+      <div class="qa">
+        <div class="q">What is a <em>dojo</em>?</div>
+        <div class="a">
+          The room where judo is taught. More than a gym. An <b>institution</b> with a name, a founding date, a lineage of teachers, a culture students sense the moment they step inside. People do not join a coach. They join a dojo.
+        </div>
+      </div>
+      <div class="qa">
+        <div class="q">What is a <em>sensei</em>?</div>
+        <div class="a">
+          The teacher who runs the dojo. In <em>Hajime</em>, this is who you play. Not a fighter — a coach. You sit beside the mat. You build the calendar. You decide who is ready, who is not, who needs a conversation this week and who needs to be left alone.
+        </div>
+      </div>
+      <div class="qa">
+        <div class="q">What kind of game is <em>this</em>?</div>
+        <div class="a">
+          A solo-developed simulation. Closer to <b>Football Manager</b> and <b>Dwarf Fortress</b> than to a fighting game. Most of the play is calendar, roster, conversations. The matches are the consequential events the dojo produces — beautiful when they come, but rare in the texture of a season.
+        </div>
+      </div>
+    </div>
+    <p class="footnote">If a slide later in the deck loses you, return here. The rest of the document assumes these four definitions and stops explaining them.</p>
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · ORIENTATION</div>
+      <div class="pos">03 / 11 · FOR THE STRANGER</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 4 · The Loop
+     ============================================================ -->
+<section data-screen-label="04 The Loop">
+  <div class="pad s-loop">
+    <div class="head-row">
+      <div class="head-num">CHAPTER<span>04</span></div>
+      <h2>The <em>loop.</em></h2>
+      <div class="head-meta"><b>v17 · April 23 2026</b>The dojo-loop reshape.<br/>Match was the center. Now it is inside.</div>
+    </div>
+
+    <div class="body-row">
+      <div class="diagram">
+        <div class="ring r-outer"></div>
+        <div class="ring r-week"></div>
+        <div class="ring r-session"></div>
+        <div class="ring r-pair"></div>
+        <div class="ring r-match">
+          <div class="core">
+            <span class="jp">始め</span>
+            <span class="lbl">the match</span>
+          </div>
+        </div>
+        <div class="lbl-out" style="left:50%; top:6px; transform:translateX(-50%);"><b>SEASON</b> · YEARS</div>
+        <div class="lbl-out" style="left:50%; top:74px; transform:translateX(-50%);"><b>WEEK</b> · CALENDAR</div>
+        <div class="lbl-out" style="left:50%; top:152px; transform:translateX(-50%);"><b>SESSION</b> · 90 MIN</div>
+        <div class="lbl-out" style="left:50%; top:240px; transform:translateX(-50%);"><b>PAIR</b> · ONE OF FIVE</div>
+      </div>
+
+      <div class="loop-text">
+        <p class="pull">You run a <em>dojo.</em> You set the calendar. You spend the attention. The match is what the work eventually <em>produces.</em></p>
+        <p>Procedurally generated students walk in. Some try a free week and disappear. Some plateau at yellow belt and stay for years. <b>A few become champions.</b></p>
+        <p>Inside each session you choose where to spend your attention — watching one randori pair while four others run unwatched, or pulling a student aside for a conversation that begins to reveal who they are.</p>
+        <p>The dojo's culture emerges from your accumulated choices. The dojo's reputation shapes who walks through the door next. <em>Every so often, a tournament arrives.</em></p>
+        <div class="inversion">
+          <div class="il">The inversion</div>
+          <p>The match engine that Ring 1 has been building is still real and still load-bearing — but it lives inside the dojo loop now, not above it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · CORE LOOP</div>
+      <div class="pos">04 / 11 · DOJO AT CENTER</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 5 · Five Principles
+     ============================================================ -->
+<section data-screen-label="05 Five Principles">
+  <div class="pad s-five">
+    <div class="head-row">
+      <div class="head-num">CHAPTER<span>05</span></div>
+      <h2>Five <em>principles.</em></h2>
+      <div class="head-meta"><b>THE LOAD-BEARING IDEAS</b>Each principle is a constraint<br/>and a permission, in the same line.</div>
+    </div>
+
+    <div class="principles">
+      <div class="principle">
+        <div class="num">i<span class="of">/v</span></div>
+        <div class="name">Attention is <em>scarce</em>, and that is the game.</div>
+        <p class="body">Five pairs of randori, one sensei. You can watch one. The other four run unwatched and you will never know what happened. <b>What you choose to watch is what you choose to know.</b></p>
+        <div class="tag">SCARCITY · ATTENTION</div>
+      </div>
+      <div class="principle">
+        <div class="num">ii<span class="of">/v</span></div>
+        <div class="name">The dojo learns from <em>cultural feedback</em>, not just performance.</div>
+        <p class="body">Reputation is built by what visitors and rivals say about your room. Atmosphere, pricing, the way you handle a loss — <em>this</em> is what changes who walks in next.</p>
+        <div class="tag">CULTURE · LOOP</div>
+      </div>
+      <div class="principle">
+        <div class="num">iii<span class="of">/v</span></div>
+        <div class="name">Continuous <em>simulation</em>, render on demand.</div>
+        <p class="body">The world keeps running whether you are watching or not. Students train, rest, doubt, improve. <b>You render the slice you choose</b> — the rest is computed and waiting when you turn your head.</p>
+        <div class="tag">ENGINE · TIME</div>
+      </div>
+      <div class="principle">
+        <div class="num">iv<span class="of">/v</span></div>
+        <div class="name">Outcomes <em>emerge</em> from composition, not scripting.</div>
+        <p class="body">No quest tree, no hand-authored arc. A judoka's career — and the dojo's — is what falls out of the procedural inputs colliding over years.</p>
+        <div class="tag">EMERGENCE · NO SCRIPTING</div>
+      </div>
+      <div class="principle">
+        <div class="num">v<span class="of">/v</span></div>
+        <div class="name">Either <em>choice</em> is okay.</div>
+        <p class="body">No optimal path. No best build. The mid-tier dojo that produces one happy lifelong yellow belt is not lesser than the dojo that produces an Olympian. <em>Both endings are the game.</em></p>
+        <div class="tag">VALUES · DESIGN STANCE</div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · FIVE PRINCIPLES</div>
+      <div class="pos">05 / 11 · LOAD-BEARING IDEAS</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 6 · Six Cultural Inputs
+     ============================================================ -->
+<section data-screen-label="06 Cultural Inputs">
+  <div class="pad s-six">
+    <div class="head-row">
+      <div class="head-num">CHAPTER<span>06</span></div>
+      <h2>The six <em>cultural</em> inputs.</h2>
+      <div class="head-meta"><b>WHAT VISITORS FEEL</b>The dojo's reputation isn't a stat —<br/>it is the sum of these six choices.</div>
+    </div>
+
+    <div class="lede-row">
+      A judoka chooses your dojo for reasons that are mostly <em>not</em> about your win-loss record. They walk in, they breathe the room, they ask their friend about the sensei. <em>This</em> is what they're reading.
+    </div>
+
+    <div class="cult-grid">
+      <div class="cult">
+        <div class="glyph">稽<span class="dot"></span></div>
+        <div>
+          <div class="label">INPUT · 01</div>
+          <div class="name"><em>Session</em> content</div>
+          <div class="desc">What you actually <b>teach</b>. The ratio of drilling to randori, the techniques you favor, whether you correct in the moment or after.</div>
+        </div>
+      </div>
+      <div class="cult">
+        <div class="glyph">円</div>
+        <div>
+          <div class="label">INPUT · 02</div>
+          <div class="name"><em>Pricing</em> &amp; access</div>
+          <div class="desc">Free first week, family rates, the kid whose parents can't pay this month. <b>Who can afford to be in the room.</b></div>
+        </div>
+      </div>
+      <div class="cult">
+        <div class="glyph">系</div>
+        <div>
+          <div class="label">INPUT · 03</div>
+          <div class="name"><em>Lineage</em> &amp; style</div>
+          <div class="desc">Whose judo are you teaching — your father's, your own departure from it, a school you imported. The <b>unbroken chain</b> students sense without being told.</div>
+        </div>
+      </div>
+      <div class="cult">
+        <div class="glyph">気</div>
+        <div>
+          <div class="label">INPUT · 04</div>
+          <div class="name"><em>Atmosphere</em> on the mat</div>
+          <div class="desc">Quiet and reverent, loud and joking, brutally serious. The thing you cannot fake. Set by how you behave when something goes wrong.</div>
+        </div>
+      </div>
+      <div class="cult">
+        <div class="glyph">昇</div>
+        <div>
+          <div class="label">INPUT · 05</div>
+          <div class="name"><em>Promotion</em> philosophy</div>
+          <div class="desc">When does a student get the next belt — at performance, at time, at attitude? <b>What does your dojo say a black belt is worth?</b></div>
+        </div>
+      </div>
+      <div class="cult">
+        <div class="glyph">試</div>
+        <div>
+          <div class="label">INPUT · 06</div>
+          <div class="name"><em>Competition</em> readiness</div>
+          <div class="desc">The pattern of who you send to which tournaments, and what you say to them on the way home — <em>win or lose.</em></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · CULTURAL INPUTS</div>
+      <div class="pos">06 / 11 · SIX VARIABLES</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 7 · Watched Randori hero
+     ============================================================ -->
+<section class="s-hero" data-screen-label="07 Watched Randori">
+  <div class="hero-pad">
+    <div class="hero-head">
+      <div class="num">CHAPTER<span>07</span></div>
+      <h2>Hero · <em>Watched Randori.</em></h2>
+      <div class="meta"><b>ARTIFACT · 01 of 02</b>The session frame · attention scarcity<br/>made visible on the mat</div>
+    </div>
+
+    <div class="hero-stage">
+      <div class="doc-frame fit-watched">
+        <span class="corner-tag">ARTIFACT</span>
+        <iframe src="Watched Randori.html" title="Watched Randori artifact"></iframe>
+      </div>
+    </div>
+
+    <div class="caption-row">
+      <div class="left">
+        <div class="h">Five pairs on the mat. <em>One watched.</em> Four computing in the periphery, recallable but not seen.</div>
+        <div class="sub">The chair holds the watched pair. Releasing the chair lets any other pair become the one you know about. <em>Whatever you didn't watch happened anyway.</em></div>
+      </div>
+      <div class="right">
+        <b>UMANA · TUE 7:34 PM</b>
+        Adult randori · block 03/05<br/>
+        Five pairs · one chair · four periphery
+      </div>
+    </div>
+
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · ATTENTION ON THE MAT</div>
+      <div class="pos">07 / 11 · HERO · WATCHED RANDORI</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 8 · Matte event card hero
+     ============================================================ -->
+<section class="s-hero" data-screen-label="08 Matte Event">
+  <div class="hero-pad">
+    <div class="hero-head">
+      <div class="num">CHAPTER<span>08</span></div>
+      <h2>Hero · <em>the Matte event card.</em></h2>
+      <div class="meta"><b>ARTIFACT · 02 of 02</b>The match, presented as a card ·<br/>one event among many in the dojo loop</div>
+    </div>
+
+    <div class="hero-stage">
+      <div class="doc-frame">
+        <span class="corner-tag">ARTIFACT</span>
+        <iframe src="Matte Event Card.html" title="Matte event card"></iframe>
+      </div>
+    </div>
+
+    <div class="caption-row">
+      <div class="left">
+        <div class="h">When the referee calls <em>Matte</em>, the action stops — and the chair becomes a place to <em>think.</em></div>
+        <div class="sub">The match window can never be larger than the chair window. Twenty-four seconds, three options, one of them is silence. <em>Whatever you say here is read by every student in your dojo by Tuesday.</em></div>
+      </div>
+      <div class="right">
+        <b>RHEINLAND U21 · R16</b>
+        Anya Volkov vs. M. Yamashita<br/>
+        Round paused · Wazari–Ippon
+      </div>
+    </div>
+
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · MATTE · ROUND PAUSED</div>
+      <div class="pos">08 / 11 · HERO · MATTE</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 9 · Multi-year arc
+     ============================================================ -->
+<section data-screen-label="09 Multi-year arc">
+  <div class="pad s-arc">
+    <div class="head-row">
+      <div class="head-num">CHAPTER<span>09</span></div>
+      <h2>The <em>multi-year</em> arc.</h2>
+      <div class="head-meta"><b>YEARS, NOT DATES</b>The career mode shape ·<br/>three Anchoring Scenes mark it</div>
+    </div>
+
+    <div class="timeline">
+      <div class="axis"></div>
+      <div class="tl-grid">
+        <div class="tl-stop anchor">
+          <div class="yr"><b>YEAR 0</b>Founding</div>
+          <div class="marker"></div>
+          <div class="name">The <em>basement</em> opens.</div>
+          <div class="desc">Six mats, one bulb, no students yet. The dojo's first week is silent. <em>You wait.</em></div>
+        </div>
+        <div class="tl-stop">
+          <div class="yr"><b>Y1–Y2</b>First cohort</div>
+          <div class="marker"></div>
+          <div class="name">Twins arrive.</div>
+          <div class="desc">A handful of students. White and yellow belts. Nobody competes yet.</div>
+        </div>
+        <div class="tl-stop anchor">
+          <div class="yr"><b>YEAR 3</b>First send</div>
+          <div class="marker"></div>
+          <div class="name">First <em>team</em> tournament.</div>
+          <div class="desc">Three of yours travel. They lose early. <em>You drive home in silence.</em></div>
+        </div>
+        <div class="tl-stop">
+          <div class="yr"><b>Y5–Y8</b>Recognition</div>
+          <div class="marker"></div>
+          <div class="name">A recognized dojo.</div>
+          <div class="desc">Visiting senseis. Brown belts who stay. The room has a <em>reputation</em> now.</div>
+        </div>
+        <div class="tl-stop anchor">
+          <div class="yr"><b>Y10+</b>Generation</div>
+          <div class="marker"></div>
+          <div class="name">An <em>Olympic</em> moment.</div>
+          <div class="desc">A judoka you raised from white belt walks under the lights. <em>You watch from the chair.</em></div>
+        </div>
+        <div class="tl-stop">
+          <div class="yr"><b>Y15–20</b>Lineage</div>
+          <div class="marker"></div>
+          <div class="name">Succession.</div>
+          <div class="desc">A former student opens her own dojo. Your judo is now in <em>three rooms.</em></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arc-foot">
+      <div class="col">
+        <div class="ek"><b>WHAT THIS IS</b>The career-mode shape</div>
+        <p>Twenty-year arc. Years on the axis, not real-time dates. <b>Most of the play happens between the marked stops</b> — sessions, conversations, weeks that look like nothing.</p>
+      </div>
+      <div class="col">
+        <div class="ek"><b>WHAT THESE ARE</b>Anchoring Scenes</div>
+        <p>The three red dots are the moments the master doc commits to. <em>The basement opening, the first team tournament, the Olympic walk-on.</em> Everything else is procedural and emergent.</p>
+      </div>
+      <div class="col">
+        <div class="ek"><b>WHAT THIS ISN'T</b>A quest tree</div>
+        <p>None of these are required to happen. <b>A dojo that produces one happy lifelong yellow belt is also the game.</b> The Olympic moment is a possibility, not a milestone.</p>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · CAREER MODE · TWENTY YEARS</div>
+      <div class="pos">09 / 11 · ARC</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 10 · The inner-life mechanic
+     ============================================================ -->
+<section data-screen-label="10 Inner Life">
+  <div class="pad s-bones">
+    <div class="head-row">
+      <div class="head-num">CHAPTER<span>10</span></div>
+      <h2>The <em>inner-life</em> mechanic.</h2>
+      <div class="head-meta"><b>SYSTEM 01 · STUDENT</b>What a procedurally-generated<br/>judoka wants, fears, and works<br/>toward across fifteen seasons</div>
+    </div>
+
+    <p class="bones-lede">
+      Every student in the dojo runs the same loop. <em>Needs in the moment, goals across the years, and a quiet machine for changing what they want.</em> The mechanic underneath every conversation, every randori, every promotion you have to think about.
+    </p>
+
+    <div class="inner-grid">
+      <div class="inner-card">
+        <span class="tag">SYSTEM 01</span>
+        <h3>Immediate <em>needs</em></h3>
+        <p class="sub">The texture of being alive at this hour.</p>
+        <p>This week's stamina. Last session's bruise. The conversation with their parent on Sunday night. <em>The thing they ate before practice and the song stuck in their head on the way over.</em></p>
+      </div>
+
+      <div class="inner-card">
+        <span class="tag">SYSTEM 02</span>
+        <h3>Long-term <em>goals</em></h3>
+        <p class="sub">What they're working toward across the years.</p>
+        <p>Black belt by 30. Beat their older sister at randori. <em>Not quit before their father comes to watch a tournament.</em> The private list each judoka carries that the dojo never sees.</p>
+      </div>
+
+      <div class="inner-card">
+        <span class="tag">SYSTEM 03</span>
+        <h3>Goal <em>evolution</em></h3>
+        <p class="sub">How a person changes shape over a decade.</p>
+        <p>What happens when they get the black belt and don't feel different. The pivot from <em>champion</em> to <em>teacher</em>. The quiet exit at 27. The unexpected return at 38.</p>
+      </div>
+
+      <div class="inner-card">
+        <span class="tag">SYSTEM 04</span>
+        <h3>Lineage as <em>data</em></h3>
+        <p class="sub">Whose judo lives in their body.</p>
+        <p>Your sensei's sensei's notes, the technique you taught them that came from a tournament loss in 2008, the throw they keep trying because their first coach loved it. <em>Memory carried in muscle.</em></p>
+      </div>
+    </div>
+
+    <p class="bones-foot">
+      <b>Why it matters.</b> Every other system in the dojo — randori, conversations, promotions, departures — reads from this. <em>Without it, the room is a graphics layer with no people in it.</em>
+    </p>
+
+    <div class="foot" style="bottom:24px;">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · SYSTEM · INNER LIFE</div>
+      <div class="pos">10 / 11 · STUDENT</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 11 · Honest scope
+     ============================================================ -->
+<section class="s-scope dark" data-screen-label="11 Honest Scope">
+  <div class="pad">
+    <div class="head-row">
+      <div class="head-num">CHAPTER<span>11</span></div>
+      <h2>The <em>honest</em> scope.</h2>
+      <div class="head-meta"><b>WHEN, NOT IF</b>What's promised, to whom,<br/>and what the dates actually are</div>
+    </div>
+
+    <div class="scope-frame">
+      <div class="scope-left">
+        <p class="pull">The schedule was the <em>wrong shape.</em> The new shape doesn't run faster — it runs <em>truer.</em></p>
+        <p>The old plan promised dates that were never possible. <b>The result: a worse product and an exhausted me.</b> The new plan ships Hajime on a real date, with the systems it needs proven against ten thousand simulated judoka instead of imagined.</p>
+        <p>The dates below are <em>commitments</em>, not aspirations. The personal checkpoint is also a real date — but it's a checkpoint, <em>not a ship date</em>. The day I look up and ask: <em>is this still the right shape?</em></p>
+      </div>
+
+      <div class="scope-tl">
+        <div class="scope-stop now">
+          <div class="when"><b>NOW</b>April 2026</div>
+          <div class="what">Master doc, style bible, hero artifacts <em>landed.</em></div>
+          <div class="why">The dojo loop is the spine. The two calls are the typographic system. <em>This deck is the working artifact.</em></div>
+        </div>
+        <div class="scope-stop">
+          <div class="when"><b>2026 H2</b>Vertical slice</div>
+          <div class="what">One session, end-to-end, playable.</div>
+          <div class="why">Five pairs of randori, one chair, one conversation, one promotion. <em>Not pretty. Real.</em></div>
+        </div>
+        <div class="scope-stop checkpoint">
+          <div class="when"><b>JAN 9 · 2027</b>Personal checkpoint</div>
+          <div class="what">Look up. Re-read this deck. Ask: <em>still the right shape?</em></div>
+          <div class="why">Not a milestone for anyone else. <b>A standing meeting with myself.</b> If the answer is no, the plan changes here, on purpose, in writing.</div>
+        </div>
+        <div class="scope-stop">
+          <div class="when"><b>2027</b>Career mode in</div>
+          <div class="what">Years 1–5 playable end-to-end. Anchoring Scenes wired.</div>
+          <div class="why">The basement opens. Twins arrive. First tournament. <em>The shape of a season is real.</em></div>
+        </div>
+        <div class="scope-stop target">
+          <div class="when"><b>MID 2028 → MID 2029</b>Early Access</div>
+          <div class="what">Hajime ships to <em>Early Access.</em></div>
+          <div class="why">Twelve-month window. The honest range, not a hero date. <em>The dojo opens for real students.</em></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div><span class="brand"><span class="jp">始</span>HAJIME</span> · SCOPE · END OF DECK</div>
+      <div class="pos">11 / 11 · 待</div>
+    </div>
+  </div>
+</section>
+
+</deck-stage>
+
+<script type="application/json" id="speaker-notes">
+[
+  "Cold open. No bullets. No logo wall. The texture: basement dojo, rainy Tuesday, the bulb, the mat. The line — the match isn't the game; this is. Sit with the slide. Don't narrate it.",
+  "The rename. Tachiwaza → Hajime. The call that starts every match. And — as of April 23 — the call that opens the dojo. The title is doing two jobs now.",
+  "Orientation slide. Only here for outside readers. If I'm reading the deck alone, skip it. The four definitions: judo, dojo, sensei, kind-of-game.",
+  "The loop. The single most important architectural slide. The diagram reads inside-out: match at center, pair around it, session, week, season. The match is the small consequential event the larger machine produces. Read the inversion box aloud if anyone is in the room with me.",
+  "Five principles. Each one is a constraint and a permission. Don't elaborate on them — the slide is the elaboration. If pressed, lean on principle five: either choice is okay. That's the design stance.",
+  "Six cultural inputs. The point of this slide is that reputation is not a stat — it's the sum of these six. Pricing is a culture choice. Promotion philosophy is a culture choice. The dojo is built from these, not from W-L record.",
+  "Hero one — Watched Randori. The single most important artifact. Sit with it. Five pairs, one watched. The four periphery cards are real, computing, recallable. Releasing the chair lets any of them become the watched one.",
+  "Hero two — the Matte event card. This is what a tournament moment looks like. Notice it's a card on a paper surface, not a full-screen broadcast. The match is consequential, but it lives inside the dojo's day, not above it.",
+  "The arc. Twenty years. Years on the axis, not dates. The three red dots are the Anchoring Scenes the master doc commits to: basement opening, first team tournament, Olympic walk-on. Everything else is procedural. Critical: none of these are required. A mid-tier dojo with one happy lifelong yellow belt is also the game.",
+  "The inner-life mechanic. The most important system in the dojo. Every student runs this loop: needs now, goals later, and a machine for changing what they want. Without it, the room is a graphics layer with no people in it. Read the four cards.",
+  "Honest scope. The dates are commitments, not aspirations. Mid-2028 to mid-2029 EA window. January 9, 2027 is not a ship date — it is a standing meeting with myself. The day I look up and ask: still the right shape? If the answer is no, the plan changes there, on purpose, in writing. End of deck. Matte."
+]
+</script>
+
+</body>
+</html>
