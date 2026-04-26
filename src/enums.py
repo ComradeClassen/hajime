@@ -90,6 +90,13 @@ class StanceMatchup(Enum):
     MATCHED  = auto()  # Both orthodox or both southpaw — standard grip war
     MIRRORED = auto()  # Opposite stances — opens sumi-gaeshi, changes grip map
 
+    @staticmethod
+    def of(stance_a: "Stance", stance_b: "Stance") -> "StanceMatchup":
+        """HAJ-51 — derive matchup from two fighters' stances. Centralizes
+        the rule so callers don't need to thread the matchup through
+        deep call chains; they just compute it locally from current state."""
+        return StanceMatchup.MATCHED if stance_a == stance_b else StanceMatchup.MIRRORED
+
 
 # ---------------------------------------------------------------------------
 # EMOTIONAL STATE

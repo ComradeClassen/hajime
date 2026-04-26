@@ -92,32 +92,59 @@ def actual_signature_match(
     template = worked_template_for(throw_id)
     if template is not None:
         from throw_signature import signature_match
-        return signature_match(template, attacker, defender, graph)
+        base = signature_match(template, attacker, defender, graph)
+    else:
+        # --- Legacy two-factor path ---
+        td_ = THROW_DEFS.get(throw_id)
+        if td_ is None:
+            return 0.0
+        grip_score = 0.5 if graph.satisfies(
+            td_.requires, attacker.identity.name, attacker.identity.dominant_side
+        ) else 0.0
+        from body_state import is_kuzushi
+        leg_strength = min(
+            attacker.effective_body_part("right_leg"),
+            attacker.effective_body_part("left_leg"),
+        ) / 10.0
+        d_fatigue = 0.5 * (
+            defender.state.body["right_leg"].fatigue
+            + defender.state.body["left_leg"].fatigue
+        )
+        d_composure = _composure_mod(defender)
+        kuzushi_score = 0.5 if is_kuzushi(
+            defender.state.body_state,
+            leg_strength=leg_strength,
+            fatigue=d_fatigue,
+            composure=d_composure,
+        ) else 0.0
+        base = grip_score + kuzushi_score
 
-    # --- Legacy two-factor path ---
+    return _apply_stance_preference(base, throw_id, attacker, defender)
+
+
+# ---------------------------------------------------------------------------
+# STANCE PREFERENCE (HAJ-51)
+# A throw with a preferred_stance_parity gets a small boost in its preferred
+# matchup and a small penalty in the other. Stance-agnostic throws (preference
+# None) are unaffected. Magnitude is intentionally modest so the signature
+# bias doesn't dominate the four-dimension worked-template score.
+# ---------------------------------------------------------------------------
+STANCE_PREFERENCE_BOOST:   float = 1.10
+STANCE_PREFERENCE_PENALTY: float = 0.85
+
+
+def _apply_stance_preference(
+    base: float, throw_id: "ThrowID", attacker: "Judoka", defender: "Judoka",
+) -> float:
     td = THROW_DEFS.get(throw_id)
-    if td is None:
-        return 0.0
-
-    grip_score = 0.5 if graph.satisfies(
-        td.requires, attacker.identity.name, attacker.identity.dominant_side
-    ) else 0.0
-
-    from body_state import is_kuzushi
-    leg_strength = min(
-        attacker.effective_body_part("right_leg"),
-        attacker.effective_body_part("left_leg"),
-    ) / 10.0
-    d_fatigue = 0.5 * (
-        defender.state.body["right_leg"].fatigue
-        + defender.state.body["left_leg"].fatigue
+    if td is None or td.preferred_stance_parity is None:
+        return base
+    from enums import StanceMatchup
+    matchup = StanceMatchup.of(
+        attacker.state.current_stance, defender.state.current_stance
     )
-    d_composure = _composure_mod(defender)
-    kuzushi_score = 0.5 if is_kuzushi(
-        defender.state.body_state,
-        leg_strength=leg_strength,
-        fatigue=d_fatigue,
-        composure=d_composure,
-    ) else 0.0
-
-    return grip_score + kuzushi_score
+    if matchup == td.preferred_stance_parity:
+        scaled = base * STANCE_PREFERENCE_BOOST
+    else:
+        scaled = base * STANCE_PREFERENCE_PENALTY
+    return max(0.0, min(1.0, scaled))

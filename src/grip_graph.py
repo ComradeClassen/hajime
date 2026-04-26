@@ -17,7 +17,7 @@ from typing import Optional, TYPE_CHECKING
 
 from enums import (
     BodyPart, GripTarget, GripType, DominantSide,
-    GripTypeV2, GripDepth, GripMode, BeltRank,
+    GripTypeV2, GripDepth, GripMode, BeltRank, StanceMatchup,
 )
 
 if TYPE_CHECKING:
@@ -520,16 +520,35 @@ class GripGraph:
     # Positive = fighter_a is winning the grip war.
     # -----------------------------------------------------------------------
     def compute_grip_delta(
-        self, fighter_a: "Judoka", fighter_b: "Judoka"
+        self, fighter_a: "Judoka", fighter_b: "Judoka",
+        stance_matchup: "StanceMatchup | None" = None,
     ) -> float:
-        """Grip advantage of fighter_a over fighter_b. Used by sub-loop for kuzushi check."""
+        """Grip advantage of fighter_a over fighter_b. Used by sub-loop for kuzushi check.
+
+        HAJ-51 — when `stance_matchup` is supplied, each edge's contribution
+        is further multiplied by its grip-type stance_parity. Two symmetric
+        fighters in matched vs mirrored stance therefore produce different
+        grip_delta trajectories: collar / lapel-high contributions decay
+        under MIRRORED, while pistol / cross contributions decay under
+        MATCHED. The default (None) preserves legacy stance-agnostic
+        behavior so unmodified callers see no shift.
+        """
+        from force_envelope import FORCE_ENVELOPES
+
+        def _edge_weight(e) -> float:
+            base = e.depth * e.strength * e.grip_type.dominance_factor()
+            if stance_matchup is None:
+                return base
+            env = FORCE_ENVELOPES.get(e.grip_type_v2)
+            if env is None:
+                return base
+            return base * env.stance_parity.multiplier(stance_matchup)
+
         a_total = sum(
-            e.depth * e.strength * e.grip_type.dominance_factor()
-            for e in self.edges_owned_by(fighter_a.identity.name)
+            _edge_weight(e) for e in self.edges_owned_by(fighter_a.identity.name)
         )
         b_total = sum(
-            e.depth * e.strength * e.grip_type.dominance_factor()
-            for e in self.edges_owned_by(fighter_b.identity.name)
+            _edge_weight(e) for e in self.edges_owned_by(fighter_b.identity.name)
         )
         return a_total - b_total
 

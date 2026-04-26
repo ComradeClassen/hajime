@@ -18,6 +18,7 @@ from typing import Optional
 
 from enums import (
     BodyPart, GripTarget, GripType, LandingProfile, Posture, DominantSide,
+    StanceMatchup,
 )
 
 
@@ -125,6 +126,12 @@ class ThrowDef:
     # and opportunistic setups (sumi-gaeshi, ko-uchi, o-uchi, de-ashi-harai)
     # can fire off one-handed engagement and set this to False.
     requires_both_hands: bool = True
+    # HAJ-51 — preferred stance parity. None means the throw is stance-
+    # agnostic (timing- or hook-driven). MATCHED throws are penalized in
+    # mirrored stance; MIRRORED throws are penalized in matched stance.
+    # Magnitude is small — intent is to bias selection / signature match
+    # toward configurations the throw was designed for, not to gate.
+    preferred_stance_parity: Optional[StanceMatchup] = None
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +300,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.FORWARD_ROTATIONAL,
         base_effectiveness_dominant=9.0,
         base_effectiveness_off_side=3.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # standard cross-grip seoi
     ),
 
     ThrowID.UCHI_MATA: ThrowDef(
@@ -318,6 +326,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.FORWARD_ROTATIONAL,
         base_effectiveness_dominant=9.0,
         base_effectiveness_off_side=5.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # canonical morote-grip uchi-mata
     ),
 
     ThrowID.O_SOTO_GARI: ThrowDef(
@@ -341,6 +350,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.REAR_ROTATIONAL,
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=5.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # outside reap aligns
     ),
 
     ThrowID.O_UCHI_GARI: ThrowDef(
@@ -405,6 +415,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.HIGH_FORWARD_ROTATIONAL,
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=4.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # hip entry favors aligned stance
     ),
 
     ThrowID.TAI_OTOSHI: ThrowDef(
@@ -429,6 +440,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.FORWARD_ROTATIONAL,
         base_effectiveness_dominant=6.0,
         base_effectiveness_off_side=5.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # cross-grip body drop
     ),
 
     ThrowID.SUMI_GAESHI: ThrowDef(
@@ -448,6 +460,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=5.0,
         base_effectiveness_off_side=7.0,  # Higher off-side: mirrored stance specialty
         requires_both_hands=False,        # Sacrifice throw — one grip is enough
+        preferred_stance_parity=StanceMatchup.MIRRORED,  # canonical kenka-yotsu throw
     ),
 
     ThrowID.DE_ASHI_HARAI: ThrowDef(
@@ -490,6 +503,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.FORWARD_ROTATIONAL,
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=5.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # standard hip throw
     ),
 
     ThrowID.HARAI_GOSHI_CLASSICAL: ThrowDef(
@@ -513,6 +527,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.HIGH_FORWARD_ROTATIONAL,
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=4.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # classical hip-fulcrum form
     ),
 
     ThrowID.TOMOE_NAGE: ThrowDef(
@@ -559,6 +574,7 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.HIGH_FORWARD_ROTATIONAL,
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=4.0,
+        preferred_stance_parity=StanceMatchup.MATCHED,  # extended-leg fulcrum
     ),
 }
 

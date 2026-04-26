@@ -18,7 +18,7 @@ from actions import (
     block_hip,
 )
 from enums import (
-    GripTypeV2, GripDepth, GripTarget, GripMode, DominantSide,
+    GripTypeV2, GripDepth, GripTarget, GripMode, DominantSide, StanceMatchup,
 )
 from throws import THROW_DEFS, ThrowID
 from grip_presence_gate import evaluate_gate, GateResult, REASON_OK
@@ -488,8 +488,13 @@ def _should_fire_grip_escape(
     grips are shallow/few, and composure has slipped. The tactical fake
     is cover to rip off the dyad and try to reset grips.
     """
-    # Opponent grip dominance.
-    delta_opp_over_tori = graph.compute_grip_delta(opponent, judoka)
+    # HAJ-51 — feed the current matchup so dominance reflects per-grip
+    # stance leverage. A pistol-grip-heavy opponent looks less dominant
+    # in matched stance than in mirrored, even at the same depth/strength.
+    matchup = StanceMatchup.of(
+        judoka.state.current_stance, opponent.state.current_stance
+    )
+    delta_opp_over_tori = graph.compute_grip_delta(opponent, judoka, matchup)
     if delta_opp_over_tori < GRIP_ESCAPE_DELTA_THRESHOLD:
         return False
     # Tori's own grip integrity compromised: no edge deeper than POCKET.

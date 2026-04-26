@@ -1022,6 +1022,9 @@ class Match:
             FORCE_ENVELOPES, grip_strength as _grip_strength,
         )
         fx = fy = 0.0
+        # HAJ-51 — read the current matchup once per call; per-edge multiplier
+        # comes from FORCE_ENVELOPES[grip_type].stance_parity below.
+        stance_matchup = self._compute_stance_matchup()
 
         for act in attacker_actions:
             if act.kind not in DRIVING_FORCE_KINDS or act.hand is None:
@@ -1049,8 +1052,14 @@ class Match:
             else:  # PULL, COUPLE, FEINT default to pull envelope
                 env_max = env.max_pull_force
 
+            # HAJ-51 — apply per-grip stance parity to envelope authority.
+            # Lapel-high / collar lose authority in mirrored stance; pistol /
+            # cross gain it. Multiplier is bounded to the [0.7, 1.3] band by
+            # the StanceParity declarations themselves.
+            stance_parity_mod = env.stance_parity.multiplier(stance_matchup)
+
             # Calibration pipeline (Part 2.4):
-            #   delivered = min(requested, env_max) × depth × strength × fatigue × composure × noise
+            #   delivered = min(requested, env_max) × depth × strength × fatigue × composure × noise × stance_parity
             depth_mod     = edge.depth_level.modifier()
             strength_mod  = _grip_strength(attacker)
             hand_fatigue  = max(0.0, 1.0 - attacker.state.body[act.hand].fatigue)
@@ -1060,7 +1069,7 @@ class Match:
 
             requested = min(act.magnitude, env_max)
             delivered = (requested * depth_mod * strength_mod * hand_fatigue
-                         * composure_mod * noise)
+                         * composure_mod * noise * stance_parity_mod)
 
             dx, dy = act.direction
             fx += dx * delivered
@@ -2242,9 +2251,10 @@ class Match:
     # HELPERS
     # -----------------------------------------------------------------------
     def _compute_stance_matchup(self) -> StanceMatchup:
-        a = self.fighter_a.state.current_stance
-        b = self.fighter_b.state.current_stance
-        return StanceMatchup.MATCHED if a == b else StanceMatchup.MIRRORED
+        return StanceMatchup.of(
+            self.fighter_a.state.current_stance,
+            self.fighter_b.state.current_stance,
+        )
 
     def _build_match_state(self, tick: int) -> MatchState:
         return MatchState(
@@ -2450,6 +2460,15 @@ class Match:
               f"{a.dominant_side.name}-dominant")
         print(f"  {b.name}: {b.body_archetype.name}, age {b.age}, "
               f"{b.dominant_side.name}-dominant")
+        # HAJ-51 — stance matchup is one of the most consequential setup
+        # facts in a match (drives grip leverage and which throws fit), so
+        # it gets a header line at tick 0.
+        a_stance = self.fighter_a.state.current_stance.name.lower()
+        b_stance = self.fighter_b.state.current_stance.name.lower()
+        matchup = self._compute_stance_matchup()
+        nickname = "ai-yotsu" if matchup == StanceMatchup.MATCHED else "kenka-yotsu"
+        print(f"  Stance matchup: {matchup.name} "
+              f"({a.name} {a_stance}, {b.name} {b_stance} — {nickname})")
         print(f"  Referee: {r.name} ({r.nationality}) — "
               f"patience {r.newaza_patience:.1f} / "
               f"strictness {r.ippon_strictness:.1f}")

@@ -529,10 +529,12 @@ def _describe_referee(ref) -> str:
 
 
 def _describe_match(match) -> str:
+    matchup = match._compute_stance_matchup()
     lines = [
         f"match state — tick {match.ticks_run}/{match.max_ticks}",
         f"  sub_loop:        {match.sub_loop_state.name}",
         f"  position:        {match.position.name}",
+        f"  stance_matchup:  {matchup.name}",
         f"  edge_count:      {match.grip_graph.edge_count()}",
         f"  engagement_tks:  {match.engagement_ticks}",
         f"  stalemate_tks:   {match.stalemate_ticks}",

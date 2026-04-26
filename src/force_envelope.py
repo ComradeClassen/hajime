@@ -16,13 +16,33 @@
 # tests lock down.
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from enums import GripTypeV2, GripDepth, GripMode
+from enums import GripTypeV2, GripDepth, GripMode, StanceMatchup
 
 if TYPE_CHECKING:
     from judoka import Judoka
+
+
+# ---------------------------------------------------------------------------
+# STANCE PARITY (HAJ-51)
+# Multipliers on a grip's force-envelope authority based on whether the
+# fighters are in matched (ai-yotsu) or mirrored (kenka-yotsu) stances.
+# Range 0.7–1.3. The default StanceParity() is neutral; a grip whose
+# leverage geometry is stance-dependent declares its preference here so
+# Match.compute_net_force can apply it per edge.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class StanceParity:
+    """Per-grip authority multipliers for matched vs mirrored stance."""
+    matched:  float = 1.0
+    mirrored: float = 1.0
+
+    def multiplier(self, matchup: StanceMatchup) -> float:
+        if matchup == StanceMatchup.MIRRORED:
+            return self.mirrored
+        return self.matched
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +61,9 @@ class ForceEnvelope:
     moment_arm_to_uke_com: float   # grip point to uke's CoM (m); longer = more torque
     rotation_authority:    float   # multiplier on torque about uke's vertical axis
     strip_resistance:      float   # how hard uke must work to strip the grip (arbitrary units)
+    # HAJ-51 — stance parity multipliers. Matched (ai-yotsu) leverages most
+    # gi-aligned grips; mirrored (kenka-yotsu) opens cross-grip families.
+    stance_parity:         StanceParity = field(default_factory=StanceParity)
 
 
 # ---------------------------------------------------------------------------
@@ -65,37 +88,63 @@ FORCE_ENVELOPES: dict[GripTypeV2, ForceEnvelope] = {
     # moment arm and stronger rotation authority — the cuff sits farther
     # from uke's shoulder, gives the wrist around-the-axis control, and
     # slips more readily under load.
+    #
+    # HAJ-51 — stance_parity declares per-grip leverage shift between
+    # matched (ai-yotsu) and mirrored (kenka-yotsu). Tuning rationale below.
     GripTypeV2.SLEEVE_HIGH: ForceEnvelope(
         max_pull_force=500.0, max_push_force=150.0, max_lift_force=200.0,
         moment_arm_to_uke_com=0.50, rotation_authority=1.0, strip_resistance=350.0,
+        # Standard hikite hand favors matched stance (cleaner pull line) but
+        # works fine in mirrored. Mild matched preference.
+        stance_parity=StanceParity(matched=1.05, mirrored=0.95),
     ),
     GripTypeV2.SLEEVE_LOW: ForceEnvelope(
         max_pull_force=500.0, max_push_force=150.0, max_lift_force=100.0,
         moment_arm_to_uke_com=0.65, rotation_authority=1.3, strip_resistance=200.0,
+        # Cuff control marginally cleaner in mirrored — wrist-against-wrist
+        # geometry the Russian / pistol family leverages.
+        stance_parity=StanceParity(matched=1.0, mirrored=1.05),
     ),
     GripTypeV2.LAPEL_LOW: ForceEnvelope(
         max_pull_force=300.0, max_push_force=300.0, max_lift_force=300.0,
         moment_arm_to_uke_com=0.30, rotation_authority=1.0, strip_resistance=300.0,
+        # Low lapel hand sits near the centerline — geometry symmetric.
+        stance_parity=StanceParity(matched=1.0, mirrored=1.0),
     ),
     GripTypeV2.LAPEL_HIGH: ForceEnvelope(
         max_pull_force=300.0, max_push_force=300.0, max_lift_force=500.0,
         moment_arm_to_uke_com=0.40, rotation_authority=1.2, strip_resistance=400.0,
+        # High lapel pulls along the gi seam: matched aligns the pull with
+        # the construction; mirrored fights it.
+        stance_parity=StanceParity(matched=1.10, mirrored=0.85),
     ),
     GripTypeV2.COLLAR: ForceEnvelope(
         max_pull_force=300.0, max_push_force=500.0, max_lift_force=300.0,
         moment_arm_to_uke_com=0.55, rotation_authority=1.8, strip_resistance=500.0,
+        # Deep collar is the most stance-dependent grip in judo: the
+        # rotational authority comes from the seam line, which is fully
+        # served only when both fighters' lead sides agree.
+        stance_parity=StanceParity(matched=1.15, mirrored=0.80),
     ),
     GripTypeV2.BELT: ForceEnvelope(
         max_pull_force=500.0, max_push_force=300.0, max_lift_force=800.0,
         moment_arm_to_uke_com=0.05, rotation_authority=1.3, strip_resistance=700.0,
+        # Belt is symmetric — wraps the body, no chirality.
+        stance_parity=StanceParity(matched=1.0, mirrored=1.0),
     ),
     GripTypeV2.PISTOL: ForceEnvelope(
         max_pull_force=150.0, max_push_force=150.0, max_lift_force=150.0,
         moment_arm_to_uke_com=0.55, rotation_authority=0.6, strip_resistance=800.0,
+        # Pistol grip is the kenka-yotsu specialty — Russian / two-on-one
+        # geometry only aligns when stances are mirrored.
+        stance_parity=StanceParity(matched=0.85, mirrored=1.20),
     ),
     GripTypeV2.CROSS: ForceEnvelope(
         max_pull_force=300.0, max_push_force=300.0, max_lift_force=300.0,
         moment_arm_to_uke_com=0.40, rotation_authority=1.0, strip_resistance=200.0,
+        # Cross-grip authority depends on reaching across the centerline —
+        # mirrored stance makes that geometry natural.
+        stance_parity=StanceParity(matched=0.80, mirrored=1.25),
     ),
 }
 
