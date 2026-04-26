@@ -359,6 +359,117 @@ def test_stunned_fighter_does_not_step() -> None:
 # End-to-end: Tanaka(PRESSURE) vs Sato(DEFENSIVE_EDGE) produces visible
 # CoM displacement over a short match.
 # ---------------------------------------------------------------------------
+def test_pressure_introduces_lateral_motion() -> None:
+    """The corner-targeting PRESSURE direction yields y-component
+    variance, not just +x. With both fighters on the x-axis, the
+    pressure-fighter should pick a side and step toward an opponent
+    corner — y components should not all be zero across many trials."""
+    from action_selection import _maybe_emit_step
+    from grip_graph import GripGraph
+    t, s = _pair()
+    t.identity.positional_style = PositionalStyle.PRESSURE
+    g = GripGraph()
+    y_components: list[float] = []
+    for seed in range(120):
+        rng = random.Random(seed)
+        out = _maybe_emit_step(t, s, g, rng)
+        if out is not None:
+            y_components.append(out.direction[1])
+    assert y_components, "PRESSURE should fire some steps"
+    # Some trials have y != 0.
+    nonzero = [y for y in y_components if abs(y) > 1e-6]
+    assert len(nonzero) >= len(y_components) * 0.5, (
+        f"expected most pressure steps to have nonzero y component; "
+        f"{len(nonzero)}/{len(y_components)} did"
+    )
+
+
+def test_pressure_steps_to_both_lateral_sides_over_trials() -> None:
+    """Across many seeds, PRESSURE picks both +y and −y lateral
+    components (the corner-targeting jitter goes both ways for an
+    opponent on the x-axis). Ensures we're not just locking to one
+    side."""
+    from action_selection import _maybe_emit_step
+    from grip_graph import GripGraph
+    t, s = _pair()
+    t.identity.positional_style = PositionalStyle.PRESSURE
+    g = GripGraph()
+    saw_pos_y = False
+    saw_neg_y = False
+    for seed in range(200):
+        rng = random.Random(seed)
+        out = _maybe_emit_step(t, s, g, rng)
+        if out is not None:
+            if out.direction[1] > 0.05:
+                saw_pos_y = True
+            if out.direction[1] < -0.05:
+                saw_neg_y = True
+        if saw_pos_y and saw_neg_y:
+            break
+    assert saw_pos_y and saw_neg_y, (
+        "PRESSURE should explore both lateral sides; "
+        f"+y={saw_pos_y} −y={saw_neg_y}"
+    )
+
+
+def test_stance_leash_clamps_drifted_feet() -> None:
+    """A foot stranded far from CoM (post-throw, post-ne-waza) gets
+    clamped to STANCE_LEASH_M of the body each tick. Pre-fix, foot
+    dots in the viewer drifted away from the fighter dots after a
+    couple of throws."""
+    from match import Match, STANCE_LEASH_M
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    # Strand a foot far from the body (simulating displacement after a
+    # throw or ne-waza transition that moved CoM but not feet).
+    t.state.body_state.com_position = (0.0, 0.0)
+    t.state.body_state.foot_state_right.position = (3.0, 0.0)
+    m._enforce_stance_leash(t)
+    fx, fy = t.state.body_state.foot_state_right.position
+    dist = (fx ** 2 + fy ** 2) ** 0.5
+    assert abs(dist - STANCE_LEASH_M) < 1e-6, (
+        f"clamped foot should sit exactly on the leash radius; got {dist}"
+    )
+
+
+def test_stance_leash_leaves_close_feet_alone() -> None:
+    """Feet already within the leash are untouched — normal step
+    dynamics aren't perturbed by the safety clamp."""
+    from match import Match
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    t.state.body_state.com_position = (1.0, 0.0)
+    # Foot 0.2 m offset — well inside the leash.
+    t.state.body_state.foot_state_left.position = (1.2, 0.0)
+    m._enforce_stance_leash(t)
+    fx, fy = t.state.body_state.foot_state_left.position
+    assert (fx, fy) == (1.2, 0.0)
+
+
+def test_handle_matte_resets_feet_to_under_com() -> None:
+    """After a Matte resets fighters to (-0.5, 0) / (+0.5, 0), feet
+    should also snap back instead of staying wherever they ended up
+    when Matte fired."""
+    from match import Match, STANCE_LEASH_M
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    # Send Tanaka and his feet far from start.
+    t.state.body_state.com_position = (3.0, 1.0)
+    t.state.body_state.foot_state_left.position = (3.5, 1.5)
+    t.state.body_state.foot_state_right.position = (3.0, 0.5)
+
+    m._handle_matte(tick=10)
+
+    # CoM reset to (-0.5, 0).
+    assert t.state.body_state.com_position == (-0.5, 0.0)
+    # Feet are now within the leash of (-0.5, 0).
+    for foot in (t.state.body_state.foot_state_left,
+                 t.state.body_state.foot_state_right):
+        fx, fy = foot.position
+        d = ((fx - (-0.5)) ** 2 + fy ** 2) ** 0.5
+        assert d <= STANCE_LEASH_M + 1e-6
+
+
 def test_step_alternates_feet_via_trailing_pick() -> None:
     """The trailing-foot picker (HAJ-128 fix to the dot-split bug) must
     walk feet alternately. After two consecutive steps in the same

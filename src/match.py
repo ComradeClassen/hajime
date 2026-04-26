@@ -102,6 +102,13 @@ MAT_COORDINATE_UNIT: str = "meters"
 # few ticks should accumulate measurable cardio drain.
 STEP_CARDIO_COST: float = 0.0015
 
+# HAJ-128 — stance leash. Maximum distance a foot can be from the body's
+# CoM. Throws, ne-waza transitions, and accumulated step drift can leave
+# feet stranded far from the body; this leash snaps them back to a
+# realistic stance offset every tick. ~half a hip width is a natural
+# resting separation; 0.45 m is generous enough to allow open stances.
+STANCE_LEASH_M: float = 0.45
+
 # HAJ-127 / HAJ-128 — out-of-bounds boundary, IJF reference half-width.
 #
 # 4.0 m matches the IJF 8 × 8 m contest area, centered on the mat origin.
@@ -889,6 +896,14 @@ class Match:
         self._reorient_facing(self.fighter_a, self.fighter_b)
         self._reorient_facing(self.fighter_b, self.fighter_a)
 
+        # HAJ-128 — keep feet attached to the body. Throws and ne-waza
+        # transitions can leave feet stranded far from where the CoM ends
+        # up; the stance leash pulls any over-extended foot back to a
+        # natural stance offset under the body. Without this the viewer's
+        # foot dots drift away from the fighter dots after a few exchanges.
+        self._enforce_stance_leash(self.fighter_a)
+        self._enforce_stance_leash(self.fighter_b)
+
         # Step 9 — kuzushi check (post-update state).
         a_kuzushi = self._is_kuzushi(self.fighter_a)
         b_kuzushi = self._is_kuzushi(self.fighter_b)
@@ -1276,6 +1291,21 @@ class Match:
     # -----------------------------------------------------------------------
     # STEP 8 — BoS UPDATE (STEP / SWEEP_LEG)
     # -----------------------------------------------------------------------
+    def _enforce_stance_leash(self, judoka: Judoka) -> None:
+        """HAJ-128 — clamp each foot to be within STANCE_LEASH_M of CoM.
+        Snaps stranded feet (post-throw, post-ne-waza, post-displacement)
+        back to a realistic stance offset. Feet that are already inside
+        the leash are untouched, so normal step dynamics aren't perturbed."""
+        bs = judoka.state.body_state
+        cx, cy = bs.com_position
+        for foot in (bs.foot_state_left, bs.foot_state_right):
+            fx, fy = foot.position
+            dx, dy = fx - cx, fy - cy
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist > STANCE_LEASH_M:
+                scale = STANCE_LEASH_M / dist
+                foot.position = (cx + dx * scale, cy + dy * scale)
+
     def _reorient_facing(self, judoka: Judoka, opponent: Judoka) -> None:
         """HAJ-128 — point this judoka's facing unit-vector at the opponent.
         Called once per tick after CoM updates so the viewer arrow tracks
@@ -2450,11 +2480,17 @@ class Match:
         self._b_was_kuzushi_last_tick = False
         self.position = Position.STANDING_DISTANT
         # Reset postures + CoM velocity/position for a clean re-engage.
+        # HAJ-128 — also reset feet via place_judoka so a Matte after a
+        # throw / ne-waza chunk doesn't leave foot dots stranded where
+        # the displacement happened.
+        from body_state import place_judoka as _place
         for i, f in enumerate((self.fighter_a, self.fighter_b)):
             f.state.body_state.trunk_sagittal = 0.0
             f.state.body_state.trunk_frontal  = 0.0
             f.state.body_state.com_velocity   = (0.0, 0.0)
-            f.state.body_state.com_position   = (-0.5, 0.0) if i == 0 else (0.5, 0.0)
+            com   = (-0.5, 0.0) if i == 0 else (0.5, 0.0)
+            facing = (1.0, 0.0) if i == 0 else (-1.0, 0.0)
+            _place(f, com_position=com, facing=facing)
 
     # -----------------------------------------------------------------------
     # HELPERS

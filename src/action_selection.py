@@ -765,9 +765,56 @@ def _maybe_emit_step(
         prob = min(0.95, PRESSURE_BASE_STEP_PROB + proximity_term)
         if rng.random() > prob:
             return None
-        # Direction: from this fighter's CoM toward opponent's CoM.
-        ox, oy = opponent.state.body_state.com_position
-        sx, sy = judoka.state.body_state.com_position
-        return _step_action(judoka, (ox - sx, oy - sy), mag)
+        return _step_action(judoka, _pressure_direction(judoka, opponent, rng), mag)
 
     return None
+
+
+def _pressure_direction(
+    judoka: "Judoka", opponent: "Judoka", rng: random.Random,
+) -> tuple[float, float]:
+    """HAJ-128 — pressure-fighter step direction.
+
+    Pure "step toward opponent" produces 1D forward/back movement: with
+    fighters starting on the x-axis, every step is along x and the match
+    plays in a horizontal stripe. Real pressure-fighters angle their
+    opponent toward a corner — the line of attack tilts off-axis.
+
+    Direction is a blend of:
+      1. Toward the opponent's CoM (60%) — keep applying pressure.
+      2. Toward the corner the opponent is closest to (40%) — angle them
+         into the rope. Per-axis: pick whichever edge the opponent is
+         closer to in x and in y; sum drives the diagonal.
+
+    Pressure-fighter alternates lateral side via a small per-tick jitter
+    so the motion isn't perfectly straight even when both fighters sit
+    on the x-axis.
+    """
+    from match import MAT_HALF_WIDTH
+
+    sx, sy = judoka.state.body_state.com_position
+    ox, oy = opponent.state.body_state.com_position
+    base_dx, base_dy = (ox - sx), (oy - sy)
+    base_norm = (base_dx * base_dx + base_dy * base_dy) ** 0.5 or 1.0
+    base_dx /= base_norm
+    base_dy /= base_norm
+
+    # Corner the opponent is currently angling toward (per axis).
+    # Tie-break with a small jitter so two fighters on the x-axis pick
+    # a side instead of trying to step purely +x and stuttering.
+    edge_x = MAT_HALF_WIDTH if ox >= -1e-6 else -MAT_HALF_WIDTH
+    edge_y = MAT_HALF_WIDTH if oy >= 0 else -MAT_HALF_WIDTH
+    if abs(oy) < 0.1:
+        # Roughly on the x-axis — randomize the lateral side (left vs right).
+        edge_y = MAT_HALF_WIDTH if rng.random() < 0.5 else -MAT_HALF_WIDTH
+
+    corner_dx = edge_x - ox
+    corner_dy = edge_y - oy
+    cn = (corner_dx * corner_dx + corner_dy * corner_dy) ** 0.5 or 1.0
+    corner_dx /= cn
+    corner_dy /= cn
+
+    return (
+        base_dx * 0.60 + corner_dx * 0.40,
+        base_dy * 0.60 + corner_dy * 0.40,
+    )
