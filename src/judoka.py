@@ -15,8 +15,9 @@
 #   State = what's true right now (match-volatile)
 
 from __future__ import annotations
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from enums import (
     BodyArchetype, BeltRank, DominantSide,
@@ -26,6 +27,9 @@ from throws import ThrowID, ComboID, JudokaThrowProfile
 from body_state import (
     BodyState, ContactState, fresh_body_state, derive_posture,
 )
+
+if TYPE_CHECKING:
+    from kuzushi import KuzushiEvent
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +318,13 @@ class Judoka:
     identity: Identity
     capability: Capability
     state: State
+
+    # HAJ-130 — per-fighter kuzushi event buffer. Auto-drops events older
+    # than KUZUSHI_BUFFER_CAPACITY (20) ticks. Populated only by tests in
+    # this ticket; PULL emission lands in HAJ-131, FOOT_ATTACK in HAJ-133.
+    kuzushi_events: "deque[KuzushiEvent]" = field(
+        default_factory=lambda: __import__("kuzushi").fresh_buffer()
+    )
 
     def leg_strength(self) -> float:
         """Derived leg strength in [0, 1] for the Part 1.5 envelope.
