@@ -97,6 +97,11 @@ UNCONVENTIONAL_SHIDO_TICKS:   int = 5    # BELT/PISTOL/CROSS immediate-attack th
 # ---------------------------------------------------------------------------
 MAT_COORDINATE_UNIT: str = "meters"
 
+# HAJ-128 — locomotion: per-step cardio cost. Stepping isn't free; over
+# the course of a 4-minute match a pressure-fighter who steps every
+# few ticks should accumulate measurable cardio drain.
+STEP_CARDIO_COST: float = 0.0015
+
 # HAJ-127 — out-of-bounds boundary. INTERIM VALUE: 1.5 m half-width.
 #
 # IJF reference: 8 × 8 m contest area → real half-width is 4.0 m. We use a
@@ -1281,6 +1286,19 @@ class Match:
             mag = max(0.0, act.magnitude)
             fx, fy = foot.position
             foot.position = (fx + dx * mag, fy + dy * mag)
+            # HAJ-128 — tactical-step semantics. The fighter's center of
+            # mass advances with the foot at half the step magnitude (one
+            # tick = one weight-transfer phase, not a full body shift).
+            # The OTHER foot trails behind at zero — natural rest stance
+            # is restored by the next step. CoM movement is what makes
+            # locomotion visible and what drives OOB / mat positioning.
+            cx, cy = bs.com_position
+            bs.com_position = (cx + dx * mag * 0.5, cy + dy * mag * 0.5)
+            # Small cardio cost: stepping spends fuel. Calibrated to be
+            # noticeable across many ticks but not dominant.
+            judoka.state.cardio_current = max(
+                0.0, judoka.state.cardio_current - STEP_CARDIO_COST
+            )
 
     # -----------------------------------------------------------------------
     # STEP 9 — KUZUSHI CHECK

@@ -19,6 +19,7 @@ from actions import (
 )
 from enums import (
     GripTypeV2, GripDepth, GripTarget, GripMode, DominantSide, StanceMatchup,
+    PositionalStyle,
 )
 from throws import THROW_DEFS, ThrowID
 from grip_presence_gate import evaluate_gate, GateResult, REASON_OK
@@ -136,7 +137,44 @@ def select_actions(
     """Return the judoka's chosen actions for this tick.
 
     Implements the Part 3.3 priority ladder. Returns 1-2 Actions, or a
-    single-element list containing COMMIT_THROW.
+    single-element list containing COMMIT_THROW. HAJ-128 may append a
+    STEP locomotion action to the result when positional intent fires.
+    """
+    r = rng if rng is not None else random
+    actions = _select_grip_actions(
+        judoka, opponent, graph, kumi_kata_clock, r,
+        defensive_desperation=defensive_desperation,
+        opponent_kumi_kata_clock=opponent_kumi_kata_clock,
+        opponent_in_progress_throw=opponent_in_progress_throw,
+        desperation_jitter=desperation_jitter,
+    )
+    # HAJ-128 — locomotion is additive, never replaces grip work. Skip
+    # when a commit is in flight (commits are exclusive in the ladder)
+    # or when the fighter is stunned.
+    if any(a.kind == ActionKind.COMMIT_THROW for a in actions):
+        return actions
+    if judoka.state.stun_ticks > 0:
+        return actions
+    step_action = _maybe_emit_step(judoka, opponent, graph, r)
+    if step_action is not None:
+        actions = list(actions) + [step_action]
+    return actions
+
+
+def _select_grip_actions(
+    judoka: "Judoka",
+    opponent: "Judoka",
+    graph: "GripGraph",
+    kumi_kata_clock: int,
+    r: random.Random,
+    *,
+    defensive_desperation: bool = False,
+    opponent_kumi_kata_clock: int = 0,
+    opponent_in_progress_throw: Optional[ThrowID] = None,
+    desperation_jitter: Optional[dict] = None,
+) -> list[Action]:
+    """The grip / commit / probe priority ladder. Pre-HAJ-128 this was
+    the body of select_actions; locomotion now wraps it.
 
     HAJ-35/36: `defensive_desperation` is computed Match-side (requires
     cross-tick history the ladder can't see) and bypasses the grip-
@@ -149,7 +187,6 @@ def select_actions(
     grip/commit work — provided the judoka is upright (posture gate)
     and a fight_iq-scaled perception roll succeeds.
     """
-    r = rng if rng is not None else random
 
     # Rung 1: stunned → defensive-only (v0.1: just idle).
     if judoka.state.stun_ticks > 0:
@@ -599,4 +636,118 @@ def _free_hand(judoka: "Judoka") -> Optional[str]:
         ps = judoka.state.body.get(key)
         if ps is not None and ps.contact_state != _CS.GRIPPING_UKE:
             return key
+    return None
+
+
+# ---------------------------------------------------------------------------
+# LOCOMOTION (HAJ-128)
+# ---------------------------------------------------------------------------
+# Tactical mat positioning. Three styles drive different intents:
+#   - PRESSURE: drive opponent toward edge by stepping toward them
+#   - DEFENSIVE_EDGE: retreat toward center when own perceived edge is close
+#   - HOLD_CENTER: stay near center; only step toward center when far drift
+#
+# Magnitudes are intentionally small (per-tick step is part of a
+# weight-transfer phase, not a full body move). Step gates with grip range:
+# heavy opponent grips drag the fighter and reduce step magnitude.
+
+# Per-tick STEP magnitude in meters. Conservative — viewer-tunable.
+STEP_MAGNITUDE_M:           float = 0.18
+STEP_MAGNITUDE_REDUCED_M:   float = 0.08   # under heavy opponent grips
+
+# How frequently each style attempts a step (per-tick probability gates).
+PRESSURE_BASE_STEP_PROB:    float = 0.35   # always-on baseline for PRESSURE
+PRESSURE_RAMP_PROB_PER_M:   float = 0.20   # bonus per meter the opp is from edge
+DEFENSIVE_EDGE_TRIGGER_M:   float = 0.6    # perceived edge < this → retreat
+DEFENSIVE_EDGE_STEP_PROB:   float = 0.85   # high — retreat is urgent
+HOLD_CENTER_DRIFT_M:        float = 0.4    # |com| > this → small recentering step
+HOLD_CENTER_STEP_PROB:      float = 0.20
+
+# Grip-range gating: if any opponent grip on this fighter has depth ≥ DEEP,
+# consider the fighter "tied" and reduce step magnitude.
+def _opponent_grip_drag(judoka: "Judoka", graph: "GripGraph") -> bool:
+    """True when the opponent has a deep grip on this fighter — heavy drag
+    means the fighter can't take a clean step."""
+    for e in graph.edges_targeting(judoka.identity.name):
+        if e.depth_level == GripDepth.DEEP:
+            return True
+    return False
+
+
+def _alternating_step_foot(judoka: "Judoka") -> str:
+    """Pick which foot to step with. The trailing foot (closer to the body
+    center, lower-weight) is the natural mover. Light heuristic: step with
+    the dominant-side foot most of the time. Future calibration could read
+    foot weight_fraction; for v1 the alternation isn't load-bearing."""
+    return ("right_foot"
+            if judoka.identity.dominant_side == DominantSide.RIGHT
+            else "left_foot")
+
+
+def _step_action(direction: tuple[float, float], magnitude: float, foot: str
+                 ) -> Action:
+    nx, ny = direction
+    norm = (nx * nx + ny * ny) ** 0.5
+    if norm == 0:
+        return None
+    return step(foot, (nx / norm, ny / norm), magnitude)
+
+
+def _maybe_emit_step(
+    judoka: "Judoka", opponent: "Judoka", graph: "GripGraph",
+    rng: random.Random,
+) -> Optional[Action]:
+    """Decide whether to emit a STEP action this tick based on the
+    fighter's positional style. Returns the Action or None.
+
+    Reads perceived edge distance via perception.perceive_edge_distance,
+    so fight_iq / fatigue / composure all modulate the decision through
+    the same noise model the throw-signature path uses.
+    """
+    from perception import perceive_edge_distance
+    from match import MAT_HALF_WIDTH
+
+    style = getattr(judoka.identity, "positional_style", PositionalStyle.HOLD_CENTER)
+
+    # Magnitude attenuates under deep opponent grips.
+    mag = (STEP_MAGNITUDE_REDUCED_M if _opponent_grip_drag(judoka, graph)
+           else STEP_MAGNITUDE_M)
+    foot = _alternating_step_foot(judoka)
+
+    if style == PositionalStyle.HOLD_CENTER:
+        # Only step toward center when the fighter has drifted noticeably.
+        x, y = judoka.state.body_state.com_position
+        if abs(x) <= HOLD_CENTER_DRIFT_M and abs(y) <= HOLD_CENTER_DRIFT_M:
+            return None
+        if rng.random() > HOLD_CENTER_STEP_PROB:
+            return None
+        return _step_action((-x, -y), mag, foot)
+
+    if style == PositionalStyle.DEFENSIVE_EDGE:
+        # Retreat toward center when own perceived edge is close.
+        own_edge = perceive_edge_distance(judoka, MAT_HALF_WIDTH, rng)
+        if own_edge >= DEFENSIVE_EDGE_TRIGGER_M:
+            return None
+        if rng.random() > DEFENSIVE_EDGE_STEP_PROB:
+            return None
+        x, y = judoka.state.body_state.com_position
+        if abs(x) < 1e-6 and abs(y) < 1e-6:
+            return None
+        return _step_action((-x, -y), mag, foot)
+
+    if style == PositionalStyle.PRESSURE:
+        # Drive opponent toward the edge by stepping into them. Probability
+        # ramps up as opponent's PERCEIVED edge distance shrinks — pressure
+        # builds when the prey nears the rope.
+        opp_edge = perceive_edge_distance(opponent, MAT_HALF_WIDTH, rng)
+        # Higher prob when opp_edge is small.
+        proximity_term = max(0.0, MAT_HALF_WIDTH - opp_edge) * PRESSURE_RAMP_PROB_PER_M
+        prob = min(0.95, PRESSURE_BASE_STEP_PROB + proximity_term)
+        if rng.random() > prob:
+            return None
+        # Direction: from this fighter's CoM toward opponent's CoM.
+        ox, oy = opponent.state.body_state.com_position
+        sx, sy = judoka.state.body_state.com_position
+        return _step_action((ox - sx, oy - sy), mag, foot)
+
     return None

@@ -111,6 +111,22 @@ class Identity:
     style_dna: dict[str, float] = field(default_factory=dict)
     stance_matchup_comfort: dict[str, float] = field(default_factory=dict)
 
+    # HAJ-128 — positional style. Drives the locomotion rung in
+    # action_selection. Defaults to HOLD_CENTER so existing fighter
+    # builders need no changes; explicit assignments differentiate
+    # pressure-fighters from defensive stylists.
+    positional_style: "PositionalStyle" = field(
+        default=None  # type: ignore  (filled in __post_init__ below)
+    )
+
+    def __post_init__(self) -> None:
+        # Lazy default avoids the import-time ordering problem with the
+        # PositionalStyle enum (Identity is defined before the enum is
+        # imported into this module).
+        if self.positional_style is None:
+            from enums import PositionalStyle as _PS
+            self.positional_style = _PS.HOLD_CENTER
+
 
 # ===========================================================================
 # LAYER 2 — CAPABILITY

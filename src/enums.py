@@ -99,6 +99,20 @@ class StanceMatchup(Enum):
 
 
 # ---------------------------------------------------------------------------
+# POSITIONAL STYLE (HAJ-128)
+# How a fighter approaches mat positioning. Drives the locomotion rung in
+# action_selection: PRESSURE pushes opponent toward the boundary, DEFENSIVE
+# retreats from it, HOLD_CENTER plants and works grips. Real edge play in
+# judo is intentional — Georgian / Russian heavies are pressure-built;
+# many Japanese stylists are HOLD_CENTER. Style is `fight_iq + temperament`.
+# ---------------------------------------------------------------------------
+class PositionalStyle(Enum):
+    HOLD_CENTER     = auto()  # Plants in the middle, works the grip war
+    PRESSURE        = auto()  # Drives opponent toward the edge
+    DEFENSIVE_EDGE  = auto()  # Retreats toward center when own edge is close
+
+
+# ---------------------------------------------------------------------------
 # EMOTIONAL STATE
 # Carries over between matches (Ring 2+ feature). Declared now for data model.
 # ---------------------------------------------------------------------------

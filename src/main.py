@@ -27,7 +27,7 @@ if hasattr(sys.stdout, 'buffer'):
 # Allow running from the project root or from src/
 sys.path.insert(0, os.path.dirname(__file__))
 
-from enums import BodyArchetype, BeltRank, DominantSide
+from enums import BodyArchetype, BeltRank, DominantSide, PositionalStyle
 from throws import ThrowID, ComboID, JudokaThrowProfile
 from judoka import Identity, Capability, State, Judoka
 from body_state import place_judoka
@@ -64,6 +64,8 @@ def build_tanaka() -> Judoka:
         # leans on clean kuzushi rather than feint-for-clock-reset. Neutral
         # baseline keeps the pathway observable without dominating.
         style_dna={"false_attack_tendency": 0.45},
+        # HAJ-128 — pressure-fighter archetype. Walks Sato toward the edge.
+        positional_style=PositionalStyle.PRESSURE,
     )
 
     capability = Capability(
@@ -167,6 +169,10 @@ def build_sato() -> Judoka:
             "false_attack_tendency":  0.70,
             "shido_farming_tendency": 0.60,
         },
+        # HAJ-128 — defensive-edge stylist. Sato retreats toward center
+        # when his perceived edge distance shrinks; against Tanaka's
+        # pressure he gets a visible rope-a-dope dance.
+        positional_style=PositionalStyle.DEFENSIVE_EDGE,
     )
 
     capability = Capability(

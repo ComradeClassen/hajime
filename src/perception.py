@@ -72,6 +72,47 @@ def perceive(actual_match: float, judoka: "Judoka",
 
 
 # ---------------------------------------------------------------------------
+# EDGE PERCEPTION (HAJ-128)
+# Real judoka feel the boundary through the tatami seam under one foot.
+# Elite + composed fighters perceive it accurately; novices drift unaware.
+#
+# Returns a noisy estimate of the distance from this fighter's CoM to the
+# nearest edge of the contest area. Noise scales with the same
+# perception_std the throw-signature path uses, so fight_iq, fatigue, and
+# composure all modulate it consistently.
+#
+# Output is in METERS (HAJ-124 unit declaration). Clamped at 0 — a fighter
+# perceiving "negative distance" is nonsensical; treat sub-zero as "you
+# are out of bounds" via the actual is_out_of_bounds check.
+# ---------------------------------------------------------------------------
+EDGE_PERCEPTION_NOISE_SCALE: float = 1.5  # meters of noise at full perception_std
+
+
+def actual_distance_to_edge(judoka: "Judoka", half_width: float) -> float:
+    """Ground-truth distance to the nearest edge of a square contest area
+    centered at the origin. Uses the chebyshev (L∞) metric — the closest
+    edge is whichever component (x or y) is most extreme."""
+    x, y = judoka.state.body_state.com_position
+    return max(0.0, half_width - max(abs(x), abs(y)))
+
+
+def perceive_edge_distance(
+    judoka: "Judoka", half_width: float,
+    rng: random.Random | None = None,
+) -> float:
+    """Noisy perception of distance to the nearest edge.
+
+    Elite + fresh + composed → near ground truth.
+    Novice + fatigued + panicked → wide noise; may misjudge by meters.
+    """
+    r = rng if rng is not None else random
+    truth = actual_distance_to_edge(judoka, half_width)
+    std = perception_std(judoka) * EDGE_PERCEPTION_NOISE_SCALE
+    noisy = truth + r.gauss(0.0, std)
+    return max(0.0, noisy)
+
+
+# ---------------------------------------------------------------------------
 # ACTUAL-SIGNATURE MATCH
 # Ground-truth 0.0–1.0 match for a throw given current match state.
 #
