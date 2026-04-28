@@ -16,6 +16,7 @@ from actions import (
     Action, ActionKind,
     reach, deepen, strip, release, pull, push, hold_connective, step, commit_throw,
     block_hip,
+    foot_sweep_setup, leg_attack_setup, disruptive_step,
 )
 from enums import (
     GripTypeV2, GripDepth, GripTarget, GripMode, DominantSide, StanceMatchup,
@@ -302,16 +303,112 @@ def _select_grip_actions(
     push_dir = attacker_to_opp
 
     primary = deep_enough[0]
+
+    # HAJ-133 — when the grip war is stalemated (seated grips but no
+    # progress), substitute the secondary drive for a foot-attack setup
+    # at fight_iq-gated probability. Per grip-as-cause.md §3.5: when you
+    # can't win the grip war directly, change the question — force uke
+    # to defend the legs so attention shifts off the grip exchange.
+    foot_attack = _maybe_emit_foot_attack(
+        judoka, opponent, kumi_kata_clock, r, attacker_to_opp,
+    )
+
     # Secondary action: deepen a shallow grip if any, else push with 2nd hand.
     shallow = [e for e in own_edges if e.depth_level != GripDepth.DEEP
                and e is not primary]
     out = [pull(primary.grasper_part.value, pull_dir, drive_mag)]
-    if shallow:
+    if foot_attack is not None:
+        # Foot attack takes the secondary slot — it's a parallel kuzushi
+        # generator, not a replacement for the primary pull.
+        out.append(foot_attack)
+    elif shallow:
         out.append(deepen(shallow[0]))
     elif len(own_edges) > 1:
         secondary = own_edges[1] if own_edges[0] is primary else own_edges[0]
         out.append(push(secondary.grasper_part.value, push_dir, drive_mag * 0.5))
     return out
+
+
+# ---------------------------------------------------------------------------
+# HAJ-133 — FOOT_ATTACK FAMILY (parallel kuzushi generator)
+# ---------------------------------------------------------------------------
+# A grip-stalemated fighter (seated grips, kumi-kata clock advancing,
+# no commit-quality signature) can substitute a foot attack for the
+# secondary drive. Real-judo strategy: force uke to defend the legs so
+# attention shifts off the grip exchange and strip windows open.
+#
+# Activation gate (cumulative): grip war is stalemated AND fight_iq is
+# above threshold AND a per-tick probability roll fires. Stalemate proxy:
+# kumi-kata clock has been advancing for at least STALEMATE_CLOCK_TICKS,
+# which means own grips have existed without an attack for a while.
+
+# Earliest clock tick at which foot attacks become available — gives the
+# initial grip exchange a few ticks before stalemate logic kicks in.
+# Tuned to fire after grips seat and 2-3 deepening ticks have elapsed
+# without a commit-quality signature; calibration target for HAJ-A.7 once
+# more match telemetry exists.
+FOOT_ATTACK_STALEMATE_CLOCK_MIN: int = 3
+# Below this fight_iq value, foot-attack setups are too sophisticated;
+# white belts rely on grip-only drives.
+FOOT_ATTACK_MIN_FIGHT_IQ: int = 4
+# Per-tick base probability (when stalemate gate is met). Modulated up
+# by fight_iq so a high-IQ fighter changes the question more readily.
+FOOT_ATTACK_BASE_PROB: float = 0.12
+FOOT_ATTACK_IQ_PROB_BONUS: float = 0.04   # per fight_iq point above min
+
+
+def _maybe_emit_foot_attack(
+    judoka: "Judoka",
+    opponent: "Judoka",
+    kumi_kata_clock: int,
+    rng: random.Random,
+    attacker_to_opp: tuple[float, float],
+) -> Optional[Action]:
+    """Return a FOOT_ATTACK family Action if this tick passes the
+    stalemate gate and the fight_iq-scaled probability roll. Else None.
+
+    The foot is the trailing one (so the action is a deliberate stretch
+    of the rear leg, not the planted lead). The kind rotates among the
+    three setup variants based on the kumi-kata clock so a stalemated
+    fighter cycles through different threats rather than spamming one.
+    """
+    if kumi_kata_clock < FOOT_ATTACK_STALEMATE_CLOCK_MIN:
+        return None
+    if judoka.capability.fight_iq < FOOT_ATTACK_MIN_FIGHT_IQ:
+        return None
+    iq_excess = max(0, judoka.capability.fight_iq - FOOT_ATTACK_MIN_FIGHT_IQ)
+    prob = min(0.6, FOOT_ATTACK_BASE_PROB + iq_excess * FOOT_ATTACK_IQ_PROB_BONUS)
+    if rng.random() >= prob:
+        return None
+    # Pick the trailing foot so the lead foot stays planted (the same
+    # convention HAJ-128 locomotion uses). The attack vector is forward
+    # and lateral — toward the opponent with a half-perpendicular twist
+    # so the sweep crosses uke's centerline rather than chasing them.
+    fx, fy = attacker_to_opp
+    # Lateral component alternates per-tick via the clock for variety.
+    side = 1.0 if (kumi_kata_clock % 2 == 0) else -1.0
+    perp_x, perp_y = -fy * side, fx * side
+    attack_vec = (fx * 0.7 + perp_x * 0.5, fy * 0.7 + perp_y * 0.5)
+
+    bs = judoka.state.body_state
+    cx, cy = bs.com_position
+    dx, dy = attack_vec
+    # Trailing foot relative to attack direction (smaller projection).
+    lx, ly = bs.foot_state_left.position
+    rx, ry = bs.foot_state_right.position
+    left_proj  = (lx - cx) * dx + (ly - cy) * dy
+    right_proj = (rx - cx) * dx + (ry - cy) * dy
+    foot = "left_foot" if left_proj < right_proj else "right_foot"
+
+    # Cycle through the three setup kinds based on the clock tick.
+    # Foot sweep on even ticks, leg attack on every-third, disruptive
+    # step otherwise — produces a plausible mix without a separate RNG.
+    kind_index = kumi_kata_clock % 3
+    if kind_index == 0:
+        return foot_sweep_setup(foot, attack_vec, magnitude=0.25)
+    if kind_index == 1:
+        return leg_attack_setup(foot, attack_vec, magnitude=0.25)
+    return disruptive_step(foot, attack_vec, magnitude=0.25)
 
 
 # ---------------------------------------------------------------------------

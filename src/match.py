@@ -38,6 +38,7 @@ from ne_waza import OsaekomiClock, NewazaResolver
 from actions import (
     Action, ActionKind,
     GRIP_KINDS, FORCE_KINDS, BODY_KINDS, DRIVING_FORCE_KINDS,
+    FOOT_ATTACK_KINDS,
 )
 from action_selection import select_actions
 from perception import actual_signature_match, perceive
@@ -925,6 +926,13 @@ class Match:
         self._apply_body_actions(self.fighter_a, actions_a)
         self._apply_body_actions(self.fighter_b, actions_b)
 
+        # HAJ-133 — FOOT_ATTACK family emits KuzushiEvents into uke's
+        # buffer (parallel to PULL emission inside _compute_net_force_on).
+        # Resolved after physics so the event's posture-vulnerability
+        # term reads the just-updated CoM/trunk state.
+        self._apply_foot_attacks(self.fighter_a, self.fighter_b, actions_a, tick)
+        self._apply_foot_attacks(self.fighter_b, self.fighter_a, actions_b, tick)
+
         # HAJ-128 — re-aim each fighter's facing vector at the opponent
         # after motion. Real judoka stay squared up to each other; without
         # this, the facing arrow stays pinned at its Hajime-time direction
@@ -1434,6 +1442,52 @@ class Match:
             return
         judoka.state.body_state.facing = (dx / norm, dy / norm)
 
+    # -----------------------------------------------------------------------
+    # STEP 8b — FOOT_ATTACK FAMILY (HAJ-133)
+    # -----------------------------------------------------------------------
+    def _apply_foot_attacks(
+        self, attacker: Judoka, victim: Judoka,
+        actions: list[Action], tick: int,
+    ) -> None:
+        """Emit a KuzushiEvent into uke's buffer for each FOOT_ATTACK
+        action issued by the attacker this tick.
+
+        Parallel to PULL's emission inside _compute_net_force_on. Foot
+        attacks don't drive force through a grip envelope (they hit uke's
+        base directly), so v0.1 only models the kuzushi-event side; a
+        physics-side CoM perturbation is v0.2 work. Side effects beyond
+        the event:
+          - Small leg fatigue cost on the attacking foot (the sweep leg
+            does work).
+          - Cardio drain similar to STEP_CARDIO_COST.
+        """
+        from kuzushi import foot_attack_kuzushi_event, record_kuzushi_event
+
+        for act in actions:
+            if act.kind not in FOOT_ATTACK_KINDS:
+                continue
+            if act.foot is None or act.direction is None:
+                continue
+            event = foot_attack_kuzushi_event(
+                attacker=attacker, victim=victim,
+                action_kind=act.kind, attack_vector=act.direction,
+                current_tick=tick, intensity=max(0.0, act.magnitude / 0.25),
+                attacker_facing=attacker.state.body_state.facing,
+            )
+            if event is not None:
+                record_kuzushi_event(victim, event)
+            # Leg + cardio cost. Modest — foot attacks are setups, not
+            # commits. The leg doing the work pays a per-attack fatigue
+            # bump; both fighters' general cardio dips slightly.
+            leg_key = ("right_leg" if act.foot == "right_foot"
+                       else "left_leg")
+            attacker.state.body[leg_key].fatigue = min(
+                1.0, attacker.state.body[leg_key].fatigue + 0.01,
+            )
+            attacker.state.cardio_current = max(
+                0.0, attacker.state.cardio_current - STEP_CARDIO_COST,
+            )
+
     def _apply_body_actions(self, judoka: Judoka, actions: list[Action]) -> None:
         for act in actions:
             if act.kind != ActionKind.STEP or act.foot is None or act.direction is None:
@@ -1666,6 +1720,12 @@ class Match:
         """
         events: list[Event] = []
         for attacker_name, tip in list(self._throws_in_progress.items()):
+            # Defensive: HAJ-129 / HAJ-140's other-fighter cleanup paths
+            # can drop entries mid-iteration when one fighter's resolve
+            # triggers ne-waza dispatch and clears the other fighter's
+            # tip. Skip stale snapshot entries.
+            if attacker_name not in self._throws_in_progress:
+                continue
             offset = tip.offset(tick)
             if offset < 1:
                 # First tick was handled by _resolve_commit_throw itself.
@@ -1674,7 +1734,7 @@ class Match:
             attacker = self._fighter_by_name(attacker_name)
             defender = self._fighter_by_name(tip.defender_name)
             if attacker is None or defender is None:
-                del self._throws_in_progress[attacker_name]
+                self._throws_in_progress.pop(attacker_name, None)
                 continue
 
             # Interrupt check: a stun, ippon loss of grips, or ne-waza
@@ -1703,7 +1763,7 @@ class Match:
                 events.extend(self._resolve_kake(
                     attacker, defender, tip.throw_id, kake_actual, tick,
                 ))
-                del self._throws_in_progress[attacker_name]
+                self._throws_in_progress.pop(attacker_name, None)
 
         return events
 
@@ -1796,7 +1856,11 @@ class Match:
             attacker, defender, tip.throw_id, throw_name,
             net=-1.0, tick=tick,
         ))
-        del self._throws_in_progress[attacker.identity.name]
+        # Defensive: HAJ-129 / HAJ-140's other-fighter cleanup paths can
+        # already have removed the entry if a stuffed-throw ne-waza
+        # dispatch fired earlier in the same _advance_throws_in_progress
+        # snapshot iteration.
+        self._throws_in_progress.pop(attacker.identity.name, None)
         return events
 
     def _fighter_by_name(self, name: str) -> Optional[Judoka]:

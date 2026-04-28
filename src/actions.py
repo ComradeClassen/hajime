@@ -60,6 +60,13 @@ class ActionKind(Enum):
     LOAD_HIP         = auto()
     ABSORB           = auto()
     BLOCK_HIP        = auto()        # HAJ-57 — uke's defensive hip drive (denies hip-loading throws)
+    # HAJ-133 — FOOT_ATTACK action family. Per grip-as-cause.md §3.5,
+    # foot attacks are a kuzushi-generating action family parallel to PULL,
+    # not just terminal throws. They emit KuzushiEvents into uke's buffer
+    # that compose with pulls to support foot-throw commits.
+    FOOT_SWEEP_SETUP = auto()        # Probing sweep — lateral-down kuzushi.
+    LEG_ATTACK_SETUP = auto()        # Ko-uchi/o-uchi probing — rear-corner kuzushi.
+    DISRUPTIVE_STEP  = auto()        # Positional step that forces uke foot reaction.
     # Compound
     COMMIT_THROW     = auto()
 
@@ -83,6 +90,15 @@ BODY_KINDS: frozenset[ActionKind] = frozenset({
 DRIVING_FORCE_KINDS: frozenset[ActionKind] = frozenset({
     ActionKind.PULL, ActionKind.PUSH, ActionKind.LIFT,
     ActionKind.COUPLE, ActionKind.FEINT,
+})
+# HAJ-133 — FOOT_ATTACK family. Used by match.py to dispatch foot-attack
+# kuzushi emission alongside body-action processing. Distinct from BODY
+# kinds so terminal throws (de-ashi-harai etc., which already exist as
+# COMMIT_THROW) and foot-setup actions can be reasoned about separately.
+FOOT_ATTACK_KINDS: frozenset[ActionKind] = frozenset({
+    ActionKind.FOOT_SWEEP_SETUP,
+    ActionKind.LEG_ATTACK_SETUP,
+    ActionKind.DISRUPTIVE_STEP,
 })
 
 
@@ -161,6 +177,40 @@ def feint(hand: str, direction: Tuple[float, float], magnitude: float) -> Action
 
 def step(foot: str, direction: Tuple[float, float], magnitude: float) -> Action:
     return Action(kind=ActionKind.STEP, foot=foot,
+                  direction=direction, magnitude=magnitude)
+
+
+# HAJ-133 — FOOT_ATTACK family constructors. Each takes the attacking
+# foot ("right_foot" / "left_foot") and a 2D direction vector in the mat
+# frame indicating the *attack vector* (where the sweeping leg or step
+# is going). Magnitude is in meters of foot motion, parallel to STEP, and
+# is also used by the kuzushi-event emitter to scale event magnitude.
+def foot_sweep_setup(
+    foot: str, direction: Tuple[float, float], magnitude: float = 0.25,
+) -> Action:
+    """Probing foot sweep — emits a low-magnitude lateral-down KuzushiEvent
+    into uke's buffer. Sweeping leg lifts off the mat for the duration of
+    the action; HAJ-134 will declare the formal exposure window."""
+    return Action(kind=ActionKind.FOOT_SWEEP_SETUP, foot=foot,
+                  direction=direction, magnitude=magnitude)
+
+
+def leg_attack_setup(
+    foot: str, direction: Tuple[float, float], magnitude: float = 0.25,
+) -> Action:
+    """Ko-uchi / o-uchi-style probing leg attack — emits a rear-corner
+    KuzushiEvent. Attacker briefly stands on one foot."""
+    return Action(kind=ActionKind.LEG_ATTACK_SETUP, foot=foot,
+                  direction=direction, magnitude=magnitude)
+
+
+def disruptive_step(
+    foot: str, direction: Tuple[float, float], magnitude: float = 0.25,
+) -> Action:
+    """Intentional positional step that forces uke foot reaction. The
+    kuzushi vector emitted is opposite the attacker's step direction —
+    uke's CoM yields the way the attacker pushed past."""
+    return Action(kind=ActionKind.DISRUPTIVE_STEP, foot=foot,
                   direction=direction, magnitude=magnitude)
 
 

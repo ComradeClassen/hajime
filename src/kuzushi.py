@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from judoka import Judoka
     from grip_graph import GripEdge
     from enums import GripTypeV2 as _GripTypeV2
+    from actions import ActionKind as _ActionKind
 
 # 2D vector in the mat frame, meters or m/s depending on context. Aligned
 # with body_state.py's convention so events can be composed directly with
@@ -424,4 +425,145 @@ def pull_kuzushi_event(
         vector=direction,
         magnitude=mag,
         source_kind=KuzushiSource.PULL,
+    )
+
+
+# ===========================================================================
+# HAJ-133 — FOOT_ATTACK → KuzushiEvent emission
+# ===========================================================================
+# Per grip-as-cause.md §3.5, foot attacks are a kuzushi-generating action
+# family parallel to PULL. They don't drive force through a grip — they
+# disrupt uke's base directly with the attacker's leg. The event-layer
+# magnitude is the symbolic kuzushi delivered into uke's buffer; the
+# physics CoM force is a separate (smaller, transient) effect that is
+# v0.2 work — for v0.1 the action is purely a kuzushi emitter (parallel
+# to how PULL emits alongside its own physics force, but PULL has the
+# physics force from the grip envelope while foot attacks don't yet
+# have a corresponding force-envelope mechanic).
+#
+# Magnitude scale is intentionally lower than PULL: a probing sweep is
+# a setup, not a drive. Real-judo intuition: three-to-four foot setups
+# compose to a kuzushi state similar to one strong pull.
+BASE_FOOT_ATTACK_KUZUSHI_FORCE: float = 35.0
+
+
+def foot_attack_kuzushi_direction(
+    action_kind:   "_ActionKind",
+    attack_vector: Vector2,
+    attacker_facing: Vector2 = (1.0, 0.0),
+) -> Vector2:
+    """Map (foot-attack kind, attack vector, attacker facing) → unit kuzushi
+    vector applied to uke's CoM.
+
+    Per HAJ-133 spec:
+      * FOOT_SWEEP_SETUP — lateral-down toward swept side. We project the
+        attack vector and apply a small downward-lateral bias (the swept
+        leg pulls uke's foot out from under, dropping that side).
+      * LEG_ATTACK_SETUP — rear-corner of victim. Ko-uchi / o-uchi reap
+        the leg backward, so kuzushi vector points along the rearward
+        direction (opposite attacker facing) blended with the attack
+        vector for the lateral component.
+      * DISRUPTIVE_STEP — opposite of step direction. Stepping past uke
+        forces them to yield in the opposite direction.
+
+    Returns a unit vector. Returns (0, 0) when attack_vector is zero.
+    """
+    from actions import ActionKind
+    ax, ay = attack_vector
+    mag = math.hypot(ax, ay)
+    if mag == 0.0:
+        return (0.0, 0.0)
+    ux, uy = ax / mag, ay / mag
+
+    if action_kind == ActionKind.FOOT_SWEEP_SETUP:
+        # Sweep yanks uke's base laterally — kuzushi vector tracks the
+        # sweep direction directly. The "down" component lives in the
+        # decay model (an event with this lateral vector compounds with
+        # gravity to topple uke).
+        return (ux, uy)
+
+    if action_kind == ActionKind.LEG_ATTACK_SETUP:
+        # Reap-style leg attacks drive uke rearward (relative to attacker)
+        # plus whichever lateral side the attacking foot is on.
+        fx, fy = attacker_facing
+        ffmag = math.hypot(fx, fy) or 1.0
+        rear_x, rear_y = -fx / ffmag, -fy / ffmag
+        # Blend rear (60%) + lateral attack vector (40%).
+        bx, by = rear_x * 0.60 + ux * 0.40, rear_y * 0.60 + uy * 0.40
+        bm = math.hypot(bx, by) or 1.0
+        return (bx / bm, by / bm)
+
+    if action_kind == ActionKind.DISRUPTIVE_STEP:
+        # Step past uke → uke's CoM yields opposite the step.
+        return (-ux, -uy)
+
+    # Unknown kind — fall through to no-op so callers stay safe.
+    return (0.0, 0.0)
+
+
+def foot_attack_kuzushi_magnitude(
+    attacker:    "Judoka",
+    action_kind: "_ActionKind",
+    victim:      "Judoka",
+    intensity:   float = 1.0,
+) -> float:
+    """Return event magnitude for one foot-attack action this tick.
+
+    Mirrors `pull_kuzushi_magnitude` but without a grip-depth term (foot
+    attacks don't go through a grip). HAJ-137 will replace the generic
+    skill placeholder with offensive_footwork axes (foot_sweeps /
+    leg_attacks / disruptive_stepping); for now the technique factor is
+    fight_iq-derived to keep behavior plausible until the skill vector
+    lands.
+
+    `intensity` lets the caller scale the magnitude (e.g. a heavy reap
+    vs. a light probe).
+    """
+    from actions import ActionKind
+    technique  = max(0.0, min(1.0, attacker.capability.fight_iq / 10.0))
+    experience = _belt_experience_factor(attacker)
+    posture_v  = uke_posture_vulnerability(victim)
+    # Per-kind weight: leg attacks land harder than probing sweeps;
+    # disruptive steps are the lightest setup.
+    kind_weight = {
+        ActionKind.FOOT_SWEEP_SETUP: 0.7,
+        ActionKind.LEG_ATTACK_SETUP: 1.0,
+        ActionKind.DISRUPTIVE_STEP:  0.5,
+    }.get(action_kind, 0.0)
+    return (BASE_FOOT_ATTACK_KUZUSHI_FORCE
+            * technique * experience * posture_v
+            * kind_weight * max(0.0, intensity))
+
+
+def foot_attack_kuzushi_event(
+    attacker:        "Judoka",
+    victim:          "Judoka",
+    action_kind:     "_ActionKind",
+    attack_vector:   Vector2,
+    current_tick:    int,
+    intensity:       float = 1.0,
+    attacker_facing: Optional[Vector2] = None,
+) -> Optional[KuzushiEvent]:
+    """Build the KuzushiEvent emitted by one foot-attack action.
+
+    Returns None when the event would be a no-op (zero magnitude or
+    zero direction).
+    """
+    mag = foot_attack_kuzushi_magnitude(
+        attacker, action_kind, victim, intensity=intensity,
+    )
+    if mag <= 0.0:
+        return None
+    if attacker_facing is None:
+        attacker_facing = attacker.state.body_state.facing
+    direction = foot_attack_kuzushi_direction(
+        action_kind, attack_vector, attacker_facing=attacker_facing,
+    )
+    if direction == (0.0, 0.0):
+        return None
+    return KuzushiEvent(
+        tick_emitted=current_tick,
+        vector=direction,
+        magnitude=mag,
+        source_kind=KuzushiSource.FOOT_ATTACK,
     )

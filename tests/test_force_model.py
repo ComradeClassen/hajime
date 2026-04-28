@@ -39,8 +39,12 @@ import main as main_module
 # Part 3.2 — action space
 # ---------------------------------------------------------------------------
 def test_action_kind_buckets_are_disjoint_and_complete() -> None:
-    # Every defined kind belongs to exactly one of the four buckets.
-    buckets = [GRIP_KINDS, FORCE_KINDS, BODY_KINDS]
+    # Every defined kind belongs to exactly one bucket. HAJ-133 added
+    # FOOT_ATTACK_KINDS as a fourth bucket for foot-attack setups
+    # (parallel kuzushi generators) — distinct from BODY_KINDS so they
+    # can be dispatched separately by the match's tick loop.
+    from actions import FOOT_ATTACK_KINDS
+    buckets = [GRIP_KINDS, FORCE_KINDS, BODY_KINDS, FOOT_ATTACK_KINDS]
     all_bucketed = set().union(*buckets)
     # COMMIT_THROW is the sole compound and is not in a bucket.
     assert ActionKind.COMMIT_THROW not in all_bucketed

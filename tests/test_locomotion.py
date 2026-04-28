@@ -685,9 +685,20 @@ def test_pressure_match_produces_visible_displacement() -> None:
     )
     # Pin the dyad to standing for the duration of the test.
     m.ne_waza_resolver.attempt_ground_commit = lambda *a, **kw: False
+    # HAJ-133 — also suppress the foot-attack action substitution so the
+    # secondary slot stays deepen/push (which keeps the rng path stable
+    # for pre-fix locomotion calibration). The foot-attack family takes
+    # an rng roll inside the grip ladder, which would otherwise shift
+    # downstream STEP rolls and change observed displacement.
+    import action_selection
+    real_emit = action_selection._maybe_emit_foot_attack
+    action_selection._maybe_emit_foot_attack = lambda *a, **kw: None
     buf = io.StringIO()
-    with redirect_stdout(buf):
-        m.run()
+    try:
+        with redirect_stdout(buf):
+            m.run()
+    finally:
+        action_selection._maybe_emit_foot_attack = real_emit
     # Tanaka should have moved by more than the grip-only baseline.
     tx, _ = t.state.body_state.com_position
     displacement = abs(tx - (-0.5))
