@@ -334,6 +334,14 @@ class Judoka:
     # tori's current exposure (replacing pre-fix action-type heuristics).
     active_windows: "list" = field(default_factory=list)
 
+    # HAJ-135 — multi-tick sequence intent. A Plan instance when the
+    # fighter is mid-combo (lapel pull → sleeve pull → foot attack →
+    # commit), None when reacting tick-locally. Sequencing precision
+    # (stubbed from fight_iq until HAJ-136 wires the dedicated axis)
+    # gates whether each tick advances the plan or delays/drops it,
+    # which is what produces elite-vs-novice combo emergence.
+    current_plan: "object" = None
+
     def leg_strength(self) -> float:
         """Derived leg strength in [0, 1] for the Part 1.5 envelope.
 

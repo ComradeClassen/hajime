@@ -177,9 +177,93 @@ def select_actions(
         return actions
     if judoka.state.stun_ticks > 0:
         return actions
+    # HAJ-135 — multi-tick plan integration. After the standard ladder
+    # has produced its actions, consult the fighter's current plan (or
+    # form one if eligible). When a plan step fires, substitute it for
+    # the secondary slot so the kuzushi events stack inside the decay
+    # window. Sequencing-precision modulation is what produces the
+    # elite-vs-novice combo emergence: high-skill fighters fire the
+    # next step almost every tick; low-skill fighters delay/drop.
+    actions = _apply_plan_layer(
+        judoka, opponent, graph, kumi_kata_clock, r, actions, current_tick,
+    )
     step_action = _maybe_emit_step(judoka, opponent, graph, r)
     if step_action is not None:
         actions = list(actions) + [step_action]
+    return actions
+
+
+def _apply_plan_layer(
+    judoka: "Judoka",
+    opponent: "Judoka",
+    graph: "GripGraph",
+    kumi_kata_clock: int,
+    rng: random.Random,
+    actions: list[Action],
+    current_tick: int,
+) -> list[Action]:
+    """HAJ-135 — plan formation + step execution layer.
+
+    Three responsibilities per tick:
+      1. Abandon any active plan whose preconditions broke.
+      2. Form a new plan when the gate fires (no plan, fight_iq above
+         threshold, kumi-kata clock past stalemate floor).
+      3. Resolve the current plan's next step. On 'fire', substitute
+         the secondary action slot. On 'drop' / 'complete', advance or
+         clear the plan and leave actions untouched.
+
+    Plans never preempt the primary action (the standard PULL drive)
+    so an elite fighter's combo runs as drive + planned-step-of-tick,
+    accumulating both the physics force and the plan-stage event.
+    """
+    from intent import (
+        Plan, should_form_plan, should_abandon_plan, next_plan_action,
+    )
+
+    # 1. Abandonment.
+    has_in_progress = False  # action_selection layer doesn't see throws_in_progress;
+    #    Match's own _strip_commits_if_in_progress already drops re-commits, so
+    #    plans on a fighter mid-throw will be cleared the next tick by stun
+    #    or by their commit rung exclusion. Pass False here.
+    if judoka.current_plan is not None and should_abandon_plan(
+        judoka.current_plan, judoka, opponent, graph, has_in_progress,
+    ):
+        judoka.current_plan = None
+
+    # 2. Formation.
+    if judoka.current_plan is None:
+        new_plan = should_form_plan(
+            judoka, opponent, graph, kumi_kata_clock, rng=rng,
+        )
+        if new_plan is not None:
+            new_plan.formed_at_tick = current_tick
+            new_plan.last_advanced_tick = current_tick
+            judoka.current_plan = new_plan
+
+    # 3. Step resolution.
+    plan = judoka.current_plan
+    if plan is None:
+        return actions
+    action, outcome = next_plan_action(
+        plan, judoka, opponent, graph, rng, current_tick=current_tick,
+    )
+    if outcome == "fire":
+        # Substitute the secondary slot. Primary (PULL drive) is preserved.
+        plan.step_index += 1
+        plan.last_advanced_tick = current_tick
+        if action is not None:
+            new_actions = [actions[0]] if actions else []
+            new_actions.append(action)
+            return new_actions
+        return actions
+    if outcome == "drop":
+        plan.step_index += 1
+        plan.last_advanced_tick = current_tick
+        return actions
+    if outcome == "complete":
+        judoka.current_plan = None
+        return actions
+    # 'delay' — leave plan and actions untouched.
     return actions
 
 

@@ -690,9 +690,15 @@ def test_pressure_match_produces_visible_displacement() -> None:
     # for pre-fix locomotion calibration). The foot-attack family takes
     # an rng roll inside the grip ladder, which would otherwise shift
     # downstream STEP rolls and change observed displacement.
+    # HAJ-135 — same reasoning for the plan layer: plan formation +
+    # step resolution consume rng rolls and substitute the secondary
+    # action slot, both of which mutate the locomotion-relevant rng
+    # path. Suppress the plan layer for this isolated displacement test.
     import action_selection
     real_emit = action_selection._maybe_emit_foot_attack
     action_selection._maybe_emit_foot_attack = lambda *a, **kw: None
+    real_plan = action_selection._apply_plan_layer
+    action_selection._apply_plan_layer = lambda *a, **kw: a[5]
     buf = io.StringIO()
     try:
         with redirect_stdout(buf):
