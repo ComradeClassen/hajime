@@ -195,6 +195,78 @@ class Connection(Enum):
     ROOTED       = auto()
 
 
+# ---------------------------------------------------------------------------
+# GRIP INTENT (HAJ-146)
+# A grip isn't a handhold; it's a control vector. Sensei's framing —
+# "if you have the collar, you are the head; the body will follow" — is
+# mechanically correct: a collar grip's purpose isn't holding, it's
+# steering. The HAJ-145 schema captured handhold (target = collar) but
+# not purpose. Without `intent`, a beginner with a collar grip emits the
+# same event as a brown belt with a collar grip — same target, completely
+# different control vector, completely different sentence the prose layer
+# will eventually want to write.
+#
+# Engine rule: grips do not default to HOLD. Beginners hold; real fighters
+# always have an intent. Intent distribution is driven by the per-grip
+# SkillVector axis (lapel_grip / sleeve_grip) — below the threshold a
+# fighter's grip emits as HOLD; above it the engine picks a non-HOLD
+# intent based on the action context.
+# ---------------------------------------------------------------------------
+class GripIntent(Enum):
+    HOLD  = auto()    # Maintaining the connection; no force, no steering.
+    STEER = auto()    # Driving uke's part the grasper holds (collar→head).
+    BREAK = auto()    # Ripping uke's grip off — strip / snap / rip-down.
+    BLOCK = auto()    # Frame the grip into uke's structure to deny motion.
+    POST  = auto()    # Plant the gripping hand against uke for distance.
+    FEINT = auto()    # Fake intent, hoping uke commits to a defensive read.
+
+
+# A `steer` intent carries one or more directions in uke's body frame.
+# Composable: a Uchi-mata steer is forward + corner + up, all together,
+# stored as a frozenset so equality and order-independence are cheap.
+class SteerDirection(Enum):
+    FORWARD = auto()
+    BACK    = auto()
+    UP      = auto()
+    DOWN    = auto()
+    CORNER  = auto()
+
+
+# ---------------------------------------------------------------------------
+# INTENT-FROM-SKILL THRESHOLD
+# A fighter below this skill axis value emits GripIntent.HOLD on grip
+# events that don't have an explicit action-driven intent. Above it, the
+# engine picks a non-HOLD intent. v0.1 — same _LOW_THRESH used elsewhere
+# (0.40); calibration target.
+# ---------------------------------------------------------------------------
+def grip_holds_by_default(actor: "Judoka", grip_axis: str) -> bool:
+    """True iff `actor`'s `grip_axis` skill value is low enough that an
+    untargeted grip should emit as HOLD rather than STEER / BREAK. The
+    caller passes the appropriate axis ("lapel_grip" / "sleeve_grip") so
+    the threshold scales per-grip-type."""
+    sv = getattr(actor, "skill_vector", None)
+    if sv is None:
+        return True
+    return float(getattr(sv, grip_axis, 0.5)) < _LOW_THRESH
+
+
+def steer_direction_from_kuzushi(
+    direction: tuple[float, float],
+) -> frozenset[SteerDirection]:
+    """Collapse a 2D kuzushi vector in uke's body frame onto the
+    composable SteerDirection set. Strong sagittal component (|x| >> |y|)
+    → FORWARD or BACK; strong frontal component → CORNER. UP / DOWN are
+    set externally by the caller for hip-loading or down-across throws,
+    since the substrate's 2D vector doesn't carry vertical."""
+    dx, dy = direction
+    out: set[SteerDirection] = set()
+    if abs(dx) >= 0.3:
+        out.add(SteerDirection.FORWARD if dx > 0 else SteerDirection.BACK)
+    if abs(dy) >= 0.2:
+        out.add(SteerDirection.CORNER)
+    return frozenset(out)
+
+
 @dataclass(frozen=True)
 class Modifiers:
     crispness:  Optional[Crispness]  = None
@@ -236,6 +308,12 @@ class BodyPartEvent:
     direction:  Optional[tuple[float, float]] = None
     modifiers:  Modifiers = field(default_factory=Modifiers)
     source:     str = ""    # parent engine event_type, e.g. "PULL", "GRIP_DEEPEN", "COMMIT"
+    # HAJ-146 — grip-event purpose. None for non-grip events (foot reaps,
+    # hip loads, posture beats). For grip events the engine sets it from
+    # action context + SkillVector threshold; HOLD is reserved for low-skill
+    # default. STEER carries a `steer_direction` set in uke's body frame.
+    intent:          Optional[GripIntent] = None
+    steer_direction: Optional[frozenset[SteerDirection]] = None
 
     def to_dict(self) -> dict:
         """Lossless dict form for embedding inside Event.data — the viewer's
@@ -251,6 +329,11 @@ class BodyPartEvent:
             "direction": list(self.direction) if self.direction else None,
             "modifiers": self.modifiers.to_dict(),
             "source":    self.source,
+            "intent":    self.intent.name if self.intent else None,
+            "steer_direction": (
+                sorted(d.name for d in self.steer_direction)
+                if self.steer_direction else None
+            ),
         }
 
 

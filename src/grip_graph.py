@@ -70,6 +70,21 @@ class GripEdge:
     # opponent is currently stripping it back. Initialized to whatever
     # depth the edge is constructed at and never decreases.
     max_depth_reached: Optional[GripDepth] = None
+    # HAJ-146 — per-tick control intent. Set by the action handler and the
+    # PULL/PUSH driver each tick: STEER when the grasper is driving force
+    # through the grip, HOLD when it's just connective, BREAK on the
+    # opposing edge while a strip is in flight, etc. Reset to a HOLD
+    # baseline at the top of every tick by Match._reset_intents() so a
+    # grip that was steering last tick but received no action this tick
+    # falls back to HOLD. The head-as-output computation reads this each
+    # tick; the BodyPartEvent emitter mirrors it onto each emitted event.
+    # Stored as a string here (not the GripIntent enum) to avoid creating
+    # a circular import between grip_graph and body_part_events.
+    current_intent: str = "HOLD"
+    # Composable steer direction set, populated only when current_intent
+    # == "STEER". Stored as a frozenset[str] (e.g. {"FORWARD", "CORNER"})
+    # for the same circular-import reason. None outside STEER state.
+    steer_direction: Optional[frozenset[str]] = None
 
     def __post_init__(self):
         # HAJ-36 — seed max_depth_reached at construction time.

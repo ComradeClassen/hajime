@@ -65,7 +65,7 @@ from body_part_decompose import (
     decompose_grip_establish, decompose_grip_deepen, decompose_grip_strip,
     decompose_grip_release, decompose_reach,
     decompose_pull, decompose_foot_attack, decompose_step,
-    decompose_commit, decompose_counter,
+    decompose_commit, decompose_counter, compute_head_state,
 )
 
 
@@ -836,6 +836,16 @@ class Match:
         # STANDING — Part 3 12-step update
         # ------------------------------------------------------------------
 
+        # HAJ-146 — reset every active grip edge's `current_intent` to HOLD
+        # at the top of each tick. The decompose layer will re-set the
+        # intent for any grip touched this tick (REACH/DEEPEN/STRIP/PULL
+        # action handlers). Edges untouched this tick fall back to HOLD
+        # so the head-as-output computation only sees grips that are
+        # *actively* steering right now.
+        for _e in self.grip_graph.edges:
+            _e.current_intent = "HOLD"
+            _e.steer_direction = None
+
         # Part 6.1 — advance any in-progress multi-tick throws BEFORE action
         # selection. Sub-events emit at their scheduled offsets; KAKE_COMMIT
         # resolves the throw via the same landing path as single-tick commits.
@@ -1040,6 +1050,24 @@ class Match:
             tick, self.fighter_a, self.fighter_b
         )
         events.extend(graph_events)
+
+        # HAJ-146 — head-as-output. Each tick, after all grip / force /
+        # commit processing, compute the head state of each fighter from
+        # the set of opposing grips with current_intent==STEER. Head verbs
+        # (DRIVING / DOWN / UP / TURNED) become outputs of the steering
+        # control vector rather than self-initiated; when no opposing grip
+        # is steering a fighter, no head event emits and the head reverts
+        # to owner control. The substrate feeds HAJ-147 prose; no Engine
+        # event is surfaced for the head state itself (it'd be very noisy
+        # — every tick, every fighter under steer).
+        self._attach_bpe(None, compute_head_state(
+            self.fighter_a, self.grip_graph, tick,
+            grasper_resolver=self._fighter_by_name,
+        ))
+        self._attach_bpe(None, compute_head_state(
+            self.fighter_b, self.grip_graph, tick,
+            grasper_resolver=self._fighter_by_name,
+        ))
 
         # Composure drift from kuzushi states.
         self._update_composure_from_kuzushi(a_kuzushi, b_kuzushi)

@@ -479,12 +479,20 @@ def _describe_fighter(fighter, match=None) -> str:
 
 
 def _describe_grip(edge, match) -> str:
+    # HAJ-146 — surface the live grip intent + steer direction set so the
+    # inspector can confirm intent is being plumbed correctly through the
+    # action handlers. STEER carries a direction set; other intents leave
+    # it None.
+    intent_line = f"  intent:     {edge.current_intent}"
+    if edge.steer_direction:
+        intent_line += f" ({'+'.join(sorted(edge.steer_direction))})"
     lines = [
         f"grip {edge.grasper_id} ({edge.grasper_part.value}) "
         f"→ {edge.target_id} ({edge.target_location.value})",
         f"  type_v2:    {edge.grip_type_v2.name}",
         f"  depth:      {edge.depth_level.name} (modifier={edge.depth:.2f})",
         f"  mode:       {edge.mode.name}",
+        intent_line,
         f"  strength:   {edge.strength:.2f}",
         f"  contested:  {edge.contested}",
         f"  unconv_clk: {edge.unconventional_clock}",

@@ -23,11 +23,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from body_part_events import (
     BodyPartEvent, BodyPartHigh, Side, BodyPartVerb, BodyPartTarget,
     Modifiers, Commitment, Crispness, Tightness, Speed, Connection,
+    GripIntent, SteerDirection,
     is_self_cancel_pair, compute_modifiers,
 )
 from body_part_decompose import (
     decompose_commit, decompose_grip_establish, decompose_grip_deepen,
     decompose_pull, decompose_step, decompose_foot_attack,
+    compute_head_state,
 )
 from enums import (
     BodyPart, GripTypeV2, GripDepth, GripMode, GripTarget,
@@ -320,6 +322,227 @@ def test_grip_establish_emits_bpe_through_match() -> None:
     assert e.target is BodyPartTarget.LAPEL
     assert e.side is Side.RIGHT
     assert e.source == "GRIP_ESTABLISH"
+
+
+# ---------------------------------------------------------------------------
+# HAJ-146 — grip intent + head-as-output
+# ---------------------------------------------------------------------------
+def _grip_events(bpes, intent=None) -> list:
+    """Filter to HANDS-part events, optionally further to a specific intent."""
+    out = [e for e in bpes if e.part is BodyPartHigh.HANDS]
+    if intent is not None:
+        out = [e for e in out if e.intent is intent]
+    return out
+
+
+def test_intent_field_present_on_grip_events() -> None:
+    """Every committing-action grip event the engine emits carries an
+    intent — none should be left at the default None."""
+    bpes = _commit_decomp(UCHI_MATA)
+    grip_evs = [e for e in bpes if e.part is BodyPartHigh.HANDS]
+    assert grip_evs, "expected hand events from a worked-throw commit"
+    for e in grip_evs:
+        assert e.intent is not None, (
+            f"grip event {e.verb.name} missing intent"
+        )
+
+
+def test_ko_uchi_gari_intents_match_ticket_spec() -> None:
+    """Ko-uchi-gari per HAJ-146 spec:
+       - sleeve intent=BREAK snaps
+       - lapel  intent=STEER dir=FORWARD drives uke."""
+    bpes = _commit_decomp(KO_UCHI_GARI)
+    sleeve = next(e for e in bpes
+                  if e.target is BodyPartTarget.SLEEVE
+                  and e.part is BodyPartHigh.HANDS)
+    lapel = next(e for e in bpes
+                 if e.target is BodyPartTarget.LAPEL
+                 and e.part is BodyPartHigh.HANDS)
+    assert sleeve.intent is GripIntent.BREAK
+    assert lapel.intent is GripIntent.STEER
+    assert SteerDirection.FORWARD in lapel.steer_direction
+
+
+def test_uchi_mata_lapel_steers_forward_corner_up() -> None:
+    bpes = _commit_decomp(UCHI_MATA)
+    lapel = next(e for e in bpes
+                 if e.target is BodyPartTarget.LAPEL
+                 and e.part is BodyPartHigh.HANDS)
+    assert lapel.intent is GripIntent.STEER
+    assert lapel.steer_direction == frozenset({
+        SteerDirection.FORWARD, SteerDirection.CORNER, SteerDirection.UP,
+    })
+
+
+def test_seoi_nage_lapel_steers_down_across() -> None:
+    bpes = _commit_decomp(SEOI_NAGE_MOROTE)
+    lapel = next(e for e in bpes
+                 if e.target is BodyPartTarget.LAPEL
+                 and e.part is BodyPartHigh.HANDS)
+    assert lapel.intent is GripIntent.STEER
+    assert lapel.steer_direction == frozenset({
+        SteerDirection.DOWN, SteerDirection.CORNER,
+    })
+
+
+def test_o_soto_gari_lapel_steers_back_down() -> None:
+    bpes = _commit_decomp(O_SOTO_GARI)
+    lapel = next(e for e in bpes
+                 if e.target is BodyPartTarget.LAPEL
+                 and e.part is BodyPartHigh.HANDS)
+    assert lapel.intent is GripIntent.STEER
+    assert lapel.steer_direction == frozenset({
+        SteerDirection.BACK, SteerDirection.DOWN,
+    })
+
+
+def test_sasae_lapel_steers_up_around() -> None:
+    bpes = _commit_decomp(SASAE_TSURIKOMI_ASHI)
+    sleeve = next(e for e in bpes
+                  if e.target is BodyPartTarget.SLEEVE
+                  and e.part is BodyPartHigh.HANDS)
+    lapel = next(e for e in bpes
+                 if e.target is BodyPartTarget.LAPEL
+                 and e.part is BodyPartHigh.HANDS)
+    assert sleeve.intent is GripIntent.BREAK
+    assert lapel.intent is GripIntent.STEER
+    assert lapel.steer_direction == frozenset({
+        SteerDirection.UP, SteerDirection.CORNER,
+    })
+
+
+def test_skill_threshold_drives_default_intent() -> None:
+    """Engine never emits intent=HOLD for fighters above the grip-skill
+    threshold; below it, the same action emits HOLD."""
+    t, s = _pair()
+    # Set a non-canonical reach: skill at threshold extremes flips the
+    # default intent. Use a freshly-seated edge through decompose_grip_establish.
+    edge = GripEdge(
+        grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.POCKET,
+        strength=0.6, established_tick=0,
+    )
+    # Novice → HOLD
+    for f in t.skill_vector.axis_names():
+        setattr(t.skill_vector, f, 0.10)
+    novice_evs = decompose_grip_establish(edge, t, tick=0)
+    assert novice_evs[0].intent is GripIntent.HOLD
+    # Elite → non-HOLD (POST for an idle establish)
+    for f in t.skill_vector.axis_names():
+        setattr(t.skill_vector, f, 0.90)
+    elite_evs = decompose_grip_establish(edge, t, tick=0)
+    assert elite_evs[0].intent is not GripIntent.HOLD
+
+
+def test_strip_always_emits_break_intent() -> None:
+    """Stripping is structurally a break — even for a low-skill fighter
+    a strip event must carry intent=BREAK because that's what the action
+    physically IS."""
+    from body_part_decompose import decompose_grip_strip
+    t, s = _pair()
+    for f in t.skill_vector.axis_names():
+        setattr(t.skill_vector, f, 0.10)
+    edge = GripEdge(
+        grasper_id=s.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=t.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        strength=1.0, established_tick=0,
+    )
+    bpes = decompose_grip_strip(t, edge, tick=1, succeeded=True)
+    assert bpes[0].intent is GripIntent.BREAK
+
+
+def test_head_as_output_emits_when_steering_grip_present() -> None:
+    """A steering grip on uke produces a HEAD-DRIVING event on uke."""
+    from match import Match
+    from referee import build_suzuki
+    import random as _r
+    _r.seed(0)
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    # Hand-seat a lapel grip from t onto s with STEER intent set directly.
+    edge = GripEdge(
+        grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        strength=1.0, established_tick=0,
+    )
+    edge.current_intent = "STEER"
+    edge.steer_direction = frozenset({"FORWARD", "DOWN"})
+    m.grip_graph.add_edge(edge)
+
+    head_bpes = compute_head_state(
+        s, m.grip_graph, tick=2, grasper_resolver=m._fighter_by_name,
+    )
+    assert len(head_bpes) == 1
+    head = head_bpes[0]
+    assert head.actor == s.identity.name
+    assert head.part is BodyPartHigh.HEAD
+    assert head.steer_direction == frozenset({
+        SteerDirection.FORWARD, SteerDirection.DOWN,
+    })
+    # Mixed forward+down → DRIVING (not pure DOWN).
+    assert head.verb is BodyPartVerb.DRIVING
+
+
+def test_head_reverts_when_steering_ends() -> None:
+    """When no opposing grip is steering, no HEAD event emits — head
+    reverts to owner control."""
+    from match import Match
+    from referee import build_suzuki
+    import random as _r
+    _r.seed(0)
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    # Seat a HOLD-only grip — no steering intent, no head event.
+    edge = GripEdge(
+        grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        strength=1.0, established_tick=0,
+    )
+    edge.current_intent = "HOLD"
+    m.grip_graph.add_edge(edge)
+    assert compute_head_state(
+        s, m.grip_graph, tick=2, grasper_resolver=m._fighter_by_name,
+    ) == []
+
+
+def test_pure_down_steer_collapses_to_head_down_verb() -> None:
+    """When the union of steer directions is purely vertical, the head
+    verb collapses (DOWN / UP) — Seoi-nage's seoi-style head-down event."""
+    from match import Match
+    from referee import build_suzuki
+    import random as _r
+    _r.seed(0)
+    t, s = _pair()
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
+    edge = GripEdge(
+        grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        strength=1.0, established_tick=0,
+    )
+    edge.current_intent = "STEER"
+    edge.steer_direction = frozenset({"DOWN"})
+    m.grip_graph.add_edge(edge)
+    head_bpes = compute_head_state(s, m.grip_graph, tick=2)
+    assert head_bpes[0].verb is BodyPartVerb.DOWN
+
+
+def test_grip_edge_carries_intent_field() -> None:
+    """The current_intent + steer_direction fields are present on every
+    GripEdge. Inspector reads them; head-as-output reads them; the live
+    test point is that the field exists."""
+    edge = GripEdge(
+        grasper_id="A", grasper_part=BodyPart.RIGHT_HAND,
+        target_id="B", target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.POCKET,
+        strength=0.5, established_tick=0,
+    )
+    assert edge.current_intent == "HOLD"     # default
+    assert edge.steer_direction is None
 
 
 def test_commit_emission_attaches_bpe_to_parent_event() -> None:
