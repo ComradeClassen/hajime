@@ -232,9 +232,9 @@ def capture_view_state(
 #   - Contest area: 8 × 8 m
 #   - Safety border: 3 m on every side → total 14 × 14 m
 # ---------------------------------------------------------------------------
-WINDOW_W:        int = 1100
-WINDOW_H:        int = 760
-SIDEBAR_W:       int = 380
+WINDOW_W:        int = 1500
+WINDOW_H:        int = 820
+SIDEBAR_W:       int = 560
 MAT_PANEL_W:     int = WINDOW_W - SIDEBAR_W
 MAT_PIXEL_PAD:   int = 30
 FOOTER_H:        int = 24       # bottom hint strip
@@ -245,14 +245,23 @@ CONTEST_M:       float = 8.0
 TRAIL_LENGTH:    int = 30
 
 # Frame pacing — ticks/second of wall clock (a tick is 1 sim second).
-DEFAULT_TICKS_PER_SECOND: float = 6.0
+# 1.25 tps ≈ 800ms per tick — comfortable read-along pace for the prose
+# stream and the event ticker. A 4-minute (240-tick) match plays in ~3
+# minutes of wall clock at this rate. Faster pacing was confusing to
+# read in the ticker; bumping the default down makes the viewer feel
+# like a real-time broadcast rather than a sped-up replay.
+DEFAULT_TICKS_PER_SECOND: float = 1.25
 MIN_TPS: float = 0.1
 MAX_TPS: float = 30.0   # 10× of real-time is the ticket spec; 30 leaves headroom
 TPS_STEP_FACTOR: float = 1.5
 
-# Event ticker geometry (inside the sidebar).
-TICKER_H:           int = 360
+# Event ticker geometry (inside the sidebar). Width is SIDEBAR_W minus
+# left/right padding (~24px); the wrap helper computes char budget at
+# render time from the actual font metrics so the ticker shows full
+# event text instead of truncating mid-sentence.
+TICKER_H:           int = 420
 TICKER_LINE_H:      int = 18
+TICKER_PAD_X:       int = 12
 TICKER_MAX_LINES:   int = TICKER_H // TICKER_LINE_H
 EVENT_BUFFER_LEN:   int = 200       # how much history we retain
 NEW_EVENT_HIGHLIGHT_FRAMES: int = 18   # ~1 second at 18 FPS
@@ -1041,23 +1050,75 @@ class PygameMatchRenderer:
             events = list(self._event_log)
         events.reverse()  # newest at top
 
+        # Pixel budget for one rendered line of body text, after the
+        # tick prefix. Sidebar minus left+right padding minus ~38px for
+        # the "tNNN " tick stamp leaves the body wrap budget.
+        wrap_px = SIDEBAR_W - 2 * TICKER_PAD_X - 38
+        max_y = ticker_y0 + TICKER_H - TICKER_LINE_H
         y = ticker_y0 + 30
-        for ev_tick, desc, frame_seen in events[:TICKER_MAX_LINES]:
+        for ev_tick, desc, frame_seen in events:
+            if y > max_y:
+                break
             if self._review_mode:
-                # Highlighting in review is misleading; dim everything.
                 color = COL_TEXT_DIM
             else:
                 age = self._frame_idx - frame_seen
                 color = (COL_TEXT_NEW
                          if age <= NEW_EVENT_HIGHLIGHT_FRAMES
                          else COL_TEXT_DIM)
-            text = f"t{ev_tick:03d} {desc}"
-            max_chars = 52
-            if len(text) > max_chars:
-                text = text[:max_chars - 1] + "…"
-            surf = self._font_small.render(text, True, color)
-            screen.blit(surf, (x0 + 12, y))
+            # Render the tick prefix on the first line; wrap the body
+            # across as many lines as needed and indent the continuations
+            # so wrapped events read as a single block.
+            prefix = f"t{ev_tick:03d} "
+            lines = self._wrap_text(desc, self._font_small, wrap_px)
+            if not lines:
+                continue
+            first = self._font_small.render(prefix + lines[0], True, color)
+            screen.blit(first, (x0 + TICKER_PAD_X, y))
             y += TICKER_LINE_H
+            indent_x = x0 + TICKER_PAD_X + len(prefix) * 7
+            for cont in lines[1:]:
+                if y > max_y:
+                    break
+                surf = self._font_small.render(cont, True, color)
+                screen.blit(surf, (indent_x, y))
+                y += TICKER_LINE_H
+
+    @staticmethod
+    def _wrap_text(text: str, font, max_px: int) -> list[str]:
+        """Word-wrap `text` so each rendered line fits within `max_px`.
+        Falls back to character splits for words longer than the budget
+        (e.g. URL-like strings without spaces).
+        """
+        if not text:
+            return []
+        words = text.split(" ")
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            candidate = word if not current else current + " " + word
+            if font.size(candidate)[0] <= max_px:
+                current = candidate
+                continue
+            if current:
+                lines.append(current)
+                current = ""
+            # Word alone too wide — char-split.
+            if font.size(word)[0] > max_px:
+                buf = ""
+                for ch in word:
+                    if font.size(buf + ch)[0] > max_px:
+                        if buf:
+                            lines.append(buf)
+                        buf = ch
+                    else:
+                        buf += ch
+                current = buf
+            else:
+                current = word
+        if current:
+            lines.append(current)
+        return lines
 
     def _draw_footer_hint(self, screen) -> None:
         import pygame
