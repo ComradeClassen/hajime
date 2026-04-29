@@ -1206,8 +1206,13 @@ class Match:
         self._a_was_kuzushi_last_tick = a_kuzushi
         self._b_was_kuzushi_last_tick = b_kuzushi
 
-        # Steps 10 & 11 — compound COMMIT_THROW resolution. Actor iterates
-        # both fighters; resolution uses the actual signature for the throw.
+        # Steps 10 & 11 — compound COMMIT_THROW handling. HAJ-154 splits
+        # this into two phases: a staging tick that fires the pre-commit
+        # IntentSignal NOW (so the opposing fighter's perception system
+        # has at least one tick of advance notice), and a follow-up tick
+        # where a queued FIRE_COMMIT_FROM_INTENT consequence pops the
+        # placeholder _ThrowInProgress entry and runs the real
+        # _resolve_commit_throw.
         for actor, opp, acts in (
             (self.fighter_a, self.fighter_b, actions_a),
             (self.fighter_b, self.fighter_a, actions_b),
@@ -1215,20 +1220,12 @@ class Match:
             for act in acts:
                 if act.kind != ActionKind.COMMIT_THROW or act.throw_id is None:
                     continue
-                commit_events = self._resolve_commit_throw(
-                    actor, opp, act.throw_id, tick,
-                    offensive_desperation=act.offensive_desperation,
-                    defensive_desperation=act.defensive_desperation,
-                    gate_bypass_reason=act.gate_bypass_reason,
-                    gate_bypass_kind=act.gate_bypass_kind,
-                    commit_motivation=act.commit_motivation,
-                )
-                events.extend(commit_events)
+                staged = self._stage_commit_intent(actor, opp, act, tick)
+                events.extend(staged)
                 if self.match_over:
                     self._post_tick(tick, events)
                     return
                 if self.sub_loop_state == SubLoopState.NE_WAZA:
-                    # Commit went to ground; stop standing processing.
                     self._post_tick(tick, events)
                     return
 
@@ -2552,21 +2549,15 @@ class Match:
         # outcome line ("…drives in for o-uchi but Sato sprawls" etc.).
         entry_event.data["prose_silent"] = True
 
-        # HAJ-149 — emit a pre-commit intent signal. The opposing
-        # fighter's perception system (run by _perception_phase later
-        # this tick) reads the signal, samples a reaction lag, and may
-        # schedule a response. Specificity rises with attacker disguise
-        # *failure* (low disguise = readable signal; high disguise =
-        # vague "something's coming" signal); v0.1 reads disguise from
-        # the attacker's skill vector (sequencing + pull execution).
-        attacker_disguise = disguise_for(attacker)
-        signal_specificity = max(0.0, min(1.0, 1.0 - attacker_disguise))
-        self._emit_intent_signal(
-            attacker, SETUP_THROW_COMMIT, tick, events,
-            throw_id=throw_id,
-            source_event_type="THROW_ENTRY",
-            specificity=signal_specificity,
-        )
+        # HAJ-149 / HAJ-154 — the pre-commit IntentSignal was emitted
+        # one tick earlier by _stage_commit_intent (when the action
+        # selector chose COMMIT_THROW). _resolve_commit_throw runs from
+        # the FIRE_COMMIT_FROM_INTENT consequence, so the perception
+        # window has already happened. Direct test calls into
+        # _resolve_commit_throw bypass the staging layer; they get no
+        # intent signal, which is the correct behavior for unit tests
+        # that drive throw-resolution mechanics directly without the
+        # full tick pipeline.
 
         # HAJ-145 — body-part decomposition of the commit. Walks the
         # worked-throw template's four signature dimensions and produces
@@ -3012,9 +3003,95 @@ class Match:
             if sig.throw_id is not None:
                 self._bump_familiarity(perceiver, sig.throw_id)
 
+    # -----------------------------------------------------------------------
+    # HAJ-154 — INTENT-FIRST COMMIT STAGING
+    # -----------------------------------------------------------------------
+    def _stage_commit_intent(
+        self, actor: Judoka, opp: Judoka, act: Action, tick: int,
+    ) -> list[Event]:
+        """Stage a COMMIT_THROW selected this tick: fire its pre-commit
+        IntentSignal NOW (so opposing perception has a tick of advance
+        notice — the perception window the lag axis can express against),
+        and queue the actual _resolve_commit_throw firing for tick+1
+        via the consequence queue.
+
+        Returns the events emitted on the staging tick (just the intent
+        signal in v0.1; downstream HAJ-153 narration may add more).
+        """
+        events: list[Event] = []
+        a_name = actor.identity.name
+        # If the fighter already has an in-progress attempt (from a
+        # multi-tick throw or a prior staged intent on the previous tick),
+        # reject this commit selection silently.
+        if a_name in self._throws_in_progress:
+            return events
+
+        # Pre-commit intent signal (HAJ-149 AC2 — emitted *before* the
+        # commit fires, not on the same tick).
+        attacker_disguise = disguise_for(actor)
+        signal_specificity = max(0.0, min(1.0, 1.0 - attacker_disguise))
+        self._emit_intent_signal(
+            actor, SETUP_THROW_COMMIT, tick, events,
+            throw_id=act.throw_id,
+            source_event_type="THROW_ENTRY",
+            specificity=signal_specificity,
+        )
+
+        # Stash a placeholder _ThrowInProgress so the action gate /
+        # re-commit guard treat the fighter as mid-attempt for tick+1.
+        # The placeholder is popped when FIRE_COMMIT_FROM_INTENT runs;
+        # the real entry is created inside _resolve_commit_throw at that
+        # point with the correct compression_n / schedule.
+        self._throws_in_progress[a_name] = _ThrowInProgress(
+            attacker_name=a_name,
+            defender_name=opp.identity.name,
+            throw_id=act.throw_id,
+            start_tick=tick,
+            compression_n=2,
+            schedule={},
+            commit_actual=0.0,
+        )
+
+        # Schedule the actual commit firing for tick+1.
+        self._consequence_queue.append(_Consequence(
+            due_tick=tick + 1,
+            kind="FIRE_COMMIT_FROM_INTENT",
+            payload={
+                "attacker_name": a_name,
+                "defender_name": opp.identity.name,
+                "throw_id": act.throw_id,
+                "offensive_desperation": act.offensive_desperation,
+                "defensive_desperation": act.defensive_desperation,
+                "gate_bypass_reason":    act.gate_bypass_reason,
+                "gate_bypass_kind":      act.gate_bypass_kind,
+                "commit_motivation":     act.commit_motivation,
+            },
+        ))
+        return events
+
     def _fire_consequence(
         self, c: "_Consequence", tick: int, events: list[Event],
     ) -> None:
+        if c.kind == "FIRE_COMMIT_FROM_INTENT":
+            attacker = self._fighter_by_name(c.payload["attacker_name"])
+            defender = self._fighter_by_name(c.payload["defender_name"])
+            # Pop the placeholder TIP so _resolve_commit_throw's
+            # "already in progress?" guard doesn't reject this firing.
+            self._throws_in_progress.pop(c.payload["attacker_name"], None)
+            if attacker is None or defender is None:
+                return
+            commit_events = self._resolve_commit_throw(
+                attacker, defender, c.payload["throw_id"], tick,
+                offensive_desperation=c.payload["offensive_desperation"],
+                defensive_desperation=c.payload["defensive_desperation"],
+                gate_bypass_reason=c.payload["gate_bypass_reason"],
+                gate_bypass_kind=c.payload["gate_bypass_kind"],
+                commit_motivation=c.payload["commit_motivation"],
+            )
+            for ev in commit_events:
+                ev.data.setdefault("from_consequence_queue", True)
+            events.extend(commit_events)
+            return
         if c.kind == "RESOLVE_KAKE_N1":
             attacker = self._fighter_by_name(c.payload["attacker_name"])
             defender = self._fighter_by_name(c.payload["defender_name"])

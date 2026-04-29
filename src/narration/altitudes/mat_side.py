@@ -254,7 +254,16 @@ class MatSideNarrator:
         for b in bpes:
             if b.tick != tick:
                 continue
-            if b.source not in ("COMMIT", "COUNTER_COMMIT"):
+            # HAJ-154 — commit-source BPEs no longer drive modifier-reveal
+            # prose. The modifier-reveal text reads as an outcome claim
+            # ("X's commit lands crisp and explosive"), but on the commit
+            # tick the throw hasn't resolved yet — five out of six
+            # instances in the audit log made factually wrong claims
+            # (the throw failed). HAJ-148 AC3 requires no prose to
+            # co-occur with a commit event tag; this is the prose source
+            # that violated it. COUNTER_COMMIT BPEs still surface — a
+            # counter is itself a resolution event.
+            if b.source != "COUNTER_COMMIT":
                 continue
             if b.actor in seen_actors:
                 continue

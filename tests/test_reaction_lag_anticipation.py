@@ -260,28 +260,44 @@ def _novice_match(seed: int = 0):
 
 
 def test_intent_signal_emits_on_commit() -> None:
-    """Every COMMIT_THROW emits at least one IntentSignal observable
-    by the opposing fighter's perception system."""
+    """Every staged COMMIT_THROW emits at least one IntentSignal
+    observable by the opposing fighter's perception system. HAJ-154
+    moves the intent emission to the staging layer (one tick before
+    the actual commit fires)."""
+    from actions import Action, ActionKind
     t, s, m = _elite_match(seed=1)
     n_before = len(m._intent_signals)
-    m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=5)
+    act = Action(kind=ActionKind.COMMIT_THROW, throw_id=ThrowID.UCHI_MATA)
+    m._stage_commit_intent(t, s, act, tick=5)
     assert len(m._intent_signals) == n_before + 1
     sig = m._intent_signals[-1]
     assert sig.fighter == t.identity.name
     assert sig.throw_id == ThrowID.UCHI_MATA
     assert sig.setup_class == "throw_commit"
     assert 0.0 <= sig.specificity <= 1.0
+    # And the actual commit firing is queued for tick+1.
+    assert any(
+        c.kind == "FIRE_COMMIT_FROM_INTENT" and c.due_tick == 6
+        for c in m._consequence_queue
+    )
 
 
 # ===========================================================================
 # AC#10 — five regression scenarios
 # ===========================================================================
 def _drive_commit_and_perception(m: Match, tori, uke, throw_id, tick: int):
-    """Helper — fire a commit from `tori` against `uke` and run the
-    perception phase that follows. Returns the events emitted."""
-    events: list = []
-    events.extend(m._resolve_commit_throw(tori, uke, throw_id, tick=tick))
+    """Helper — stage a commit from `tori` against `uke` (HAJ-154
+    intent-first pipeline), run the perception phase, and drain the
+    consequence queue so the actual commit + landing fire on subsequent
+    ticks. Returns the events captured across all those ticks."""
+    from actions import Action, ActionKind
+    act = Action(kind=ActionKind.COMMIT_THROW, throw_id=throw_id)
+    events: list = list(m._stage_commit_intent(tori, uke, act, tick))
     m._perception_phase(tick, events)
+    for follow_tick in (tick + 1, tick + 2, tick + 3):
+        followup: list = []
+        m._resolve_consequences(follow_tick, followup)
+        events.extend(followup)
     return events
 
 
@@ -431,13 +447,20 @@ def test_haj144_t003_no_perfect_perception_mirror() -> None:
     real = match_module.resolve_throw
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
     try:
-        # Both fighters commit on tick 3 — what t003 originally reproduced
-        # as a symmetric simultaneous bug. Each commit emits an intent
-        # signal; perception phase reads both. The two perception
-        # responses must not be identical (different fight_iq → different
-        # sampled lag distributions → different responses).
-        m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=3)
-        m._resolve_commit_throw(s, t, ThrowID.O_SOTO_GARI, tick=3)
+        # HAJ-154 — both fighters' COMMIT_THROW intents staged on tick 3.
+        # Each emits an IntentSignal for the perception phase to read.
+        from actions import Action, ActionKind
+        m._stage_commit_intent(
+            t, s,
+            Action(kind=ActionKind.COMMIT_THROW, throw_id=ThrowID.UCHI_MATA),
+            tick=3,
+        )
+        m._stage_commit_intent(
+            s, t,
+            Action(kind=ActionKind.COMMIT_THROW,
+                   throw_id=ThrowID.O_SOTO_GARI),
+            tick=3,
+        )
         m._perception_phase(3, [])
     finally:
         match_module.resolve_throw = real
@@ -528,23 +551,34 @@ def test_mutual_anticipation_has_no_recursion_cap() -> None:
 # ===========================================================================
 def test_haj148_invariants_still_hold() -> None:
     """Spot-check that HAJ-148's commit-silent-in-prose and consequence
-    queue invariants still hold post-149."""
+    queue invariants still hold post-149/154. Uses the staging
+    pipeline (HAJ-154) so an IntentSignal fires on tick 5 before the
+    actual commit fires on tick 6 from the consequence queue."""
+    from actions import Action, ActionKind
     t, s, m = _elite_match(seed=4)
     real = match_module.resolve_throw
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
     try:
-        evts = list(m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=5))
-        # AC#3 — commit prose-silent.
-        commit = next(e for e in evts if e.event_type == "THROW_ENTRY")
-        assert commit.data.get("prose_silent") is True
-        # AC#4 — landing on N+1.
-        followup: list = []
-        m._resolve_consequences(tick=6, events=followup)
-        # The intent signal is on tick 5; the resolution events are on tick 6.
+        # Tick 5 — stage commit (intent fires now; commit queued for tick 6).
+        m._stage_commit_intent(
+            t, s,
+            Action(kind=ActionKind.COMMIT_THROW, throw_id=ThrowID.UCHI_MATA),
+            tick=5,
+        )
         sig = m._intent_signals[-1]
         assert sig.tick == 5
+        # Tick 6 — consequence fires the actual commit; THROW_ENTRY
+        # surfaces here, prose-silent.
+        evts: list = []
+        m._resolve_consequences(tick=6, events=evts)
+        commit = next(e for e in evts if e.event_type == "THROW_ENTRY")
+        assert commit.tick == 6
+        assert commit.data.get("prose_silent") is True
+        # Tick 7 — the N=1 deferred kake landing.
+        followup: list = []
+        m._resolve_consequences(tick=7, events=followup)
         if followup:
-            assert all(e.tick == 6 for e in followup)
+            assert all(e.tick == 7 for e in followup)
     finally:
         match_module.resolve_throw = real
 
