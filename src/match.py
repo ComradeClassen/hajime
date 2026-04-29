@@ -28,6 +28,7 @@ from typing import Optional, Protocol, runtime_checkable
 from enums import (
     BodyArchetype, DominantSide, Position, StanceMatchup,
     SubLoopState, LandingProfile, GripMode,
+    BodyPart, GripTarget, GripTypeV2,
 )
 from judoka import Judoka
 from throws import ThrowID, ThrowDef, THROW_REGISTRY, THROW_DEFS
@@ -78,6 +79,11 @@ from intent_signal import (
 )
 from reaction_lag import (
     sample_lag, choose_response, disguise_for, PerceptionResponse,
+)
+from grip_initiative import (
+    sample_initiative, select_response, clock_pressure_roles,
+    GripResponseChoice,
+    RESP_CONTEST, RESP_MATCH, RESP_PURSUE_OWN, RESP_DEFENSIVE, RESP_DISENGAGE,
 )
 
 
@@ -137,6 +143,20 @@ STEP_CARDIO_COST: float = 0.0015
 # separate "mental fatigue" axis and folds the cost into general cardio
 # with a calibration tag for the v0.2 refactor (open question 4).
 ANTICIPATION_CARDIO_COST: float = 0.0008
+
+# HAJ-151 — disengage stamina cost. The disengage response combines the
+# perception cost with a movement / posture-shift cost; v0.1 ships a
+# slightly larger drain than the bare perception cost, calibrated so
+# repeated disengages add up across a match without dominating the
+# fatigue budget.
+DISENGAGE_CARDIO_COST: float = 0.003
+
+# HAJ-151 — disengage shido pressure. Three or more disengages without
+# an intervening grip-seat in the same closing-phase span register as
+# non-combativity; the ref's grip_initiative_strictness already governs
+# the threshold for issuing a passivity shido — this constant is the
+# count at which Match asks the ref to consider it.
+DISENGAGE_SHIDO_THRESHOLD_COUNT: int = 3
 
 # HAJ-149 — composure cost when an elite fighter has to abort or
 # re-plan in response to a perceived interrupt. Scaffolded but not
@@ -709,6 +729,33 @@ class Match:
         # Tests assert against this directly (the AC-required "decision
         # is logged" requirement from HAJ-149 §"Full selector re-run").
         self._perception_log: list[PerceptionResponse] = []
+
+        # HAJ-151 — grip cascade state. Set when the engagement floor
+        # elapses and a grip race is staged: leader has seated, follower
+        # is choosing a response on the next tick. Cleared when the
+        # follower's response resolves (response seats / disengages).
+        # Schema:
+        #   {"leader_name": str, "follower_name": str,
+        #    "stage_tick": int,
+        #    "leader_init": float, "follower_init": float,
+        #    "stance_matchup": StanceMatchup,
+        #    "clock_pressure_role_follower": Optional[str]}
+        self._grip_cascade: Optional[dict] = None
+        # Append-only log of grip-race decisions for tests / inspector.
+        self._grip_cascade_log: list[dict] = []
+        # Per-fighter intra-match grip-race wins/losses tally — feeds the
+        # familiarity weight on subsequent initiative rolls.
+        self._grip_familiarity: dict[str, int] = {
+            fighter_a.identity.name: 0,
+            fighter_b.identity.name: 0,
+        }
+        # Per-fighter disengage counter inside the current closing-phase
+        # span. Cleared when a grip seats (engagement actually completed)
+        # or a matte fires; incremented on each DISENGAGE response.
+        self._disengage_streak: dict[str, int] = {
+            fighter_a.identity.name: 0,
+            fighter_b.identity.name: 0,
+        }
 
         # Part 6.3 — named compromised-state tracker keyed by fighter name.
         # Set when a failed throw mutates tori's BodyState; cleared when
@@ -1558,6 +1605,16 @@ class Match:
         self, actions_a: list[Action], actions_b: list[Action],
         tick: int, events: list[Event],
     ) -> None:
+        # HAJ-151 — if a grip cascade is staged from a previous tick, the
+        # follower picks a response now; the closing-phase counter is
+        # paused while we resolve the cascade. The cascade resolver
+        # consumes _grip_cascade and may seat the follower's grips
+        # (MATCH/PURSUE_OWN), only some of them (CONTEST), none (DEFENSIVE),
+        # or transition both fighters back to STANDING_DISTANT (DISENGAGE).
+        if self._grip_cascade is not None:
+            self._resolve_grip_cascade(tick, events)
+            return
+
         if self.grip_graph.edge_count() > 0:
             self.engagement_ticks = 0
             return
@@ -1577,10 +1634,85 @@ class Match:
         if self.engagement_ticks < required:
             return
 
-        new_edges = self.grip_graph.attempt_engagement(
-            self.fighter_a, self.fighter_b, tick
-        )
+        # HAJ-151 — closing phase has elapsed; stage the grip cascade.
+        # Compute initiative for both fighters; the higher score reaches
+        # first (their grips seat now). The follower will choose a
+        # response on the next tick.
         self.engagement_ticks = 0
+        self._stage_grip_cascade(tick, events)
+
+    # -----------------------------------------------------------------------
+    # HAJ-151 — GRIP CASCADE STAGING + RESOLUTION
+    # -----------------------------------------------------------------------
+    def _stage_grip_cascade(self, tick: int, events: list[Event]) -> None:
+        """Compute initiative for both fighters, seat the leader's
+        grips this tick, and stage the follower's response for tick+1.
+
+        Per the spec: this is the opening grip exchange and also fires
+        on every post-matte / post-stuff / post-disengage re-engagement.
+        """
+        rng_a = random.Random(
+            f"haj151:init:{self.fighter_a.identity.name}:{self.seed}:{tick}"
+        )
+        rng_b = random.Random(
+            f"haj151:init:{self.fighter_b.identity.name}:{self.seed}:{tick}"
+        )
+        matchup = self._compute_stance_matchup()
+        a_role, b_role = clock_pressure_roles(
+            self.fighter_a, self.fighter_b,
+            current_tick=tick, max_ticks=self.max_ticks,
+            a_score=self._a_score, b_score=self._b_score,
+        )
+        a_fam = self._grip_familiarity.get(self.fighter_a.identity.name, 0)
+        b_fam = self._grip_familiarity.get(self.fighter_b.identity.name, 0)
+        a_init = sample_initiative(
+            self.fighter_a, self.fighter_b,
+            stance_matchup=matchup,
+            clock_pressure_role=a_role,
+            familiarity_delta=a_fam - b_fam,
+            rng=rng_a,
+        )
+        b_init = sample_initiative(
+            self.fighter_b, self.fighter_a,
+            stance_matchup=matchup,
+            clock_pressure_role=b_role,
+            familiarity_delta=b_fam - a_fam,
+            rng=rng_b,
+        )
+        if a_init >= b_init:
+            leader, follower = self.fighter_a, self.fighter_b
+            leader_init, follower_init = a_init, b_init
+            follower_role = b_role
+        else:
+            leader, follower = self.fighter_b, self.fighter_a
+            leader_init, follower_init = b_init, a_init
+            follower_role = a_role
+
+        # Engineering event — AC#1 verifiable via [grip_init] log.
+        events.append(Event(
+            tick=tick, event_type="GRIP_INITIATIVE",
+            description=(
+                f"[grip_init] {leader.identity.name} ({leader_init:+.2f}) "
+                f"reaches first vs {follower.identity.name} "
+                f"({follower_init:+.2f})"
+            ),
+            data={
+                "leader": leader.identity.name,
+                "follower": follower.identity.name,
+                "leader_init": leader_init,
+                "follower_init": follower_init,
+                "stance_matchup": matchup.name,
+                "clock_pressure_role_leader": (
+                    a_role if leader is self.fighter_a else b_role
+                ),
+                "clock_pressure_role_follower": follower_role,
+                "prose_silent": True,
+            },
+        ))
+
+        # Seat the leader's two grips now. Reuse grip_graph._new_pocket_edge
+        # via a thin per-fighter helper.
+        new_edges = self._seat_grips_for(leader, follower, tick)
         for edge in new_edges:
             ev = Event(
                 tick=tick, event_type="GRIP_ESTABLISH",
@@ -1589,14 +1721,344 @@ class Match:
                     f"{edge.target_id} ({edge.target_location.value}, "
                     f"{edge.grip_type_v2.name} @ {edge.depth_level.name})"
                 ),
-                data={"edge_id": id(edge)},
+                data={"edge_id": id(edge), "from_grip_cascade": "leader"},
             )
             events.append(ev)
-            grasper = self._fighter_by_name(edge.grasper_id)
-            if grasper is not None:
-                self._attach_bpe(ev, decompose_grip_establish(edge, grasper, tick))
+            self._attach_bpe(
+                ev, decompose_grip_establish(edge, leader, tick),
+            )
         if new_edges:
             self.position = Position.GRIPPING
+
+        # Stage the follower's response for the next tick.
+        self._grip_cascade = {
+            "leader_name": leader.identity.name,
+            "follower_name": follower.identity.name,
+            "stage_tick": tick,
+            "leader_init": leader_init,
+            "follower_init": follower_init,
+            "stance_matchup": matchup,
+            "clock_pressure_role_follower": follower_role,
+        }
+
+    def _seat_grips_for(
+        self, attacker: Judoka, defender: Judoka, tick: int,
+    ) -> list[GripEdge]:
+        """Seat the standard sleeve-and-lapel grip pair for one fighter
+        only. Mirrors grip_graph.attempt_engagement's per-fighter logic
+        without the symmetric loop."""
+        from enums import DominantSide as _DS
+        dom = attacker.identity.dominant_side
+        is_right = dom == _DS.RIGHT
+        target_name = defender.identity.name
+        new_edges: list[GripEdge] = []
+
+        dom_hand_part = (BodyPart.RIGHT_HAND if is_right
+                         else BodyPart.LEFT_HAND)
+        dom_hand_key  = "right_hand" if is_right else "left_hand"
+        lapel_target  = (GripTarget.LEFT_LAPEL if is_right
+                         else GripTarget.RIGHT_LAPEL)
+        dom_strength  = min(
+            1.0, attacker.effective_body_part(dom_hand_key) / 10.0,
+        )
+        new_edges.append(self.grip_graph._new_pocket_edge(
+            attacker=attacker,
+            grasper_part=dom_hand_part,
+            target_id=target_name,
+            target_location=lapel_target,
+            grip_type_v2=GripTypeV2.LAPEL_HIGH,
+            strength=dom_strength,
+            current_tick=tick,
+        ))
+
+        non_hand_part = (BodyPart.LEFT_HAND if is_right
+                         else BodyPart.RIGHT_HAND)
+        non_hand_key  = "left_hand" if is_right else "right_hand"
+        sleeve_target = (GripTarget.RIGHT_SLEEVE if is_right
+                         else GripTarget.LEFT_SLEEVE)
+        non_strength  = min(
+            1.0, attacker.effective_body_part(non_hand_key) / 10.0,
+        )
+        new_edges.append(self.grip_graph._new_pocket_edge(
+            attacker=attacker,
+            grasper_part=non_hand_part,
+            target_id=target_name,
+            target_location=sleeve_target,
+            grip_type_v2=GripTypeV2.SLEEVE_HIGH,
+            strength=non_strength,
+            current_tick=tick,
+        ))
+        return new_edges
+
+    def _resolve_grip_cascade(self, tick: int, events: list[Event]) -> None:
+        """Follower picks one of five responses. v0.1 mechanical outcomes:
+
+          - MATCH: follower's standard grip pair seats (symmetric config).
+          - PURSUE_OWN: same as MATCH for v0.1 (follower seats their own
+            preferred grips); the strategic difference is that the
+            follower didn't try to contest the leader. Cascade log
+            distinguishes them.
+          - CONTEST: follower seats only their dominant-hand lapel grip
+            (the reach that intercepts the leader's lead grip path).
+            Models the contested grip race; the second hand drops.
+          - DEFENSIVE: no grips seat for the follower; they're framing.
+          - DISENGAGE: leader's grips break, both transition to
+            STANDING_DISTANT, closing-phase counter restarts. Follower
+            absorbs the disengage stamina cost.
+
+        Selection is probabilistic per HAJ-151 spec §"Five response
+        types" — weights modulated by archetype, facets, fight_iq,
+        composure, perception specificity (proxied via the leader's
+        disguise), and clock-pressure role.
+        """
+        cascade = self._grip_cascade
+        if cascade is None:  # defensive — should be guarded by caller
+            return
+        leader = self._fighter_by_name(cascade["leader_name"])
+        follower = self._fighter_by_name(cascade["follower_name"])
+        if leader is None or follower is None:
+            self._grip_cascade = None
+            return
+
+        rng = random.Random(
+            f"haj151:resp:{follower.identity.name}:{self.seed}:{tick}"
+        )
+        # Perception specificity — high disguise → vague signal → safer
+        # responses. Reuses the HAJ-149 disguise model.
+        leader_disguise = disguise_for(leader)
+        perception_specificity = max(0.0, min(1.0, 1.0 - leader_disguise))
+
+        choice = select_response(
+            follower, leader,
+            stance_matchup=cascade["stance_matchup"],
+            clock_pressure_role=cascade["clock_pressure_role_follower"],
+            perception_specificity=perception_specificity,
+            rng=rng,
+        )
+
+        # Log the decision for tests / inspector.
+        log_entry = {
+            "tick": tick,
+            "leader": leader.identity.name,
+            "follower": follower.identity.name,
+            "kind": choice.kind,
+            "weights": dict(choice.weights),
+            "stance_matchup": cascade["stance_matchup"].name,
+            "clock_pressure_role_follower": cascade["clock_pressure_role_follower"],
+        }
+        self._grip_cascade_log.append(log_entry)
+
+        # Surface as engineering event.
+        events.append(Event(
+            tick=tick, event_type="GRIP_CASCADE_RESPONSE",
+            description=(
+                f"[grip_cascade] {follower.identity.name} → {choice.kind} "
+                f"vs {leader.identity.name}"
+            ),
+            data={**log_entry, "prose_silent": True},
+        ))
+
+        # Apply outcome.
+        if choice.kind == RESP_DISENGAGE:
+            self._apply_disengage_response(leader, follower, tick, events)
+        else:
+            self._apply_engaged_response(
+                leader, follower, choice.kind, tick, events,
+            )
+
+        # Familiarity tally — leader "won" the lead grip race; follower
+        # "lost" it (but disengage flips the win/loss because the
+        # follower successfully denied the leader's plan).
+        if choice.kind == RESP_DISENGAGE:
+            self._grip_familiarity[follower.identity.name] = (
+                self._grip_familiarity.get(follower.identity.name, 0) + 1
+            )
+            self._grip_familiarity[leader.identity.name] = (
+                self._grip_familiarity.get(leader.identity.name, 0) - 1
+            )
+        else:
+            self._grip_familiarity[leader.identity.name] = (
+                self._grip_familiarity.get(leader.identity.name, 0) + 1
+            )
+            self._grip_familiarity[follower.identity.name] = (
+                self._grip_familiarity.get(follower.identity.name, 0) - 1
+            )
+
+        self._grip_cascade = None
+
+    def _apply_engaged_response(
+        self, leader: Judoka, follower: Judoka, kind: str, tick: int,
+        events: list[Event],
+    ) -> None:
+        """Apply MATCH / PURSUE_OWN / CONTEST / DEFENSIVE outcomes.
+        Disengage is a sibling path — see _apply_disengage_response."""
+        # Reset disengage streaks — engagement actually completed (or
+        # at least the follower didn't disengage).
+        self._disengage_streak[leader.identity.name] = 0
+        self._disengage_streak[follower.identity.name] = 0
+
+        if kind == RESP_DEFENSIVE:
+            # Defensive frame — the follower seats their off-hand sleeve
+            # grip only. Models the "hand on the bicep / sleeve frame"
+            # posture from the spec: the lapel reach is denied (no
+            # offensive grip), but the sleeve frame gives the follower
+            # *some* defensive structure so leader can't fire throws
+            # unopposed. v0.1 mechanical proxy for "posture broken
+            # forward, A's kuzushi opportunities reduced."
+            from enums import DominantSide as _DS
+            dom = follower.identity.dominant_side
+            is_right = dom == _DS.RIGHT
+            sleeve_part = (BodyPart.LEFT_HAND if is_right
+                           else BodyPart.RIGHT_HAND)
+            sleeve_key  = "left_hand" if is_right else "right_hand"
+            sleeve_target = (GripTarget.RIGHT_SLEEVE if is_right
+                             else GripTarget.LEFT_SLEEVE)
+            sleeve_strength = min(
+                1.0, follower.effective_body_part(sleeve_key) / 10.0,
+            )
+            sleeve_edge = self.grip_graph._new_pocket_edge(
+                attacker=follower,
+                grasper_part=sleeve_part,
+                target_id=leader.identity.name,
+                target_location=sleeve_target,
+                grip_type_v2=GripTypeV2.SLEEVE_HIGH,
+                strength=sleeve_strength,
+                current_tick=tick,
+            )
+            ev = Event(
+                tick=tick, event_type="GRIP_ESTABLISH",
+                description=(
+                    f"[grip] {sleeve_edge.grasper_id} "
+                    f"({sleeve_edge.grasper_part.value}) → "
+                    f"{sleeve_edge.target_id} "
+                    f"({sleeve_edge.target_location.value}, "
+                    f"{sleeve_edge.grip_type_v2.name} @ "
+                    f"{sleeve_edge.depth_level.name})"
+                ),
+                data={"edge_id": id(sleeve_edge),
+                      "from_grip_cascade": "follower",
+                      "cascade_kind": kind},
+            )
+            events.append(ev)
+            self._attach_bpe(
+                ev, decompose_grip_establish(sleeve_edge, follower, tick),
+            )
+            return
+
+        # MATCH / PURSUE_OWN seat the follower's full grip pair.
+        new_edges: list[GripEdge] = []
+        if kind in (RESP_MATCH, RESP_PURSUE_OWN):
+            new_edges = self._seat_grips_for(follower, leader, tick)
+        elif kind == RESP_CONTEST:
+            # Contested race: follower's dominant-hand lapel grip seats
+            # (the reach that interposed on the leader's lead path);
+            # the off-hand sleeve drop is dropped.
+            from enums import DominantSide as _DS
+            dom = follower.identity.dominant_side
+            is_right = dom == _DS.RIGHT
+            dom_hand_part = (BodyPart.RIGHT_HAND if is_right
+                             else BodyPart.LEFT_HAND)
+            dom_hand_key  = "right_hand" if is_right else "left_hand"
+            lapel_target  = (GripTarget.LEFT_LAPEL if is_right
+                             else GripTarget.RIGHT_LAPEL)
+            dom_strength  = min(
+                1.0, follower.effective_body_part(dom_hand_key) / 10.0,
+            )
+            new_edges.append(self.grip_graph._new_pocket_edge(
+                attacker=follower,
+                grasper_part=dom_hand_part,
+                target_id=leader.identity.name,
+                target_location=lapel_target,
+                grip_type_v2=GripTypeV2.LAPEL_HIGH,
+                strength=dom_strength,
+                current_tick=tick,
+            ))
+
+        for edge in new_edges:
+            ev = Event(
+                tick=tick, event_type="GRIP_ESTABLISH",
+                description=(
+                    f"[grip] {edge.grasper_id} ({edge.grasper_part.value}) → "
+                    f"{edge.target_id} ({edge.target_location.value}, "
+                    f"{edge.grip_type_v2.name} @ {edge.depth_level.name})"
+                ),
+                data={"edge_id": id(edge),
+                      "from_grip_cascade": "follower",
+                      "cascade_kind": kind},
+            )
+            events.append(ev)
+            self._attach_bpe(
+                ev, decompose_grip_establish(edge, follower, tick),
+            )
+
+    def _apply_disengage_response(
+        self, leader: Judoka, follower: Judoka, tick: int,
+        events: list[Event],
+    ) -> None:
+        """DISENGAGE — break leader's grips, transition both fighters
+        back to STANDING_DISTANT. The follower absorbs the movement +
+        perception stamina cost. Repeated disengages without intervening
+        engagement count toward non-combativity (ref shido pressure)."""
+        # Drain stamina for the disengage move.
+        follower.state.cardio_current = max(
+            0.0, follower.state.cardio_current - DISENGAGE_CARDIO_COST,
+        )
+        # Increment streak for the disengaging fighter. Don't touch the
+        # leader's streak — they may have been the disengager in a prior
+        # cycle (and thus carry their own non-zero streak); only an
+        # actual completed engagement (handled in _apply_engaged_response)
+        # zeroes streaks.
+        self._disengage_streak[follower.identity.name] = (
+            self._disengage_streak.get(follower.identity.name, 0) + 1
+        )
+
+        events.append(Event(
+            tick=tick, event_type="GRIP_DISENGAGE",
+            description=(
+                f"[disengage] {follower.identity.name} backsteps — "
+                f"{leader.identity.name}'s reach finds empty space."
+            ),
+            data={
+                "follower": follower.identity.name,
+                "leader":   leader.identity.name,
+                "streak":   self._disengage_streak[follower.identity.name],
+            },
+        ))
+
+        # Repeated disengages register as non-combativity — surface
+        # as an event the ref's passivity machinery can read. The
+        # actual shido issue is handled by the ref's existing passivity
+        # path (kumi_kata_clock + grip_initiative_strictness threshold);
+        # this event is the engineering signal that the threshold may
+        # need to fire.
+        if (self._disengage_streak[follower.identity.name]
+                >= DISENGAGE_SHIDO_THRESHOLD_COUNT):
+            events.append(Event(
+                tick=tick, event_type="DISENGAGE_NON_COMBATIVE",
+                description=(
+                    f"[ref] {follower.identity.name} — repeated disengages "
+                    f"(streak {self._disengage_streak[follower.identity.name]})."
+                ),
+                data={
+                    "fighter": follower.identity.name,
+                    "streak":  self._disengage_streak[follower.identity.name],
+                },
+            ))
+            # Bump kumi-kata clock toward the shido threshold; the
+            # ref's existing passivity path takes it from there. We add
+            # a moderate bump (not the full shido threshold) so the
+            # disengage stream needs to keep up to actually draw.
+            self.kumi_kata_clock[follower.identity.name] = (
+                self.kumi_kata_clock.get(follower.identity.name, 0)
+                + KUMI_KATA_SHIDO_TICKS // 4
+            )
+
+        # Break leader's grips and transition both to STANDING_DISTANT.
+        # Re-engagement begins immediately under the existing closing-
+        # phase logic (engagement_ticks rebuilds from zero).
+        self.grip_graph.break_all_edges()
+        self.position = Position.STANDING_DISTANT
+        self.engagement_ticks = 0
 
     # -----------------------------------------------------------------------
     # STEPS 2-4 — FORCE ACCUMULATION
