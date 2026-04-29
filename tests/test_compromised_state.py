@@ -210,6 +210,10 @@ def test_match_tracks_compromised_state_on_failure() -> None:
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=1)
+        # HAJ-148 — N=1 commits defer their landing to tick+1 via the
+        # consequence queue. Drive the consequence so the FAILED outcome
+        # actually resolves and the compromised-state tag is set.
+        m._resolve_consequences(tick=2, events=[])
     finally:
         match_module.resolve_throw = real_resolve
     assert t.identity.name in m._compromised_states
@@ -254,6 +258,11 @@ def test_match_desperation_overlay_in_failed_event() -> None:
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         events = m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=9)
+        # HAJ-148 — drive the deferred N=1 landing on the next tick so the
+        # FAILED resolution events surface for inspection.
+        followup: list = []
+        m._resolve_consequences(tick=10, events=followup)
+        events = list(events) + followup
     finally:
         match_module.resolve_throw = real_resolve
     failed = [e for e in events if e.event_type == "FAILED"]

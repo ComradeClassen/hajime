@@ -38,7 +38,7 @@ from ne_waza import OsaekomiClock, NewazaResolver
 from actions import (
     Action, ActionKind,
     GRIP_KINDS, FORCE_KINDS, BODY_KINDS, DRIVING_FORCE_KINDS,
-    FOOT_ATTACK_KINDS,
+    FOOT_ATTACK_KINDS, SUBSTANTIVE_KINDS,
 )
 from action_selection import select_actions
 from perception import actual_signature_match, perceive
@@ -375,6 +375,32 @@ class _ThrowInProgress:
 
 
 # ---------------------------------------------------------------------------
+# CONSEQUENCE QUEUE (HAJ-148)
+#
+# Causal tick ordering: a substantive action's consequences resolve on the
+# *next* tick, not synchronously inside the same tick. Each entry is a
+# scheduled effect with a due_tick; the resolver pulls due entries at the
+# top of every tick before action selection runs.
+#
+# v0.1 effects:
+#   - "RESOLVE_KAKE_N1" — single-tick (N=1) throw commit deferred from
+#     tick N to tick N+1. Payload carries attacker_name, defender_name,
+#     throw_id; resolution recomputes signature and runs _resolve_kake.
+#   - "NEWAZA_TRANSITION_AFTER_STUFF" — ne-waza door from a stuffed
+#     standing throw. Payload carries attacker_name, defender_name; the
+#     resolver runs _resolve_newaza_transition at the deferred tick.
+#
+# Multi-tick (N>1) throws stay on the existing _throws_in_progress path —
+# they already separate commit and KAKE_COMMIT across ticks naturally.
+# ---------------------------------------------------------------------------
+@dataclass
+class _Consequence:
+    due_tick: int
+    kind: str
+    payload: dict
+
+
+# ---------------------------------------------------------------------------
 # THROW RESOLUTION (module-level, testable without a Match object)
 # ---------------------------------------------------------------------------
 
@@ -625,6 +651,22 @@ class Match:
         # per the compression schedule. Resolution happens on KAKE_COMMIT.
         self._throws_in_progress: dict[str, "_ThrowInProgress"] = {}
 
+        # HAJ-148 — causal tick ordering. The consequence queue defers the
+        # resolution of substantive actions to a future tick (typically N+1)
+        # so cause and effect occupy distinct ticks. Each tick's first phase
+        # is RESOLVE_CONSEQUENCES — pull due entries, fire their effects,
+        # before action selection runs. See _Consequence above.
+        self._consequence_queue: list["_Consequence"] = []
+        # Per-fighter "last tick a ladder substantive action fired" tracker.
+        # The action gate consults this to suppress substantive ladder
+        # actions on the very next tick (the consequence-resolution tick),
+        # satisfying the rule that the consequence is the fighter's
+        # substantive event on tick N+1, not a fresh ladder pick.
+        self._last_substantive_tick: dict[str, int] = {
+            fighter_a.identity.name: -10,
+            fighter_b.identity.name: -10,
+        }
+
         # Part 6.3 — named compromised-state tracker keyed by fighter name.
         # Set when a failed throw mutates tori's BodyState; cleared when
         # stun_ticks decays to zero (end of the recovery window). Uke's
@@ -850,7 +892,19 @@ class Match:
         self._decay_stun(self.fighter_a)
         self._decay_stun(self.fighter_b)
 
+        # HAJ-148 phase 1 — RESOLVE_CONSEQUENCES. Fire any deferred effects
+        # whose due_tick has arrived (N=1 throw landings, post-stuff ne-waza
+        # door, etc.) before selectors run. This ensures cause and effect
+        # occupy distinct ticks: the commit fired silently on tick N-1, the
+        # outcome prose lands here on tick N as the visible beat.
+        self._resolve_consequences(tick, events)
+        if self.match_over:
+            self._post_tick(tick, events)
+            return
+
         # Ne-waza branches to the ground resolver; no standup physics this tick.
+        # A consequence may have just dispatched the dyad to NE_WAZA (post-
+        # stuff door), so this branch must run AFTER consequences resolve.
         if self.sub_loop_state == SubLoopState.NE_WAZA:
             self._tick_newaza(tick, events)
             self._post_tick(tick, events)
@@ -948,6 +1002,25 @@ class Match:
         )
         actions_b = self._strip_commits_if_in_progress(
             self.fighter_b.identity.name, actions_b,
+        )
+        # HAJ-148 — substantive-action gate. A fighter whose previous-tick
+        # ladder fired a substantive action (or whose consequence is
+        # resolving this tick from the queue) cannot fire another
+        # substantive ladder action this tick. Non-substantive actions
+        # (HOLD_CONNECTIVE, FEINT, posture micro-adjustments, locomotion)
+        # pass through.
+        actions_a = self._gate_substantive_actions(
+            self.fighter_a.identity.name, tick, actions_a,
+        )
+        actions_b = self._gate_substantive_actions(
+            self.fighter_b.identity.name, tick, actions_b,
+        )
+        # Record what survived the gate so the next tick can read it.
+        self._record_substantive_actions(
+            self.fighter_a.identity.name, tick, actions_a,
+        )
+        self._record_substantive_actions(
+            self.fighter_b.identity.name, tick, actions_b,
         )
 
         # HAJ-57 — resolve any defensive hip-block actions. If a fighter
@@ -1958,6 +2031,14 @@ class Match:
         )
         events: list[Event] = [entry_event]
 
+        # HAJ-148 — commits are silent in prose. The engineering THROW_ENTRY
+        # event still fires for bookkeeping (debug stream, BPE substrate,
+        # _scoring_events bookkeeping downstream); the prose layer suppresses
+        # it via the prose_silent flag. The visible prose lands on the
+        # resolution tick (N+1 for N=1, KAKE for N>1) as part of the
+        # outcome line ("…drives in for o-uchi but Sato sprawls" etc.).
+        entry_event.data["prose_silent"] = True
+
         # HAJ-145 — body-part decomposition of the commit. Walks the
         # worked-throw template's four signature dimensions and produces
         # the structured event sequence (hikite pull, tsurite pull, fulcrum
@@ -1978,9 +2059,35 @@ class Match:
         ))
 
         if n <= 1:
-            # Single-tick resolution — the historical path.
-            events.extend(self._resolve_kake(
-                attacker, defender, throw_id, actual, tick,
+            # HAJ-148 — defer the landing to tick+1. Pre-fix, N=1 commits
+            # resolved the kake on the same tick as the commit, bunching
+            # cause and effect into one logical instant. Now: commit fires
+            # silently here, the consequence queue resolves the kake (and
+            # any STUFF/ne-waza chain it triggers) on the next tick.
+            #
+            # Stash an _ThrowInProgress entry so re-commits and substantive
+            # gating treat the deferred attempt as in-flight; it's popped
+            # when the consequence fires. The schedule is empty so
+            # _advance_throws_in_progress doesn't emit synthetic sub-events
+            # for this attempt — those already fired (silently) above.
+            self._throws_in_progress[attacker.identity.name] = _ThrowInProgress(
+                attacker_name=attacker.identity.name,
+                defender_name=defender.identity.name,
+                throw_id=throw_id,
+                start_tick=tick,
+                compression_n=1,
+                schedule={},
+                commit_actual=actual,
+                commit_execution_quality=eq,
+            )
+            self._consequence_queue.append(_Consequence(
+                due_tick=tick + 1,
+                kind="RESOLVE_KAKE_N1",
+                payload={
+                    "attacker_name": attacker.identity.name,
+                    "defender_name": defender.identity.name,
+                    "throw_id": throw_id,
+                },
             ))
             return events
 
@@ -2173,6 +2280,109 @@ class Match:
         if fighter_name not in self._throws_in_progress:
             return actions
         return [a for a in actions if a.kind != ActionKind.COMMIT_THROW]
+
+    # -----------------------------------------------------------------------
+    # HAJ-148 — CONSEQUENCE QUEUE + ACTION GATE
+    # -----------------------------------------------------------------------
+    def _has_pending_consequence_for(self, fighter_name: str, tick: int) -> bool:
+        """True if any queued consequence for `fighter_name` is due at or
+        before `tick`. Used by the action gate to suppress substantive
+        ladder actions on the consequence-resolution tick (AC#1)."""
+        return any(
+            c.due_tick <= tick and c.payload.get("attacker_name") == fighter_name
+            for c in self._consequence_queue
+        )
+
+    def _gate_substantive_actions(
+        self, fighter_name: str, tick: int, actions: list[Action],
+    ) -> list[Action]:
+        """HAJ-148 action gate.
+
+        Strip substantive actions from the ladder when the fighter has a
+        pending consequence due this tick — the queued resolution *is*
+        their substantive event for the tick; the ladder cannot fire
+        another on top of it. This is the testable invariant from AC#1
+        for all consequence-bearing substantive actions (throw commit,
+        stuff → ne-waza door).
+
+        Non-consequence substantive actions (grip deepens, PULLs, REACH
+        during the closing phase) pass through; gating them every tick
+        breaks normal kumi-kata cadence and the engagement closing-phase
+        floor without buying narrative coherence — those events do not
+        bunch the way commits do.
+
+        Non-substantive actions (HOLD_CONNECTIVE, FEINT, posture micro-
+        adjustments, locomotion) always pass through untouched."""
+        if self._has_pending_consequence_for(fighter_name, tick):
+            return [a for a in actions if a.kind not in SUBSTANTIVE_KINDS]
+        return actions
+
+    def _record_substantive_actions(
+        self, fighter_name: str, tick: int, actions: list[Action],
+    ) -> None:
+        """Mark the fighter as having taken a substantive ladder action on
+        `tick` (kept on Match for downstream readers; the gate itself
+        keys off the consequence queue, not this tracker)."""
+        if any(a.kind in SUBSTANTIVE_KINDS for a in actions):
+            self._last_substantive_tick[fighter_name] = tick
+
+    def _resolve_consequences(self, tick: int, events: list[Event]) -> None:
+        """HAJ-148 phase 1 (RESOLVE_CONSEQUENCES).
+
+        Pull every consequence whose due_tick <= `tick`, fire its effect,
+        and mutate world state. Runs at the top of _tick (after fatigue /
+        stun, before action selection) so the consequence's events are
+        the *first* substantive entries of the tick — the visible
+        cause-and-outcome prose beat.
+        """
+        if not self._consequence_queue:
+            return
+        due = [c for c in self._consequence_queue if c.due_tick <= tick]
+        self._consequence_queue = [
+            c for c in self._consequence_queue if c.due_tick > tick
+        ]
+        for c in due:
+            self._fire_consequence(c, tick, events)
+            if self.match_over:
+                return
+
+    def _fire_consequence(
+        self, c: "_Consequence", tick: int, events: list[Event],
+    ) -> None:
+        if c.kind == "RESOLVE_KAKE_N1":
+            attacker = self._fighter_by_name(c.payload["attacker_name"])
+            defender = self._fighter_by_name(c.payload["defender_name"])
+            throw_id = c.payload["throw_id"]
+            # Drop the in-progress entry now so _resolve_kake's downstream
+            # paths (e.g. ne-waza dispatch on STUFFED) see a clean slate
+            # for this attacker.
+            self._throws_in_progress.pop(c.payload["attacker_name"], None)
+            if attacker is None or defender is None:
+                return
+            # Recompute signature at the resolution tick — between commit and
+            # resolution the world has moved; mirrors the multi-tick KAKE
+            # path's fresh signature read.
+            kake_actual = actual_signature_match(
+                throw_id, attacker, defender, self.grip_graph,
+                current_tick=tick,
+            )
+            kake_events = self._resolve_kake(
+                attacker, defender, throw_id, kake_actual, tick,
+            )
+            for ev in kake_events:
+                ev.data.setdefault("from_consequence_queue", True)
+            events.extend(kake_events)
+        elif c.kind == "NEWAZA_TRANSITION_AFTER_STUFF":
+            attacker = self._fighter_by_name(c.payload["attacker_name"])
+            defender = self._fighter_by_name(c.payload["defender_name"])
+            if attacker is None or defender is None:
+                return
+            ne_events = self._resolve_newaza_transition(
+                attacker, defender, tick,
+            )
+            for ev in ne_events:
+                ev.data.setdefault("from_consequence_queue", True)
+            events.extend(ne_events)
 
     def _check_hip_blocks(
         self,
@@ -2710,11 +2920,19 @@ class Match:
                 attacker.state.stun_ticks = max(
                     attacker.state.stun_ticks, STUFFED_AGGRESSOR_STUN_TICKS,
                 )
-                # Roll for ne-waza commitment
-                stuffed_events = self._resolve_newaza_transition(
-                    attacker, defender, tick
-                )
-                events.extend(stuffed_events)
+                # HAJ-148 — defer the ne-waza door to tick+1. The stuff
+                # event itself fires this tick (the visible prose beat);
+                # the door (NEWAZA_TRANSITION) is the consequence of the
+                # stuff and lands on the next tick, distributing the
+                # cause-effect chain across two ticks instead of one.
+                self._consequence_queue.append(_Consequence(
+                    due_tick=tick + 1,
+                    kind="NEWAZA_TRANSITION_AFTER_STUFF",
+                    payload={
+                        "attacker_name": attacker.identity.name,
+                        "defender_name": defender.identity.name,
+                    },
+                ))
 
         else:  # FAILED
             events.extend(self._resolve_failed_commit(
@@ -3295,8 +3513,14 @@ class Match:
         for ev in events:
             if ev.data.get("silent"):
                 continue
+            # HAJ-148 — events flagged prose_silent surface only on the
+            # engineer (debug) stream; the prose stream and the prose half
+            # of the side-by-side view skip them. Used by THROW_ENTRY so
+            # commits are silent in prose (the resolution prose on tick
+            # N+1 carries the visible beat).
+            prose_silent = bool(ev.data.get("prose_silent"))
             if self._stream == "prose":
-                if _is_debug_only_event(ev.event_type):
+                if _is_debug_only_event(ev.event_type) or prose_silent:
                     continue
                 # Prose stream: no tick prefix, no debug handles, eq= stripped.
                 print(_render_prose(ev.description))
@@ -3317,7 +3541,7 @@ class Match:
             # "both" — side-by-side dual stream: engineer on the left with
             # tick numbers, prose on the right with a countdown match clock.
             # A reader can scan one side and read across to correlate.
-            if _is_debug_only_event(ev.event_type):
+            if _is_debug_only_event(ev.event_type) or prose_silent:
                 prose_line = ""
             else:
                 clock = _format_match_clock(self.max_ticks - ev.tick)

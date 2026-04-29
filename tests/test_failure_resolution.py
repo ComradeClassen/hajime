@@ -173,6 +173,11 @@ def test_match_failed_branch_emits_typed_failure_event_for_worked_throws() -> No
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         events = m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=9)
+        # HAJ-148 — N=1 commits defer landing to tick+1; drive the
+        # consequence so the FAILED event appears.
+        followup: list = []
+        m._resolve_consequences(tick=10, events=followup)
+        events = list(events) + followup
     finally:
         match_module.resolve_throw = real_resolve
     failed = [ev for ev in events if ev.event_type == "FAILED"]
@@ -236,6 +241,10 @@ def test_match_failed_branch_for_legacy_throw_is_unchanged() -> None:
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         events = m._resolve_commit_throw(t, s, ThrowID.SUMI_GAESHI, tick=9)
+        # HAJ-148 — drive the deferred N=1 landing.
+        followup: list = []
+        m._resolve_consequences(tick=10, events=followup)
+        events = list(events) + followup
     finally:
         match_module.resolve_throw = real_resolve
     failed = [ev for ev in events if ev.event_type == "FAILED"]

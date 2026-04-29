@@ -434,9 +434,17 @@ def test_throw_entry_data_carries_motivation_enum_name() -> None:
         assert entry.data["commit_motivation"] == motivation.name
         # And the tag appears in the description for readers.
         assert DEBUG_TAGS[motivation] in entry.description
-        # Reset the motivation snapshot for the next iteration since
-        # _resolve_commit_throw sets it each time.
+        # Reset the per-attacker mid-attempt bookkeeping so the next
+        # iteration's commit isn't blocked by the prior deferred attempt.
+        # HAJ-148 — N=1 commits stash an _ThrowInProgress entry until the
+        # consequence fires; popping it here lets each motivation in the
+        # loop run independently without driving consequences.
         m._commit_motivation.pop(tori.identity.name, None)
+        m._throws_in_progress.pop(tori.identity.name, None)
+        m._consequence_queue = [
+            c for c in m._consequence_queue
+            if c.payload.get("attacker_name") != tori.identity.name
+        ]
 
 
 # ===========================================================================

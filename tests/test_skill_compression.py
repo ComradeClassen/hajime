@@ -169,7 +169,10 @@ def test_multi_tick_commit_defers_resolution_until_kake() -> None:
 
 
 def test_elite_single_tick_commit_resolves_immediately() -> None:
-    """An elite's throw (N=1) resolves in one tick — no in-progress stash."""
+    """An elite's throw (N=1) emits the THROW_ENTRY plus all four sub-events
+    on the commit tick, then defers the landing to tick+1 (HAJ-148 causal
+    ordering). Driving the consequence on tick+1 clears the in-progress
+    bookkeeping just like the synchronous pre-148 path did."""
     from match import Match
     from referee import build_suzuki
     random.seed(8)
@@ -185,7 +188,10 @@ def test_elite_single_tick_commit_resolves_immediately() -> None:
     for ev in (SubEvent.REACH_KUZUSHI, SubEvent.KUZUSHI_ACHIEVED,
                SubEvent.TSUKURI, SubEvent.KAKE_COMMIT):
         assert f"SUB_{ev.name}" in kinds
-    # No lingering in-progress state.
+    # The deferred attempt is parked in throws_in_progress until the
+    # consequence resolves on the next tick.
+    assert t.identity.name in m._throws_in_progress
+    m._resolve_consequences(tick=4, events=[])
     assert t.identity.name not in m._throws_in_progress
 
 

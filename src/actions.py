@@ -101,6 +101,34 @@ FOOT_ATTACK_KINDS: frozenset[ActionKind] = frozenset({
     ActionKind.DISRUPTIVE_STEP,
 })
 
+# HAJ-148 — substantive action kinds.
+#
+# An action is "substantive" if it gates the per-tick action ladder under the
+# causal-tick-ordering rule: at most one substantive action per fighter per
+# tick, with consequences resolving on tick N+1. Non-substantive actions
+# (posture micro-adjustments, fatigue accumulation, prose markers, debug,
+# referee personality observation) can co-occur freely.
+#
+# The ladder kinds that map to substantive (from the issue's list — grip
+# seat / grip strip / grip change, PULL execution, FOOT_ATTACK execution,
+# throw commit, defensive stuff/block/counter):
+SUBSTANTIVE_KINDS: frozenset[ActionKind] = frozenset({
+    # Grip changes — every grip action mutates the graph.
+    ActionKind.REACH, ActionKind.DEEPEN, ActionKind.STRIP,
+    ActionKind.STRIP_TWO_ON_ONE, ActionKind.DEFEND_GRIP,
+    ActionKind.REPOSITION_GRIP, ActionKind.RELEASE,
+    # Force — PULL is the canonical kuzushi-driving action; PUSH/LIFT/COUPLE
+    # are not surfaced as their own substantive events in v0.1.
+    ActionKind.PULL,
+    # Foot attacks.
+    ActionKind.FOOT_SWEEP_SETUP, ActionKind.LEG_ATTACK_SETUP,
+    ActionKind.DISRUPTIVE_STEP, ActionKind.SWEEP_LEG,
+    # Defensive blocks.
+    ActionKind.BLOCK_HIP, ActionKind.BLOCK_LEG,
+    # Throw commit.
+    ActionKind.COMMIT_THROW,
+})
+
 
 # ---------------------------------------------------------------------------
 # ACTION
