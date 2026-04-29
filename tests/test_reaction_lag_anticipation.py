@@ -1,0 +1,570 @@
+# tests/test_reaction_lag_anticipation.py
+# HAJ-149 — reaction lag + fight_iq-gated anticipation regression tests.
+#
+# Five canonical scenarios from the issue spec:
+#   1. Elite mirror match — both fighters sample low / negative lag,
+#      both produce BRACE responses to the opponent's commits.
+#   2. Novice mirror match — both fighters sample positive lag, NONE
+#      responses dominate.
+#   3. Asymmetric match — high-fight_iq dominates rhythm via more
+#      BRACE responses than the low-fight_iq side.
+#   4. High-disguise tori vs. elite uke — disguise degrades anticipation:
+#      uke's lag distribution shifts later than baseline elite-vs-elite.
+#   5. HAJ-144 t003 reproduction — fighters with different fight_iq do
+#      not co-fire identical commit-tick perception (no perfect mirror).
+#
+# Plus property-level tests on the reaction_lag math: signed-and-
+# distributed (AC#1), fatigue / disguise / familiarity / composure
+# modulators (AC#5-7), stamina cost (AC#8), no recursion cap (AC#9).
+
+from __future__ import annotations
+import contextlib
+import io
+import os
+import random
+import statistics
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from enums import (
+    BeltRank, BodyPart, GripTypeV2, GripDepth, GripMode, GripTarget,
+    Position,
+)
+from body_state import place_judoka
+from grip_graph import GripGraph, GripEdge
+from throws import ThrowID
+from match import Match, ANTICIPATION_CARDIO_COST
+from referee import build_suzuki
+from reaction_lag import (
+    expected_lag, sample_lag, choose_response, disguise_for,
+    LAG_CLAMP_MIN, LAG_CLAMP_MAX,
+    BASE_LAG_INTERCEPT_IQ0, BASE_LAG_SLOPE_PER_IQ,
+)
+from skill_vector import SkillVector, set_uniform
+import main as main_module
+import match as match_module
+
+
+# ---------------------------------------------------------------------------
+# FIXTURES
+# ---------------------------------------------------------------------------
+def _pair():
+    t = main_module.build_tanaka()
+    s = main_module.build_sato()
+    place_judoka(t, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(s, com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+    return t, s
+
+
+def _seat_deep_grips(graph: GripGraph, attacker, defender) -> None:
+    graph.add_edge(GripEdge(
+        grasper_id=attacker.identity.name, grasper_part=BodyPart.RIGHT_HAND,
+        target_id=defender.identity.name, target_location=GripTarget.LEFT_LAPEL,
+        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.DEEP,
+        strength=1.0, established_tick=0, mode=GripMode.DRIVING,
+    ))
+    graph.add_edge(GripEdge(
+        grasper_id=attacker.identity.name, grasper_part=BodyPart.LEFT_HAND,
+        target_id=defender.identity.name, target_location=GripTarget.RIGHT_SLEEVE,
+        grip_type_v2=GripTypeV2.SLEEVE_HIGH, depth_level=GripDepth.DEEP,
+        strength=1.0, established_tick=0, mode=GripMode.DRIVING,
+    ))
+
+
+def _set_fight_iq(judoka, iq: int) -> None:
+    judoka.capability.fight_iq = iq
+
+
+# ===========================================================================
+# AC#1 — reaction_lag is signed, distributed, modulated
+# ===========================================================================
+def test_expected_lag_is_signed_per_fight_iq() -> None:
+    """At iq=10 the base sits negative; at iq=0 the base sits positive."""
+    t, s = _pair()
+    set_uniform(t, 0.0)
+    set_uniform(s, 0.0)
+    _set_fight_iq(t, 10)
+    _set_fight_iq(s, 0)
+    elite_lag = expected_lag(t, s)
+    novice_lag = expected_lag(s, t)
+    assert elite_lag < 0.0, f"elite lag should be negative, got {elite_lag}"
+    assert novice_lag > 0.0, f"novice lag should be positive, got {novice_lag}"
+
+
+def test_sample_lag_is_clamped() -> None:
+    """Even with extreme inputs, sampled lag stays inside the v0.1 window."""
+    rng = random.Random(0)
+    t, s = _pair()
+    set_uniform(t, 0.0)
+    set_uniform(s, 0.0)
+    _set_fight_iq(t, 10)
+    _set_fight_iq(s, 0)
+    for _ in range(200):
+        lag = sample_lag(t, s, rng=rng)
+        assert LAG_CLAMP_MIN <= lag <= LAG_CLAMP_MAX
+
+
+def test_sample_lag_distribution_matches_expected_sign() -> None:
+    """Across many samples, an elite perceiver's lag distribution is
+    skewed negative; a novice's is skewed positive. (Distribution
+    property — AC#1 calls for signed *and* distributed lag.)"""
+    rng = random.Random(7)
+    t, s = _pair()
+    set_uniform(t, 0.0)
+    set_uniform(s, 0.0)
+    _set_fight_iq(t, 10)
+    _set_fight_iq(s, 0)
+    elite_samples = [sample_lag(t, s, rng=rng) for _ in range(200)]
+    novice_samples = [sample_lag(s, t, rng=rng) for _ in range(200)]
+    assert statistics.mean(elite_samples) < 0.0
+    assert statistics.mean(novice_samples) > 0.0
+    # Distribution width — there's actual variance, not a constant.
+    assert statistics.pstdev(elite_samples) > 0.1
+    assert statistics.pstdev(novice_samples) > 0.1
+
+
+# ===========================================================================
+# AC#5 — disguise modulates lag
+# ===========================================================================
+def test_high_disguise_pushes_perceiver_lag_later() -> None:
+    """An elite uke vs. a high-disguise tori reads worse than the same
+    uke vs. a low-disguise tori. (AC#5: disguise modulates signal.)"""
+    t, s = _pair()
+    _set_fight_iq(t, 10)
+    # Low-disguise tori: uniform 0.0 across all skill axes including
+    # sequencing / pull_execution.
+    set_uniform(s, 0.0)
+    low_disguise_lag = expected_lag(t, s)
+    # High-disguise tori: uniform 1.0.
+    set_uniform(s, 1.0)
+    high_disguise_lag = expected_lag(t, s)
+    assert high_disguise_lag > low_disguise_lag, (
+        f"high disguise should push lag later: "
+        f"low={low_disguise_lag}, high={high_disguise_lag}"
+    )
+
+
+# ===========================================================================
+# AC#6 — fatigue degrades perception
+# ===========================================================================
+def test_fatigue_degrades_perception() -> None:
+    """Same fighter, different fatigue states; lag distribution shifts
+    later under fatigue. (AC#6 verbatim.)"""
+    t, s = _pair()
+    set_uniform(s, 0.0)
+    _set_fight_iq(t, 10)
+    fresh_lag = expected_lag(t, s, fatigue_frac=0.0)
+    cooked_lag = expected_lag(t, s, fatigue_frac=1.0)
+    assert cooked_lag > fresh_lag, (
+        f"cooked perceiver should read worse: "
+        f"fresh={fresh_lag}, cooked={cooked_lag}"
+    )
+
+
+# ===========================================================================
+# AC#7 — composure modulates desperation's effect
+# ===========================================================================
+def test_high_composure_under_desperation_does_not_perceive_worse() -> None:
+    """A high-composure fighter under desperation does not perceive worse
+    than the same fighter without desperation. (AC#7 verbatim — high
+    composure under desperation focuses, low composure panics.)"""
+    t, s = _pair()
+    set_uniform(s, 0.0)
+    _set_fight_iq(t, 10)
+    # Baseline (no desperation).
+    baseline = expected_lag(t, s, in_desperation=False)
+    # High composure (focus): lag should not be worse than baseline.
+    focused = expected_lag(
+        t, s, in_desperation=True, composure_frac=0.9,
+    )
+    panicked = expected_lag(
+        t, s, in_desperation=True, composure_frac=0.1,
+    )
+    assert focused <= baseline + 1e-9, (
+        f"high-composure desperation should sharpen, not dull: "
+        f"baseline={baseline}, focused={focused}"
+    )
+    assert panicked > focused, (
+        f"low-composure desperation should perceive worse than "
+        f"high-composure desperation: panicked={panicked}, focused={focused}"
+    )
+
+
+# ===========================================================================
+# Familiarity bonus
+# ===========================================================================
+def test_familiarity_shaves_lag() -> None:
+    """Seeing the same throw class repeatedly in-match shaves lag —
+    the perceiver pattern-matches the setup."""
+    t, s = _pair()
+    set_uniform(s, 0.0)
+    _set_fight_iq(t, 10)
+    cold = expected_lag(t, s, familiarity_count=0)
+    seasoned = expected_lag(t, s, familiarity_count=3)
+    assert seasoned < cold
+
+
+# ===========================================================================
+# Response selection — BRACE / NONE under HAJ-148's deferral
+# ===========================================================================
+def test_choose_response_brace_for_low_lag() -> None:
+    """An elite perceiver (lag <= 0) braces for the resolution tick."""
+    t, s = _pair()
+    _set_fight_iq(t, 10)
+    resp = choose_response(t, s, sampled_lag=-1, commit_tick=10)
+    assert resp.kind == "BRACE"
+    assert resp.target_tick == 11
+
+
+def test_choose_response_none_for_late_lag() -> None:
+    """A novice (lag >= 2) reacts after the resolution — too late."""
+    t, s = _pair()
+    _set_fight_iq(s, 0)
+    resp = choose_response(s, t, sampled_lag=2, commit_tick=10)
+    assert resp.kind == "NONE"
+
+
+# ===========================================================================
+# Match-level integration tests
+# ===========================================================================
+def _elite_match(seed: int = 0):
+    """Both fighters elite (BLACK_5, fight_iq=10), grips seated, ready
+    to drive commits directly."""
+    random.seed(seed)
+    t, s = _pair()
+    t.identity.belt_rank = BeltRank.BLACK_5
+    s.identity.belt_rank = BeltRank.BLACK_5
+    _set_fight_iq(t, 10)
+    _set_fight_iq(s, 10)
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), seed=seed)
+    m.position = Position.GRIPPING
+    _seat_deep_grips(m.grip_graph, t, s)
+    _seat_deep_grips(m.grip_graph, s, t)
+    return t, s, m
+
+
+def _novice_match(seed: int = 0):
+    """Both fighters novice (WHITE, fight_iq=0)."""
+    random.seed(seed)
+    t, s = _pair()
+    t.identity.belt_rank = BeltRank.WHITE
+    s.identity.belt_rank = BeltRank.WHITE
+    _set_fight_iq(t, 0)
+    _set_fight_iq(s, 0)
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), seed=seed)
+    m.position = Position.GRIPPING
+    _seat_deep_grips(m.grip_graph, t, s)
+    _seat_deep_grips(m.grip_graph, s, t)
+    return t, s, m
+
+
+def test_intent_signal_emits_on_commit() -> None:
+    """Every COMMIT_THROW emits at least one IntentSignal observable
+    by the opposing fighter's perception system."""
+    t, s, m = _elite_match(seed=1)
+    n_before = len(m._intent_signals)
+    m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=5)
+    assert len(m._intent_signals) == n_before + 1
+    sig = m._intent_signals[-1]
+    assert sig.fighter == t.identity.name
+    assert sig.throw_id == ThrowID.UCHI_MATA
+    assert sig.setup_class == "throw_commit"
+    assert 0.0 <= sig.specificity <= 1.0
+
+
+# ===========================================================================
+# AC#10 — five regression scenarios
+# ===========================================================================
+def _drive_commit_and_perception(m: Match, tori, uke, throw_id, tick: int):
+    """Helper — fire a commit from `tori` against `uke` and run the
+    perception phase that follows. Returns the events emitted."""
+    events: list = []
+    events.extend(m._resolve_commit_throw(tori, uke, throw_id, tick=tick))
+    m._perception_phase(tick, events)
+    return events
+
+
+def test_elite_mirror_match_produces_brace_responses() -> None:
+    """AC#10 elite mirror — both elite fighters perceive opponent
+    commits in time and brace for resolution."""
+    rng = random.Random(2)
+    t, s, m = _elite_match(seed=2)
+    # Drive a sequence of commits; collect perception responses.
+    for tick in range(5, 15, 2):
+        # Patch resolve_throw so the deferred consequence is harmless.
+        real = match_module.resolve_throw
+        match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+        try:
+            _drive_commit_and_perception(m, t, s, ThrowID.UCHI_MATA, tick)
+            m._resolve_consequences(tick + 1, [])  # drain consequence
+        finally:
+            match_module.resolve_throw = real
+    # Across all those commits, the perception log should contain
+    # mostly BRACE responses (elite uke reads them in time).
+    kinds = [r.kind for r in m._perception_log]
+    brace_count = sum(1 for k in kinds if k == "BRACE")
+    assert brace_count >= 3, (
+        f"elite mirror should brace most commits, got {kinds}"
+    )
+
+
+def test_novice_mirror_match_brace_rate_is_lower() -> None:
+    """AC#10 novice mirror — novices react late; BRACE rate is lower
+    than the elite-mirror baseline."""
+    t_e, s_e, m_e = _elite_match(seed=42)
+    t_n, s_n, m_n = _novice_match(seed=42)
+    real = match_module.resolve_throw
+    match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+    try:
+        for tick in range(5, 25, 2):
+            _drive_commit_and_perception(m_e, t_e, s_e, ThrowID.UCHI_MATA, tick)
+            m_e._resolve_consequences(tick + 1, [])
+            _drive_commit_and_perception(m_n, t_n, s_n, ThrowID.UCHI_MATA, tick)
+            m_n._resolve_consequences(tick + 1, [])
+    finally:
+        match_module.resolve_throw = real
+    elite_brace = sum(1 for r in m_e._perception_log if r.kind == "BRACE")
+    novice_brace = sum(1 for r in m_n._perception_log if r.kind == "BRACE")
+    # AC#10: novice rate is *not higher* than elite rate. They can be
+    # equal in degenerate seeds, but elite should generally meet or beat.
+    assert elite_brace >= novice_brace, (
+        f"elite brace rate ({elite_brace}) should meet or beat novice "
+        f"({novice_brace})"
+    )
+
+
+def test_asymmetric_match_high_iq_dominates_rhythm() -> None:
+    """AC#10 asymmetric — high-fight_iq side perceives commits in time
+    more often than the low-fight_iq side."""
+    random.seed(11)
+    t, s = _pair()
+    t.identity.belt_rank = BeltRank.BLACK_5
+    s.identity.belt_rank = BeltRank.WHITE
+    _set_fight_iq(t, 10)
+    _set_fight_iq(s, 0)
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), seed=11)
+    m.position = Position.GRIPPING
+    _seat_deep_grips(m.grip_graph, t, s)
+    _seat_deep_grips(m.grip_graph, s, t)
+    real = match_module.resolve_throw
+    match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+    try:
+        for tick in range(5, 25, 2):
+            # Tori commits → uke perceives.
+            _drive_commit_and_perception(m, t, s, ThrowID.UCHI_MATA, tick)
+            m._resolve_consequences(tick + 1, [])
+            # Uke commits → tori perceives. Use a different tick to
+            # avoid clobbering the throws-in-progress entry.
+            _drive_commit_and_perception(m, s, t, ThrowID.O_SOTO_GARI, tick + 1)
+            m._resolve_consequences(tick + 2, [])
+    finally:
+        match_module.resolve_throw = real
+    # Tori (elite) braced uke's commits more often than uke (novice)
+    # braced tori's commits.
+    tori_braces = sum(
+        1 for r in m._perception_log
+        if r.kind == "BRACE" and r.perceiver == t.identity.name
+    )
+    uke_braces = sum(
+        1 for r in m._perception_log
+        if r.kind == "BRACE" and r.perceiver == s.identity.name
+    )
+    assert tori_braces >= uke_braces, (
+        f"elite tori should brace more often than novice uke: "
+        f"tori={tori_braces}, uke={uke_braces}"
+    )
+
+
+def test_high_disguise_tori_degrades_elite_uke_anticipation() -> None:
+    """AC#10 high-disguise tori vs. elite uke — anticipation degrades
+    measurably vs. the low-disguise baseline."""
+    # Build two matches differing only in tori's disguise.
+    def _run_with_disguise(disg: float, seed: int) -> int:
+        random.seed(seed)
+        t, s = _pair()
+        t.identity.belt_rank = BeltRank.BLACK_5
+        s.identity.belt_rank = BeltRank.BLACK_5
+        _set_fight_iq(t, 10)
+        _set_fight_iq(s, 10)
+        # Tori's disguise — set sequencing + pull_execution to disg.
+        set_uniform(t, disg)
+        m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), seed=seed)
+        m.position = Position.GRIPPING
+        _seat_deep_grips(m.grip_graph, t, s)
+        _seat_deep_grips(m.grip_graph, s, t)
+        real = match_module.resolve_throw
+        match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+        try:
+            for tick in range(5, 35, 2):
+                _drive_commit_and_perception(
+                    m, t, s, ThrowID.UCHI_MATA, tick,
+                )
+                m._resolve_consequences(tick + 1, [])
+        finally:
+            match_module.resolve_throw = real
+        # Average sampled lag across uke's perception responses.
+        return sum(r.sampled_lag for r in m._perception_log
+                   if r.perceiver == s.identity.name)
+    low_lag_sum  = _run_with_disguise(disg=0.0, seed=21)
+    high_lag_sum = _run_with_disguise(disg=1.0, seed=21)
+    # High disguise pushes uke's lag distribution *later* (higher sum).
+    assert high_lag_sum > low_lag_sum, (
+        f"high-disguise tori should worsen elite uke's sampled lag: "
+        f"low_disguise_total={low_lag_sum}, high_disguise_total={high_lag_sum}"
+    )
+
+
+def test_haj144_t003_no_perfect_perception_mirror() -> None:
+    """AC#10 t003 — fighters with different fight_iq do not co-fire
+    perfectly mirrored perception responses on the commit tick."""
+    random.seed(3)
+    t, s = _pair()
+    t.identity.belt_rank = BeltRank.BLACK_5
+    s.identity.belt_rank = BeltRank.WHITE
+    _set_fight_iq(t, 10)
+    _set_fight_iq(s, 0)
+    m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), seed=3)
+    m.position = Position.GRIPPING
+    _seat_deep_grips(m.grip_graph, t, s)
+    _seat_deep_grips(m.grip_graph, s, t)
+    real = match_module.resolve_throw
+    match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+    try:
+        # Both fighters commit on tick 3 — what t003 originally reproduced
+        # as a symmetric simultaneous bug. Each commit emits an intent
+        # signal; perception phase reads both. The two perception
+        # responses must not be identical (different fight_iq → different
+        # sampled lag distributions → different responses).
+        m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=3)
+        m._resolve_commit_throw(s, t, ThrowID.O_SOTO_GARI, tick=3)
+        m._perception_phase(3, [])
+    finally:
+        match_module.resolve_throw = real
+    # At least one of: different lag samples, different response kinds.
+    by_perceiver = {r.perceiver: r for r in m._perception_log}
+    assert len(by_perceiver) == 2, (
+        f"expected one perception per fighter, got {by_perceiver}"
+    )
+    a_resp = by_perceiver[t.identity.name]
+    b_resp = by_perceiver[s.identity.name]
+    differs = (a_resp.sampled_lag != b_resp.sampled_lag
+               or a_resp.kind != b_resp.kind)
+    assert differs, (
+        f"asymmetric fighters should not produce identical perception "
+        f"responses: a={a_resp}, b={b_resp}"
+    )
+
+
+# ===========================================================================
+# AC#8 — anticipation costs stamina
+# ===========================================================================
+def test_anticipation_drains_cardio_proportionally() -> None:
+    """Same fighter, same number of substantive opponent actions, but
+    different perception-event counts → different cardio drain."""
+    random.seed(99)
+    # Match A: elite uke (lots of BRACE responses).
+    t_a, s_a, m_a = _elite_match(seed=99)
+    # Match B: novice uke (mostly NONE responses; little anticipation drain).
+    t_b, s_b, m_b = _novice_match(seed=99)
+    real = match_module.resolve_throw
+    match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+    try:
+        for tick in range(5, 25, 2):
+            _drive_commit_and_perception(m_a, t_a, s_a, ThrowID.UCHI_MATA, tick)
+            m_a._resolve_consequences(tick + 1, [])
+            _drive_commit_and_perception(m_b, t_b, s_b, ThrowID.UCHI_MATA, tick)
+            m_b._resolve_consequences(tick + 1, [])
+    finally:
+        match_module.resolve_throw = real
+    # Elite uke braced more times → more cardio drained.
+    elite_brace_count = sum(1 for r in m_a._perception_log if r.kind == "BRACE")
+    novice_brace_count = sum(1 for r in m_b._perception_log if r.kind == "BRACE")
+    elite_drain = 1.0 - s_a.state.cardio_current
+    novice_drain = 1.0 - s_b.state.cardio_current
+    # Each BRACE costs ANTICIPATION_CARDIO_COST. Confirm the deltas
+    # match the brace counts (single-source-of-truth check; isolating
+    # the perception drain from any other noise in the system).
+    expected_elite_drain = elite_brace_count * ANTICIPATION_CARDIO_COST
+    expected_novice_drain = novice_brace_count * ANTICIPATION_CARDIO_COST
+    assert abs(elite_drain - expected_elite_drain) < 1e-6, (
+        f"elite drain ({elite_drain}) != braces * cost ({expected_elite_drain})"
+    )
+    assert abs(novice_drain - expected_novice_drain) < 1e-6
+    # And the elite path drained at least as much as the novice path.
+    assert elite_drain >= novice_drain
+
+
+# ===========================================================================
+# AC#9 — no recursion cap (mutual anticipation runs unbounded)
+# ===========================================================================
+def test_mutual_anticipation_has_no_recursion_cap() -> None:
+    """Two elite fighters with no disguise advantage produce unbounded
+    perception cycles — the simulation does not artificially terminate
+    after N cycles. (Natural systems — fatigue, kumi-kata clock — break
+    the stalemate; not an internal cap.)"""
+    t, s, m = _elite_match(seed=88)
+    real = match_module.resolve_throw
+    match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+    try:
+        for tick in range(5, 50, 2):
+            _drive_commit_and_perception(m, t, s, ThrowID.UCHI_MATA, tick)
+            m._resolve_consequences(tick + 1, [])
+            _drive_commit_and_perception(m, s, t, ThrowID.O_SOTO_GARI, tick + 1)
+            m._resolve_consequences(tick + 2, [])
+    finally:
+        match_module.resolve_throw = real
+    # We drove ~24 commits; the perception log carries an entry per
+    # signal and there's no internal limit (no "cap" exception).
+    # Also verify cardio drained — the natural-systems brake is real.
+    assert len(m._perception_log) >= 20
+    assert (
+        s.state.cardio_current < 1.0 or t.state.cardio_current < 1.0
+    ), "expected at least some cardio drain across many perception events"
+
+
+# ===========================================================================
+# AC#12 — HAJ-148 ACs continue to hold
+# ===========================================================================
+def test_haj148_invariants_still_hold() -> None:
+    """Spot-check that HAJ-148's commit-silent-in-prose and consequence
+    queue invariants still hold post-149."""
+    t, s, m = _elite_match(seed=4)
+    real = match_module.resolve_throw
+    match_module.resolve_throw = lambda *a, **kw: ("FAILED", -2.0)
+    try:
+        evts = list(m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=5))
+        # AC#3 — commit prose-silent.
+        commit = next(e for e in evts if e.event_type == "THROW_ENTRY")
+        assert commit.data.get("prose_silent") is True
+        # AC#4 — landing on N+1.
+        followup: list = []
+        m._resolve_consequences(tick=6, events=followup)
+        # The intent signal is on tick 5; the resolution events are on tick 6.
+        sig = m._intent_signals[-1]
+        assert sig.tick == 5
+        if followup:
+            assert all(e.tick == 6 for e in followup)
+    finally:
+        match_module.resolve_throw = real
+
+
+# ===========================================================================
+# Entry point
+# ===========================================================================
+if __name__ == "__main__":
+    import traceback
+    passed = 0
+    failed = 0
+    for name, fn in list(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                passed += 1
+                print(f"PASS  {name}")
+            except Exception:
+                failed += 1
+                print(f"FAIL  {name}")
+                traceback.print_exc()
+    print(f"\n{passed} passed, {failed} failed")
+    sys.exit(0 if failed == 0 else 1)

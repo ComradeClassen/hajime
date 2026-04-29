@@ -72,6 +72,13 @@ from significance import significance_for
 from recognition import (
     recognition_score, recognition_band, recognized_name, name_lands_at,
 )
+from intent_signal import (
+    IntentSignal, SETUP_THROW_COMMIT, SETUP_GRIP_STRIP, SETUP_NE_WAZA_INIT,
+    SETUP_PULL, SETUP_FOOT_ATTACK, SETUP_DEFENSIVE_BLOCK,
+)
+from reaction_lag import (
+    sample_lag, choose_response, disguise_for, PerceptionResponse,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +129,20 @@ MAT_COORDINATE_UNIT: str = "meters"
 # the course of a 4-minute match a pressure-fighter who steps every
 # few ticks should accumulate measurable cardio drain.
 STEP_CARDIO_COST: float = 0.0015
+
+# HAJ-149 — anticipation cost. Each tick a fighter is *actively
+# perceiving* opponent intent — meaning the opponent emitted at least
+# one IntentSignal this tick AND the perceiver chose a non-NONE response
+# — drains a small amount of stamina. Per the spec, v0.1 punts on a
+# separate "mental fatigue" axis and folds the cost into general cardio
+# with a calibration tag for the v0.2 refactor (open question 4).
+ANTICIPATION_CARDIO_COST: float = 0.0008
+
+# HAJ-149 — composure cost when an elite fighter has to abort or
+# re-plan in response to a perceived interrupt. Scaffolded but not
+# wired in v0.1 (selector re-run is HAJ-150 / HAJ-152 work); kept here
+# so calibration stays co-located with the other anticipation knobs.
+ANTICIPATION_COMPOSURE_COST: float = 0.005
 
 # HAJ-128 — stance leash. Maximum distance a foot can be from the body's
 # CoM. Throws, ne-waza transitions, and accumulated step drift can leave
@@ -667,6 +688,28 @@ class Match:
             fighter_b.identity.name: -10,
         }
 
+        # HAJ-149 — perception substrate. Append-only log of intent
+        # signals emitted this match (one entry per substantive-action
+        # commit) and per-fighter perception bookkeeping read by the
+        # reaction-lag math.
+        self._intent_signals: list[IntentSignal] = []
+        # Familiarity counter — how many times each fighter has seen
+        # the opponent commit each throw class. Feeds reaction_lag's
+        # familiarity modulator so the second uchi-mata of a match is
+        # easier to read than the first.
+        self._throw_familiarity: dict[tuple[str, ThrowID], int] = {}
+        # Per-fighter active brace flag. Set by the perception phase
+        # when a fighter chooses BRACE; consumed by the resolution path
+        # next tick to bump defender resistance. Cleared after read.
+        self._brace_active: dict[str, bool] = {
+            fighter_a.identity.name: False,
+            fighter_b.identity.name: False,
+        }
+        # Append-only log of perception responses chosen this match.
+        # Tests assert against this directly (the AC-required "decision
+        # is logged" requirement from HAJ-149 §"Full selector re-run").
+        self._perception_log: list[PerceptionResponse] = []
+
         # Part 6.3 — named compromised-state tracker keyed by fighter name.
         # Set when a failed throw mutates tori's BodyState; cleared when
         # stun_ticks decays to zero (end of the recovery window). Uke's
@@ -1191,6 +1234,14 @@ class Match:
             )
             events.extend(trans_events)
             self.position = new_pos
+
+        # HAJ-149 — perception phase. After substantive actions have
+        # fired and emitted their intent signals this tick, each
+        # fighter's perception system reads the opposing fighter's
+        # signals, samples a reaction lag (signed), and chooses a
+        # response. v0.1 implements BRACE-for-N+1 as the concrete
+        # response; INTERRUPT and REPLAN are scaffolded for follow-up.
+        self._perception_phase(tick, events)
 
         self._post_tick(tick, events)
 
@@ -2039,6 +2090,22 @@ class Match:
         # outcome line ("…drives in for o-uchi but Sato sprawls" etc.).
         entry_event.data["prose_silent"] = True
 
+        # HAJ-149 — emit a pre-commit intent signal. The opposing
+        # fighter's perception system (run by _perception_phase later
+        # this tick) reads the signal, samples a reaction lag, and may
+        # schedule a response. Specificity rises with attacker disguise
+        # *failure* (low disguise = readable signal; high disguise =
+        # vague "something's coming" signal); v0.1 reads disguise from
+        # the attacker's skill vector (sequencing + pull execution).
+        attacker_disguise = disguise_for(attacker)
+        signal_specificity = max(0.0, min(1.0, 1.0 - attacker_disguise))
+        self._emit_intent_signal(
+            attacker, SETUP_THROW_COMMIT, tick, events,
+            throw_id=throw_id,
+            source_event_type="THROW_ENTRY",
+            specificity=signal_specificity,
+        )
+
         # HAJ-145 — body-part decomposition of the commit. Walks the
         # worked-throw template's four signature dimensions and produces
         # the structured event sequence (hikite pull, tsurite pull, fulcrum
@@ -2345,6 +2412,143 @@ class Match:
             self._fire_consequence(c, tick, events)
             if self.match_over:
                 return
+
+    # -----------------------------------------------------------------------
+    # HAJ-149 — INTENT SIGNALS + PERCEPTION PHASE
+    # -----------------------------------------------------------------------
+    def _emit_intent_signal(
+        self, fighter: Judoka, setup_class: str, tick: int,
+        events: list[Event], *,
+        throw_id: Optional[ThrowID] = None,
+        source_event_type: Optional[str] = None,
+        specificity: float = 0.5,
+    ) -> None:
+        """Emit a non-substantive IntentSignal for `fighter`'s setup.
+
+        Intent signals are observable by the opposing fighter's
+        perception system in the same tick they fire. v0.1 emits at
+        the commit tick (the deferred-resolution gap from HAJ-148 is
+        the perception window); the spec calls for N−2 / N−1
+        anticipation signals, which require a planning-ahead selector
+        rewrite that v0.1 punts on.
+        """
+        sig = IntentSignal(
+            tick=tick,
+            fighter=fighter.identity.name,
+            setup_class=setup_class,
+            throw_id=throw_id,
+            specificity=specificity,
+            disguise=disguise_for(fighter),
+            source_event_type=source_event_type,
+        )
+        self._intent_signals.append(sig)
+        # Also surface as a low-significance engineering event so the
+        # debug stream / inspector can see the intent stream. The prose
+        # stream skips it via prose_silent (intent signals are an
+        # engineering substrate, not narrative beats — HAJ-153 will
+        # author the prose layer that consumes them).
+        ev = Event(
+            tick=tick, event_type="INTENT_SIGNAL",
+            description=(
+                f"[intent] {fighter.identity.name} → {setup_class}"
+                + (f" ({throw_id.name})" if throw_id is not None else "")
+            ),
+            data={
+                "fighter": fighter.identity.name,
+                "setup_class": setup_class,
+                "throw_id": throw_id.name if throw_id is not None else None,
+                "specificity": specificity,
+                "disguise": sig.disguise,
+                "prose_silent": True,
+            },
+        )
+        events.append(ev)
+
+    def _bump_familiarity(self, perceiver: Judoka, throw_id: ThrowID) -> None:
+        """Increment the perceiver's intra-match familiarity with the
+        attacker's throw — feeds reaction_lag's familiarity modulator
+        on subsequent commits of the same throw class."""
+        key = (perceiver.identity.name, throw_id)
+        self._throw_familiarity[key] = self._throw_familiarity.get(key, 0) + 1
+
+    def _perception_phase(self, tick: int, events: list[Event]) -> None:
+        """HAJ-149 phase 3 sub-step. For each intent signal emitted on
+        this tick, the *opposing* fighter's perception system samples a
+        reaction lag (signed) and chooses a response (BRACE / NONE in
+        v0.1; INTERRUPT and REPLAN scaffolded for HAJ-150 / HAJ-152).
+
+        Active perception (any non-NONE response) costs a small amount
+        of cardio — ANTICIPATION_CARDIO_COST per perception event. The
+        cost folds into the general cardio pool for v0.1; v0.2 refactors
+        this onto a separate mental-fatigue axis (open question 4).
+        """
+        if not self._intent_signals:
+            return
+        # Only consider signals emitted on this tick (perception is
+        # tick-local for v0.1; cross-tick anticipation is the planning-
+        # ahead extension flagged for follow-up).
+        recent = [s for s in self._intent_signals if s.tick == tick]
+        if not recent:
+            return
+        for sig in recent:
+            attacker = self._fighter_by_name(sig.fighter)
+            if attacker is None:
+                continue
+            perceiver = (self.fighter_b if attacker is self.fighter_a
+                         else self.fighter_a)
+            # Familiarity — count of prior signals of the same throw_id
+            # the perceiver has seen this match.
+            fam = 0
+            if sig.throw_id is not None:
+                fam = self._throw_familiarity.get(
+                    (perceiver.identity.name, sig.throw_id), 0,
+                )
+            # Compromised + desperation flags off the engine state.
+            compromised = perceiver.identity.name in self._compromised_states
+            in_desp = (
+                self._defensive_desperation_active.get(perceiver.identity.name, False)
+                or self._offensive_desperation_active.get(perceiver.identity.name, False)
+            )
+            lag = sample_lag(
+                perceiver, attacker,
+                compromised=compromised,
+                in_desperation=in_desp,
+            )
+            response = choose_response(
+                perceiver, attacker,
+                sampled_lag=lag, commit_tick=tick,
+            )
+            self._perception_log.append(response)
+            if response.kind == "BRACE":
+                self._brace_active[perceiver.identity.name] = True
+                # Active perception costs cardio.
+                perceiver.state.cardio_current = max(
+                    0.0,
+                    perceiver.state.cardio_current - ANTICIPATION_CARDIO_COST,
+                )
+                events.append(Event(
+                    tick=tick, event_type="PERCEPTION_BRACE",
+                    description=(
+                        f"[perception] {perceiver.identity.name} reads "
+                        f"{attacker.identity.name}'s {sig.setup_class} "
+                        f"and braces (lag={lag:+d})"
+                    ),
+                    data={
+                        "perceiver": perceiver.identity.name,
+                        "actor": attacker.identity.name,
+                        "lag": lag,
+                        "response": "BRACE",
+                        "setup_class": sig.setup_class,
+                        "throw_id": (sig.throw_id.name
+                                     if sig.throw_id is not None else None),
+                        "prose_silent": True,
+                    },
+                ))
+            # Bump familiarity for the next time the perceiver sees this
+            # throw class — happens regardless of response (just having
+            # observed the signal is enough to shave future lag).
+            if sig.throw_id is not None:
+                self._bump_familiarity(perceiver, sig.throw_id)
 
     def _fire_consequence(
         self, c: "_Consequence", tick: int, events: list[Event],
