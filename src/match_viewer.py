@@ -93,6 +93,16 @@ class FighterView:
     hand_r_pos:        tuple[float, float] = (0.0, 0.0)
     hand_l_gripping:   bool = False
     hand_r_gripping:   bool = False
+    # HAJ-153 — per-fighter state pill. Compact label rendered near the
+    # CoM dot summarising what the fighter is currently *doing* on this
+    # tick (mid-throw, stunned, in desperation, follow-up chasing, etc.).
+    # The pill string is computed in capture_view_state from the live
+    # match state so review-mode scrubbing renders the same string the
+    # tick produced. None means no pill.
+    state_pill:        Optional[str] = None
+    # HAJ-153 — owned grip count, surfaced separately from the pill so
+    # the renderer can show "GRIPS 2" without re-deriving from grip_edges.
+    own_edge_count:    int = 0
 
 
 @dataclass(frozen=True)
@@ -108,6 +118,24 @@ class ViewState:
     grip_edges:         tuple[GripEdgeView, ...]
     event_descriptions: tuple[str, ...]
     kuzushi_victims:    tuple[str, ...]   # names whose halo should flash this tick
+    # HAJ-153 — viewer-wire-up event-driven cues. These are derived from
+    # the engine event list at capture time so review-mode rendering
+    # produces the same visual cue the live tick did.
+    matte_reason:       Optional[str] = None    # MATTE_CALLED reason this tick
+    stuff_victims:      tuple[str, ...] = ()    # STUFFED victims this tick
+    score_awarded:      Optional[str] = None    # "WAZA_ARI" / "IPPON" awarded this tick
+    score_scorer:       Optional[str] = None    # name of the scoring fighter
+    counter_attacker:   Optional[str] = None    # COUNTER_COMMIT defender name
+    counter_target:     Optional[str] = None    # COUNTER_COMMIT attacker name
+    grip_seat_count:    int = 0                  # GRIP_ESTABLISH events on this tick
+    # HAJ-152 follow-up window state — None when no follow-up is active.
+    # Pill renders above the scorer's dot for the duration of the window.
+    follow_up_scorer:   Optional[str] = None
+    follow_up_decision: Optional[str] = None     # CHASE / STAND / DEFENSIVE_CHASE
+    follow_up_stage:    Optional[str] = None     # PENDING_DECISION / NE_WAZA_LIVE / STANDING
+    # HAJ-153 ne-waza schematic — top fighter name when the dyad is on
+    # the ground. Bottom is the other fighter.
+    ne_waza_top_name:   Optional[str] = None
 
 
 _INSPECTOR_BODY_PARTS = (
@@ -159,6 +187,21 @@ def _capture_fighter(judoka, color_tag: str, match) -> FighterView:
     )
     own_edges = match.grip_graph.edges_owned_by(ident.name)
     grip_parts = {e.grasper_part.name for e in own_edges}
+    # HAJ-153 — compact state pill for the fighter dot. Priority order
+    # (higher == more important to surface): mid-throw → stunned →
+    # offensive desperation → defensive desperation → grip count tag.
+    pill: Optional[str] = None
+    in_progress = match._throws_in_progress.get(ident.name)
+    if in_progress is not None:
+        pill = "THROW"
+    elif st.stun_ticks > 0:
+        pill = f"STUN {st.stun_ticks}"
+    elif match._offensive_desperation_active.get(ident.name, False):
+        pill = "OFF-DESP"
+    elif match._defensive_desperation_active.get(ident.name, False):
+        pill = "DEF-DESP"
+    elif own_edges:
+        pill = f"GRIPS {len(own_edges)}"
     return FighterView(
         name=ident.name,
         color_tag=color_tag,
@@ -189,6 +232,8 @@ def _capture_fighter(judoka, color_tag: str, match) -> FighterView:
         off_desperation=match._offensive_desperation_active.get(ident.name, False),
         def_desperation=match._defensive_desperation_active.get(ident.name, False),
         body_parts=tuple(parts),
+        state_pill=pill,
+        own_edge_count=len(own_edges),
     )
 
 
@@ -211,6 +256,60 @@ def capture_view_state(
     descs = tuple(
         e.description for e in events if getattr(e, "description", None)
     )
+
+    # HAJ-153 — extract event-driven visual cues from this tick's events.
+    matte_reason: Optional[str] = None
+    stuff_victims: list[str] = []
+    score_awarded: Optional[str] = None
+    score_scorer:  Optional[str] = None
+    counter_attacker: Optional[str] = None
+    counter_target:   Optional[str] = None
+    grip_seat_count: int = 0
+    for ev in events:
+        et = ev.event_type
+        data = ev.data or {}
+        if et == "MATTE_CALLED":
+            matte_reason = data.get("reason") or "matte"
+        elif et == "STUFFED":
+            # The STUFFED event lives on the ATTACKER (whose throw was
+            # stuffed). The attacker dot should flash, not the defender's.
+            # Description format: "[throw] X stuffed on Y — Z defends.";
+            # data may not carry the attacker name, so fall back to a
+            # description scan.
+            attacker = data.get("attacker")
+            if not attacker:
+                desc = ev.description or ""
+                for f in (match.fighter_a, match.fighter_b):
+                    if f.identity.name in desc.split(" stuffed")[0]:
+                        attacker = f.identity.name
+                        break
+            if attacker:
+                stuff_victims.append(attacker)
+        elif et in ("WAZA_ARI_AWARDED", "IPPON_AWARDED"):
+            score_awarded = "IPPON" if et == "IPPON_AWARDED" else "WAZA_ARI"
+            score_scorer  = data.get("scorer") or data.get("scorer_id")
+        elif et == "COUNTER_COMMIT":
+            counter_attacker = data.get("defender")  # the counter-fire fighter
+            counter_target   = data.get("attacker")  # the original attacker
+        elif et == "GRIP_ESTABLISH":
+            grip_seat_count += 1
+
+    # HAJ-152 follow-up window state.
+    follow_up_scorer: Optional[str] = None
+    follow_up_decision: Optional[str] = None
+    follow_up_stage:  Optional[str] = None
+    fu = getattr(match, "_post_score_follow_up", None)
+    if fu is not None:
+        follow_up_scorer   = fu.get("tori_name")
+        follow_up_decision = fu.get("decision")
+        follow_up_stage    = fu.get("stage")
+
+    # HAJ-153 ne-waza top fighter — the position machine already tracks
+    # `ne_waza_top_id` while the dyad is on the ground.
+    ne_waza_top_name: Optional[str] = None
+    if match.sub_loop_state.name == "NE_WAZA":
+        ne_waza_top_name = getattr(match, "ne_waza_top_id", None)
+
     return ViewState(
         tick=tick,
         max_ticks=match.max_ticks,
@@ -223,6 +322,17 @@ def capture_view_state(
         grip_edges=tuple(edges),
         event_descriptions=descs,
         kuzushi_victims=kuzushi_victims,
+        matte_reason=matte_reason,
+        stuff_victims=tuple(stuff_victims),
+        score_awarded=score_awarded,
+        score_scorer=score_scorer,
+        counter_attacker=counter_attacker,
+        counter_target=counter_target,
+        grip_seat_count=grip_seat_count,
+        follow_up_scorer=follow_up_scorer,
+        follow_up_decision=follow_up_decision,
+        follow_up_stage=follow_up_stage,
+        ne_waza_top_name=ne_waza_top_name,
     )
 
 
@@ -294,6 +404,26 @@ COL_PANEL       = ( 32,  34,  42)
 COL_PANEL_ALT   = ( 28,  30,  36)
 COL_PAUSE_BAR   = (240, 200,  80)
 COL_INSPECT     = (255, 255, 255)
+# HAJ-153 — viewer wire-up palette.
+COL_MATTE_BG    = (180,  40,  40)   # MATTE banner background
+COL_MATTE_TEXT  = (255, 240, 200)   # MATTE banner text
+COL_STUFF_FLASH = (255, 100, 100)   # stuff impact flash
+COL_SCORE_FLASH = (255, 230, 110)   # score award flash on scorer
+COL_COUNTER     = (255, 230, 110)   # counter chevron between fighters
+COL_FOLLOW_UP   = (130, 220, 255)   # follow-up window pill
+COL_GRIP_FLASH  = (255, 230, 110)   # bright flash on multi-grip-seat tick
+COL_NE_TOP      = (240, 240, 255)   # ne-waza schematic top fighter
+COL_NE_BOT      = (160, 170, 195)   # ne-waza schematic bottom fighter
+COL_PILL_BG     = ( 40,  44,  56)   # state-pill background
+COL_PILL_BORDER = ( 90,  98, 118)
+
+# HAJ-153 — visual-cue lifetime (in viewer frames). Cues fade over this
+# many frames after the firing tick. With a default 60 FPS render and
+# 6 tps simulation, each tick spans ~10 frames; a 18-frame lifetime
+# carries the cue across roughly 1.8 ticks of wall-clock time.
+CUE_LIFETIME_FRAMES: int = 18
+MATTE_BANNER_FRAMES: int = 30   # ~1.7s at 18 FPS or ~0.5s at 60 FPS
+GRIP_SEAT_THRESHOLD: int = 3    # GRIP_ESTABLISH count that triggers F5 flash
 
 
 def _grip_mode_color(mode: GripMode):
@@ -390,6 +520,22 @@ class PygameMatchRenderer:
 
         # Kuzushi flash decay marker (per fighter).
         self._last_kuzushi_tick: dict[str, int] = {}
+
+        # HAJ-153 — visual-cue decay markers. Each entry is the tick on
+        # which the cue last fired; the renderer's draw helpers fade them
+        # out over CUE_LIFETIME_FRAMES (banner: MATTE_BANNER_FRAMES). The
+        # markers double as review-mode lookups: when scrubbing, the
+        # snapshot at the displayed tick has the live event field set,
+        # and the cue renders for one tick of real-time review per
+        # the audit doc convention.
+        self._last_matte_tick: int = -10**9
+        self._last_matte_reason: Optional[str] = None
+        self._last_stuff_tick: dict[str, int] = {}
+        self._last_score_tick: dict[str, int] = {}
+        self._last_counter_tick: int = -10**9
+        self._last_counter_attacker: Optional[str] = None
+        self._last_counter_target:   Optional[str] = None
+        self._last_grip_seat_tick: int = -10**9
 
         # Per-tick visual snapshots, captured during the live run. After
         # match.end() the renderer enters review mode and renders these
@@ -685,6 +831,8 @@ class PygameMatchRenderer:
         # Watch for kuzushi events to flash halos. Track victims at this
         # tick so the snapshot can paint the same flash in review mode.
         kuzushi_victims: list[str] = []
+        # HAJ-153 — count grip-seat events for the F5 multi-seat flash.
+        grip_seat_this_tick: int = 0
         for e in events:
             if e.event_type == "KUZUSHI_INDUCED":
                 victim = (e.data or {}).get("victim")
@@ -696,9 +844,36 @@ class PygameMatchRenderer:
                         if f.identity.name in (e.description or ""):
                             self._last_kuzushi_tick[f.identity.name] = tick
                             kuzushi_victims.append(f.identity.name)
+            elif e.event_type == "MATTE_CALLED":
+                self._last_matte_tick = tick
+                self._last_matte_reason = (e.data or {}).get("reason")
+            elif e.event_type == "STUFFED":
+                attacker = (e.data or {}).get("attacker")
+                if not attacker:
+                    desc = (e.description or "").split(" stuffed")[0]
+                    for f in (match.fighter_a, match.fighter_b):
+                        if f.identity.name in desc:
+                            attacker = f.identity.name
+                            break
+                if attacker:
+                    self._last_stuff_tick[attacker] = tick
+            elif e.event_type in ("WAZA_ARI_AWARDED", "IPPON_AWARDED"):
+                scorer = (e.data or {}).get("scorer") or (
+                    e.data or {}).get("scorer_id"
+                )
+                if scorer:
+                    self._last_score_tick[scorer] = tick
+            elif e.event_type == "COUNTER_COMMIT":
+                self._last_counter_tick = tick
+                self._last_counter_attacker = (e.data or {}).get("defender")
+                self._last_counter_target   = (e.data or {}).get("attacker")
+            elif e.event_type == "GRIP_ESTABLISH":
+                grip_seat_this_tick += 1
             # Stash everything-with-a-description into the ticker.
             if e.description:
                 self._event_log.append((tick, e.description, self._frame_idx))
+        if grip_seat_this_tick >= GRIP_SEAT_THRESHOLD:
+            self._last_grip_seat_tick = tick
         # Capture a frozen snapshot of everything the renderer needs to
         # draw THIS tick. Powers post-match scrubbing in review mode.
         self._snapshots.append(capture_view_state(
@@ -758,12 +933,137 @@ class PygameMatchRenderer:
             self._draw_trails(screen, view)
             self._draw_grip_edges(screen, view)
             self._draw_kuzushi_halos(screen, view)
+            self._draw_stuff_flashes(screen, view)
+            self._draw_score_flashes(screen, view)
+            self._draw_grip_seat_warning(screen, view)
             self._draw_fighters(screen, view)
             self._draw_hands(screen, view)
+            self._draw_state_pills(screen, view)
+            self._draw_follow_up_pill(screen, view)
+            self._draw_counter_chevron(screen, view)
+            self._draw_ne_waza_schematic(screen, view)
+            self._draw_matte_banner(screen, view)
         self._draw_pause_indicator(screen, view)
         self._draw_sidebar(screen, view)
         self._draw_footer_hint(screen)
         pygame.display.flip()
+
+    # ------------------------------------------------------------------
+    # HAJ-153 — interpolation, decay, and audit-driven render helpers
+    # ------------------------------------------------------------------
+    def _interp_alpha(self) -> float:
+        """Tick-fraction in [0, 1] used to tween fighter positions
+        between consecutive snapshots. 0 means we just absorbed the
+        current snapshot; 1 means we're due to absorb the next one.
+
+        Live mode: derive from wall-clock since the last sim step,
+        scaled by tps. Review mode / paused: 1.0 so the discrete
+        snapshot renders without drift."""
+        if self._review_mode or self._paused:
+            return 1.0
+        if not self._snapshots:
+            return 1.0
+        period = 1.0 / max(self._tps, MIN_TPS)
+        if period <= 0.0:
+            return 1.0
+        elapsed = time.monotonic() - self._wall_t_last_step
+        return max(0.0, min(1.0, elapsed / period))
+
+    def _interpolated_com(
+        self, view: ViewState, tag: str,
+    ) -> tuple[float, float]:
+        """HAJ-153 — tween fighter CoM between previous and current
+        snapshots so per-tick position changes don't render as
+        teleports. Falls back to the snapshot value when there's no
+        previous snapshot or in review mode."""
+        if not self._snapshots:
+            fv = view.fighter_a if tag == "a" else view.fighter_b
+            return fv.com_position
+        # Find the index of `view` in the snapshot list — usually the
+        # last one (live), otherwise wherever review_idx points.
+        if self._review_mode:
+            idx = self._review_idx
+        else:
+            idx = len(self._snapshots) - 1
+        if idx <= 0:
+            fv = view.fighter_a if tag == "a" else view.fighter_b
+            return fv.com_position
+        prev = self._snapshots[idx - 1]
+        cur  = self._snapshots[idx]
+        prev_f = prev.fighter_a if tag == "a" else prev.fighter_b
+        cur_f  = cur.fighter_a  if tag == "a" else cur.fighter_b
+        a = self._interp_alpha()
+        return (
+            prev_f.com_position[0] + (cur_f.com_position[0] - prev_f.com_position[0]) * a,
+            prev_f.com_position[1] + (cur_f.com_position[1] - prev_f.com_position[1]) * a,
+        )
+
+    def _interpolated_facing(
+        self, view: ViewState, tag: str,
+    ) -> tuple[float, float]:
+        if not self._snapshots:
+            fv = view.fighter_a if tag == "a" else view.fighter_b
+            return fv.facing
+        if self._review_mode:
+            idx = self._review_idx
+        else:
+            idx = len(self._snapshots) - 1
+        if idx <= 0:
+            fv = view.fighter_a if tag == "a" else view.fighter_b
+            return fv.facing
+        prev = self._snapshots[idx - 1]
+        cur  = self._snapshots[idx]
+        prev_f = prev.fighter_a if tag == "a" else prev.fighter_b
+        cur_f  = cur.fighter_a  if tag == "a" else cur.fighter_b
+        a = self._interp_alpha()
+        return (
+            prev_f.facing[0] + (cur_f.facing[0] - prev_f.facing[0]) * a,
+            prev_f.facing[1] + (cur_f.facing[1] - prev_f.facing[1]) * a,
+        )
+
+    def _interpolated_hand_positions(
+        self, view: ViewState, tag: str,
+    ) -> tuple[tuple[float, float], tuple[float, float]]:
+        """Recompute hand positions from the interpolated CoM + facing
+        so they track the tweened body, not the snapshot body."""
+        com = self._interpolated_com(view, tag)
+        facing = self._interpolated_facing(view, tag)
+        return _hand_positions(com, facing)
+
+    def _ticks_since_event(self, view: ViewState, last_tick: int) -> int:
+        """How many ticks ago an event last fired, relative to the
+        view's tick. Returns a sentinel large value when nothing has
+        fired yet (so callers can compare against a lifetime threshold
+        and skip cleanly)."""
+        if last_tick < 0:
+            return 10**9
+        return view.tick - last_tick
+
+    def _frames_into_cue(self, last_tick: int) -> int:
+        """How many viewer frames into the cue we are. Uses the
+        wall-clock fraction so the cue fades smoothly at 60 FPS over
+        the configured lifetime."""
+        if last_tick < 0:
+            return 10**9
+        if self._review_mode:
+            # Review mode renders the cue for exactly one tick of
+            # real-time at full intensity.
+            return 0 if (
+                self._snapshots and
+                self._snapshots[self._review_idx].tick == last_tick
+            ) else 10**9
+        elapsed = time.monotonic() - self._wall_t_last_step
+        period  = 1.0 / max(self._tps, MIN_TPS)
+        ticks_since = max(0, self._frame_view_tick() - last_tick)
+        # Approximate: ticks_since * frames-per-tick + intra-tick frames.
+        frames_per_tick = max(1, int(round(60.0 * period)))
+        intra = int(min(frames_per_tick, max(0, elapsed / period * frames_per_tick)))
+        return ticks_since * frames_per_tick + intra
+
+    def _frame_view_tick(self) -> int:
+        """The tick the current frame's view is centered on."""
+        v = self._current_view()
+        return v.tick if v is not None else 0
 
     def _draw_mat(self, screen) -> None:
         import pygame
@@ -798,26 +1098,44 @@ class PygameMatchRenderer:
     def _draw_grip_edges(self, screen, view: ViewState) -> None:
         """HAJ-128 — grip lines now run from the grasper's hand dot to
         the opponent's body (CoM), so the viewer shows which hand owns
-        which grip rather than a generic body-to-body line."""
+        which grip rather than a generic body-to-body line.
+
+        HAJ-153 — endpoints track the interpolated hand / CoM positions
+        so the grip line tweens with the body during the wall-clock
+        interval between sim ticks, instead of snapping each tick.
+        """
         import pygame
         T = self._transform
         a, b = view.fighter_a, view.fighter_b
-        bx, by = T.world_to_screen(*b.com_position)
-        ax, ay = T.world_to_screen(*a.com_position)
+        a_left, a_right = self._interpolated_hand_positions(view, "a")
+        b_left, b_right = self._interpolated_hand_positions(view, "b")
+        a_com = self._interpolated_com(view, "a")
+        b_com = self._interpolated_com(view, "b")
+        ax, ay = T.world_to_screen(*a_com)
+        bx, by = T.world_to_screen(*b_com)
         for edge in view.grip_edges:
             mode = GripMode(edge.mode_value)
             color = _grip_mode_color(mode)
-            grasper = a if edge.grasper_id == a.name else b
-            target_com = (bx, by) if edge.grasper_id == a.name else (ax, ay)
+            on_a = edge.grasper_id == a.name
+            target_com = (bx, by) if on_a else (ax, ay)
             # Hand dot to use depends on which body part is gripping.
             if edge.grasper_part_name == "RIGHT_HAND":
-                hand_pos = grasper.hand_r_pos
+                hand_pos = a_right if on_a else b_right
             elif edge.grasper_part_name == "LEFT_HAND":
-                hand_pos = grasper.hand_l_pos
+                hand_pos = a_left if on_a else b_left
             else:
-                hand_pos = grasper.com_position
+                hand_pos = a_com if on_a else b_com
             hp = T.world_to_screen(*hand_pos)
-            pygame.draw.line(screen, color, hp, target_com, 2)
+            # HAJ-153 F5 — bright the line if the multi-grip-seat warning
+            # is currently active for this tick.
+            if not self._review_mode:
+                ts = self._ticks_since_event(view, self._last_grip_seat_tick)
+                bright = ts == 0
+            else:
+                bright = view.grip_seat_count >= GRIP_SEAT_THRESHOLD
+            line_col = COL_GRIP_FLASH if bright else color
+            line_w = 3 if bright else 2
+            pygame.draw.line(screen, line_col, hp, target_com, line_w)
 
     def _draw_kuzushi_halos(self, screen, view: ViewState) -> None:
         import pygame
@@ -847,14 +1165,15 @@ class PygameMatchRenderer:
             (view.fighter_a, COL_FIGHTER_A),
             (view.fighter_b, COL_FIGHTER_B),
         ):
-            cx, cy = T.world_to_screen(*fv.com_position)
+            com = self._interpolated_com(view, fv.color_tag)
+            cx, cy = T.world_to_screen(*com)
             pygame.draw.circle(screen, color, (cx, cy), 9)
             if self._inspect_target == fv.color_tag:
                 pygame.draw.circle(screen, COL_INSPECT, (cx, cy), 13, 2)
-            fx, fy = fv.facing
+            facing = self._interpolated_facing(view, fv.color_tag)
             tip_m = (
-                fv.com_position[0] + fx * 0.45,
-                fv.com_position[1] + fy * 0.45,
+                com[0] + facing[0] * 0.45,
+                com[1] + facing[1] * 0.45,
             )
             tx, ty = T.world_to_screen(*tip_m)
             pygame.draw.line(screen, COL_FACING, (cx, cy), (tx, ty), 2)
@@ -863,7 +1182,11 @@ class PygameMatchRenderer:
         """HAJ-128 — render hand dots in place of foot dots. In judo the
         hands ARE the throw — knowing which hand grips where reads more
         cleanly than ankle positions. A bright hand owns a grip edge;
-        a dim hand is free."""
+        a dim hand is free.
+
+        HAJ-153 — hands track the interpolated CoM/facing so they tween
+        with the body during the wall-clock interval between sim ticks.
+        """
         import pygame
         T = self._transform
         for fv, grip_col, free_col in (
@@ -872,9 +1195,337 @@ class PygameMatchRenderer:
         ):
             l_col = grip_col if fv.hand_l_gripping else free_col
             r_col = grip_col if fv.hand_r_gripping else free_col
-            for pos, col in ((fv.hand_l_pos, l_col), (fv.hand_r_pos, r_col)):
+            left, right = self._interpolated_hand_positions(view, fv.color_tag)
+            for pos, col in ((left, l_col), (right, r_col)):
                 hx, hy = T.world_to_screen(*pos)
                 pygame.draw.circle(screen, col, (hx, hy), 4)
+
+    # ------------------------------------------------------------------
+    # HAJ-153 — visual cues for engine events
+    # ------------------------------------------------------------------
+    def _draw_state_pills(self, screen, view: ViewState) -> None:
+        """Render a one-or-two-word state label above each fighter's
+        CoM dot. Surfaces THROW / STUN N / OFF-DESP / DEF-DESP /
+        GRIPS N / DISTANT so the reader can tell at a glance what each
+        fighter is currently doing without piecing together log
+        lines (HAJ-153 finding F1)."""
+        import pygame
+        T = self._transform
+        for fv in (view.fighter_a, view.fighter_b):
+            label = fv.state_pill
+            # When no pill is active, show DISTANT for STANDING_DISTANT
+            # so the empty state is still legible.
+            if not label and view.position_name == "STANDING_DISTANT":
+                label = "DISTANT"
+            if not label:
+                continue
+            com = self._interpolated_com(view, fv.color_tag)
+            cx, cy = T.world_to_screen(*com)
+            text = self._font_small.render(label, True, COL_TEXT)
+            tw, th = text.get_size()
+            pad_x, pad_y = 4, 2
+            rect = pygame.Rect(
+                cx - tw // 2 - pad_x,
+                cy - 26 - th - pad_y,
+                tw + 2 * pad_x,
+                th + 2 * pad_y,
+            )
+            pygame.draw.rect(screen, COL_PILL_BG, rect)
+            pygame.draw.rect(screen, COL_PILL_BORDER, rect, 1)
+            screen.blit(text, (rect.x + pad_x, rect.y + pad_y))
+
+    def _draw_follow_up_pill(self, screen, view: ViewState) -> None:
+        """HAJ-152 follow-up window indicator. Renders a coloured pill
+        above the scoring fighter's pill while the post-score follow-up
+        is open. Reads CHASING / STAND / DEFENSIVE based on the chase
+        decision; while the decision is still pending shows FOLLOW-UP.
+        """
+        import pygame
+        if not view.follow_up_scorer:
+            return
+        T = self._transform
+        decision = view.follow_up_decision
+        if decision == "CHASE":
+            label = "CHASING"
+        elif decision == "DEFENSIVE_CHASE":
+            label = "DEFENSIVE"
+        elif decision == "STAND":
+            label = "STAND"
+        else:
+            label = "FOLLOW-UP"
+        scorer = (
+            view.fighter_a if view.follow_up_scorer == view.fighter_a.name
+            else view.fighter_b
+        )
+        com = self._interpolated_com(view, scorer.color_tag)
+        cx, cy = T.world_to_screen(*com)
+        text = self._font_small.render(label, True, COL_BG)
+        tw, th = text.get_size()
+        pad_x, pad_y = 5, 2
+        # Sit above the state pill (which is offset 26px above CoM).
+        rect = pygame.Rect(
+            cx - tw // 2 - pad_x,
+            cy - 26 - th - pad_y - 22,
+            tw + 2 * pad_x,
+            th + 2 * pad_y,
+        )
+        pygame.draw.rect(screen, COL_FOLLOW_UP, rect)
+        screen.blit(text, (rect.x + pad_x, rect.y + pad_y))
+
+    def _draw_matte_banner(self, screen, view: ViewState) -> None:
+        """Centered banner that fades out over MATTE_BANNER_FRAMES after
+        any MATTE_CALLED event. Reason text appended in the smaller
+        font so the reader can distinguish stalemate / post-score /
+        stuffed-throw / OOB matte at a glance."""
+        import pygame
+        # Live mode reads the decay marker; review mode reads the
+        # snapshot's matte_reason field directly.
+        if self._review_mode:
+            reason = view.matte_reason
+            if not reason:
+                return
+            alpha = 1.0
+        else:
+            ticks_since = self._ticks_since_event(view, self._last_matte_tick)
+            if ticks_since > 1:
+                return
+            reason = self._last_matte_reason
+            if not reason:
+                return
+            elapsed = time.monotonic() - self._wall_t_last_step
+            period = 1.0 / max(self._tps, MIN_TPS)
+            tick_phase = max(0.0, min(1.0, elapsed / period))
+            # Fade from 1.0 at the firing tick to 0 at the next tick.
+            alpha = max(0.0, 1.0 - tick_phase if ticks_since == 0 else 0.0)
+            if alpha <= 0.0:
+                return
+
+        T = self._transform
+        banner_w = T.panel_w - 240
+        banner_h = 70
+        banner_x = (T.panel_w - banner_w) // 2
+        banner_y = T.panel_h // 2 - banner_h // 2
+        banner = pygame.Surface((banner_w, banner_h), pygame.SRCALPHA)
+        bg_alpha = int(220 * alpha)
+        banner.fill((*COL_MATTE_BG, bg_alpha))
+        title = self._font_big.render("MATTE", True, COL_MATTE_TEXT)
+        sub = self._font_small.render(
+            self._matte_reason_label(reason), True, COL_MATTE_TEXT,
+        )
+        banner.blit(
+            title, (banner_w // 2 - title.get_width() // 2, 12),
+        )
+        banner.blit(
+            sub, (banner_w // 2 - sub.get_width() // 2, 44),
+        )
+        # Fade text alpha by re-blitting onto a full-alpha rect.
+        if alpha < 1.0:
+            banner.set_alpha(int(255 * alpha))
+        screen.blit(banner, (banner_x, banner_y))
+
+    @staticmethod
+    def _matte_reason_label(reason: Optional[str]) -> str:
+        return {
+            "STALEMATE":             "stalemate",
+            "OUT_OF_BOUNDS":         "out of bounds",
+            "STUFFED_THROW_TIMEOUT": "stuffed throw — reset",
+            "INJURY":                "injury",
+            "OSAEKOMI_DECISION":     "osaekomi decision",
+            "POST_SCORE_FOLLOW_UP_END": "post-score reset",
+        }.get(reason or "", reason or "")
+
+    def _draw_stuff_flashes(self, screen, view: ViewState) -> None:
+        """Render a brief impact flash on a stuffed fighter's CoM dot.
+        Live mode reads the decay marker; review mode reads the
+        snapshot's stuff_victims field."""
+        import pygame
+        T = self._transform
+        for fv in (view.fighter_a, view.fighter_b):
+            if self._review_mode:
+                flash = 1.0 if fv.name in view.stuff_victims else 0.0
+            else:
+                last = self._last_stuff_tick.get(fv.name, -10**9)
+                ticks_since = self._ticks_since_event(view, last)
+                if ticks_since > 1:
+                    flash = 0.0
+                elif ticks_since == 0:
+                    elapsed = time.monotonic() - self._wall_t_last_step
+                    period  = 1.0 / max(self._tps, MIN_TPS)
+                    flash = max(0.0, 1.0 - elapsed / period)
+                else:
+                    flash = 0.0
+            if flash <= 0.0:
+                continue
+            com = self._interpolated_com(view, fv.color_tag)
+            cx, cy = T.world_to_screen(*com)
+            radius = T.meters_to_pixels(0.45) + 4
+            surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            alpha = int(min(255, flash * 220))
+            pygame.draw.circle(
+                surf, (*COL_STUFF_FLASH, alpha),
+                (radius, radius), radius, 3,
+            )
+            screen.blit(surf, (cx - radius, cy - radius))
+
+    def _draw_score_flashes(self, screen, view: ViewState) -> None:
+        """Score award flash on the scoring fighter."""
+        import pygame
+        T = self._transform
+        for fv in (view.fighter_a, view.fighter_b):
+            if self._review_mode:
+                flash = 1.0 if fv.name == view.score_scorer else 0.0
+            else:
+                last = self._last_score_tick.get(fv.name, -10**9)
+                ticks_since = self._ticks_since_event(view, last)
+                if ticks_since > 1:
+                    flash = 0.0
+                elif ticks_since == 0:
+                    elapsed = time.monotonic() - self._wall_t_last_step
+                    period  = 1.0 / max(self._tps, MIN_TPS)
+                    flash = max(0.0, 1.0 - elapsed / period)
+                else:
+                    flash = 0.0
+            if flash <= 0.0:
+                continue
+            com = self._interpolated_com(view, fv.color_tag)
+            cx, cy = T.world_to_screen(*com)
+            radius = T.meters_to_pixels(0.55) + 6
+            surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            alpha = int(min(255, flash * 220))
+            pygame.draw.circle(
+                surf, (*COL_SCORE_FLASH, alpha),
+                (radius, radius), radius, 4,
+            )
+            screen.blit(surf, (cx - radius, cy - radius))
+
+    def _draw_grip_seat_warning(self, screen, view: ViewState) -> None:
+        """HAJ-144 t003 finding (F5) — when 3+ GRIP_ESTABLISH events
+        seat on a single tick, mark the dyad with a warning ring on
+        each fighter so the anomaly visually surfaces."""
+        import pygame
+        T = self._transform
+        if self._review_mode:
+            active = view.grip_seat_count >= GRIP_SEAT_THRESHOLD
+            flash  = 1.0 if active else 0.0
+        else:
+            ticks_since = self._ticks_since_event(view, self._last_grip_seat_tick)
+            if ticks_since > 1:
+                flash = 0.0
+            elif ticks_since == 0:
+                elapsed = time.monotonic() - self._wall_t_last_step
+                period  = 1.0 / max(self._tps, MIN_TPS)
+                flash = max(0.0, 1.0 - elapsed / period)
+            else:
+                flash = 0.0
+        if flash <= 0.0:
+            return
+        for fv in (view.fighter_a, view.fighter_b):
+            com = self._interpolated_com(view, fv.color_tag)
+            cx, cy = T.world_to_screen(*com)
+            radius = T.meters_to_pixels(0.65) + 2
+            surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            alpha = int(min(255, flash * 200))
+            pygame.draw.circle(
+                surf, (*COL_GRIP_FLASH, alpha),
+                (radius, radius), radius, 2,
+            )
+            screen.blit(surf, (cx - radius, cy - radius))
+
+    def _draw_counter_chevron(self, screen, view: ViewState) -> None:
+        """Brief chevron between the counter-attacker and the original
+        attacker so a counter throw is visually distinct from a
+        regular commit."""
+        import pygame
+        T = self._transform
+        if self._review_mode:
+            attacker = view.counter_attacker
+            target   = view.counter_target
+            flash = 1.0 if attacker and target else 0.0
+        else:
+            ticks_since = self._ticks_since_event(view, self._last_counter_tick)
+            if ticks_since > 1:
+                return
+            attacker = self._last_counter_attacker
+            target   = self._last_counter_target
+            if not attacker or not target:
+                return
+            elapsed = time.monotonic() - self._wall_t_last_step
+            period  = 1.0 / max(self._tps, MIN_TPS)
+            flash = max(0.0, 1.0 - elapsed / period) if ticks_since == 0 else 0.0
+        if flash <= 0.0 or not attacker or not target:
+            return
+        # Resolve names to figs and draw a chevron from attacker to target.
+        a = view.fighter_a
+        b = view.fighter_b
+        if attacker == a.name:
+            from_fv, to_fv = a, b
+        elif attacker == b.name:
+            from_fv, to_fv = b, a
+        else:
+            return
+        from_com = self._interpolated_com(view, from_fv.color_tag)
+        to_com   = self._interpolated_com(view, to_fv.color_tag)
+        sx, sy = T.world_to_screen(*from_com)
+        tx, ty = T.world_to_screen(*to_com)
+        # Solid chevron — alpha is implicit via flash gating above.
+        pygame.draw.line(screen, COL_COUNTER, (sx, sy), (tx, ty), 3)
+        # Arrowhead at the target end.
+        import math
+        ang = math.atan2(ty - sy, tx - sx)
+        ah = 12
+        for sgn in (-1, +1):
+            ex = tx - ah * math.cos(ang - sgn * 0.45)
+            ey = ty - ah * math.sin(ang - sgn * 0.45)
+            pygame.draw.line(
+                screen, COL_COUNTER, (tx, ty), (int(ex), int(ey)), 3,
+            )
+
+    def _draw_ne_waza_schematic(self, screen, view: ViewState) -> None:
+        """When the dyad is on the ground, render a small schematic at
+        the dyad midpoint indicating the position and which fighter is
+        on top. Stylised — top fighter is a larger filled circle, bottom
+        is a smaller offset circle, line between the two. The position
+        name (GUARD_TOP / SIDE_CONTROL / MOUNT / BACK_CONTROL /
+        TURTLE_*) renders below."""
+        import pygame
+        if view.sub_loop_name != "NE_WAZA":
+            return
+        T = self._transform
+        # Compute dyad midpoint from the interpolated CoMs.
+        a_com = self._interpolated_com(view, "a")
+        b_com = self._interpolated_com(view, "b")
+        mx = (a_com[0] + b_com[0]) / 2.0
+        my = (a_com[1] + b_com[1]) / 2.0
+        cx, cy = T.world_to_screen(mx, my)
+        # Identify top + bottom by ne_waza_top_name.
+        top_name = view.ne_waza_top_name
+        if top_name == view.fighter_a.name:
+            top_col, bot_col = COL_FIGHTER_A, COL_FIGHTER_B
+        elif top_name == view.fighter_b.name:
+            top_col, bot_col = COL_FIGHTER_B, COL_FIGHTER_A
+        else:
+            top_col = COL_NE_TOP
+            bot_col = COL_NE_BOT
+        # Offset the schematic slightly above the dyad midpoint so it
+        # doesn't overlap the existing fighter dots.
+        sch_x = cx
+        sch_y = cy - 38
+        # Bottom (larger ring, offset down).
+        pygame.draw.circle(screen, bot_col, (sch_x, sch_y + 6), 9, 2)
+        # Top (filled, slightly higher).
+        pygame.draw.circle(screen, top_col, (sch_x, sch_y - 4), 7)
+        # Connector line.
+        pygame.draw.line(
+            screen, COL_NE_TOP,
+            (sch_x, sch_y - 4), (sch_x, sch_y + 6), 2,
+        )
+        # Position label.
+        label = view.position_name
+        text = self._font_small.render(label, True, COL_TEXT)
+        screen.blit(
+            text,
+            (sch_x - text.get_width() // 2, sch_y + 18),
+        )
 
     def _draw_pause_indicator(self, screen, view: Optional[ViewState]) -> None:
         import pygame
