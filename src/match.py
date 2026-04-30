@@ -424,9 +424,13 @@ class _ThrowInProgress:
 # top of every tick before action selection runs.
 #
 # v0.1 effects:
-#   - "RESOLVE_KAKE_N1" — single-tick (N=1) throw commit deferred from
-#     tick N to tick N+1. Payload carries attacker_name, defender_name,
-#     throw_id; resolution recomputes signature and runs _resolve_kake.
+#   - "RESOLVE_KAKE_N1" — N=1 throw outcome deferred from the commit
+#     tick to the tick after KAKE_COMMIT (T+3 of the commit, post-HAJ-157).
+#     Payload carries attacker_name, defender_name, throw_id; resolution
+#     recomputes signature and runs _resolve_kake. The N=1 schedule
+#     (RK+KA at T, TS at T+1, KC at T+2) is walked by
+#     _advance_throws_in_progress; RESOLVE_KAKE_N1 fires the outcome on
+#     the tick after KC.
 #   - "NEWAZA_TRANSITION_AFTER_STUFF" — ne-waza door from a stuffed
 #     standing throw. Payload carries attacker_name, defender_name; the
 #     resolver runs _resolve_newaza_transition at the deferred tick.
@@ -2457,10 +2461,12 @@ class Match:
         )
         self.kumi_kata_clock[attacker.identity.name] = 0
 
-        # N=1 suppresses the four sub-event lines (they'd all land on the same
-        # tick as the outcome); the THROW_ENTRY stays visible so a successful
-        # elite throw still has a [throw] commit line preceding its [score].
-        collapse_n1 = n <= 1
+        # HAJ-157 V1/V5 — N=1 throws now spread across 4 ticks (RK/KA on T,
+        # TS on T+1, KC on T+2, outcome on T+3) instead of collapsing onto
+        # the THROW_ENTRY tick. Sub-events are visible on the debug stream
+        # at every belt rank; the prose stream filters SUB_* events
+        # generally (debug-only per _is_debug_only_event).
+        collapse_n1 = False
 
         # HAJ-49 / HAJ-67 — stash the commit-time motivation so
         # _resolve_failed_commit can route the outcome to TACTICAL_DROP_RESET
@@ -2579,29 +2585,30 @@ class Match:
         ))
 
         if n <= 1:
-            # HAJ-148 — defer the landing to tick+1. Pre-fix, N=1 commits
-            # resolved the kake on the same tick as the commit, bunching
-            # cause and effect into one logical instant. Now: commit fires
-            # silently here, the consequence queue resolves the kake (and
-            # any STUFF/ne-waza chain it triggers) on the next tick.
+            # HAJ-148 + HAJ-157 — defer the landing to tick+3. Pre-HAJ-148,
+            # N=1 commits resolved on the same tick as the commit, bunching
+            # cause and effect into one logical instant. HAJ-148 split the
+            # outcome onto tick+1; HAJ-157 V1/V5 spreads the four sub-event
+            # phases across distinct ticks too (RK+KA at T, TS at T+1, KC
+            # at T+2) so the kuzushi → tsukuri → kake → outcome chain is
+            # visible in the engine event log instead of collapsing.
             #
-            # Stash an _ThrowInProgress entry so re-commits and substantive
-            # gating treat the deferred attempt as in-flight; it's popped
-            # when the consequence fires. The schedule is empty so
-            # _advance_throws_in_progress doesn't emit synthetic sub-events
-            # for this attempt — those already fired (silently) above.
+            # _advance_throws_in_progress walks the schedule for offsets
+            # 1+ (TS, then KC); the RESOLVE_KAKE_N1 consequence queued
+            # here for tick+3 is what actually fires the outcome and pops
+            # the in-progress tip.
             self._throws_in_progress[attacker.identity.name] = _ThrowInProgress(
                 attacker_name=attacker.identity.name,
                 defender_name=defender.identity.name,
                 throw_id=throw_id,
                 start_tick=tick,
                 compression_n=1,
-                schedule={},
+                schedule=schedule,
                 commit_actual=actual,
                 commit_execution_quality=eq,
             )
             self._consequence_queue.append(_Consequence(
-                due_tick=tick + 1,
+                due_tick=tick + 3,
                 kind="RESOLVE_KAKE_N1",
                 payload={
                     "attacker_name": attacker.identity.name,
@@ -2670,6 +2677,13 @@ class Match:
             ))
 
             if SubEvent.KAKE_COMMIT in sub_events:
+                if tip.compression_n <= 1:
+                    # HAJ-157 V1/V5 — N=1 throws spread across 4 ticks. The
+                    # outcome (LANDED / STUFFED / FAILED) was deferred to
+                    # T+3 via the RESOLVE_KAKE_N1 consequence queued at
+                    # commit time. The tip stays in _throws_in_progress
+                    # until the consequence fires; that handler pops it.
+                    continue
                 # Recompute signature at KAKE time — the match state has
                 # changed over the attempt. resolve_throw uses the window
                 # quality and is_forced flag derived from this fresh value.
@@ -3329,12 +3343,21 @@ class Match:
                 tip, attacker, defender, tick, reason="countered",
             ))
 
-        # Route the defender's counter through the standard commit path. They
-        # get the same skill-compression treatment as any other commit, so
-        # an elite resolves immediately; a non-elite enters a fresh
-        # multi-tick attempt (and could theoretically be countered in turn).
-        events.extend(self._resolve_commit_throw(
-            defender, attacker, counter_id, tick,
+        # HAJ-157 V2 — counter throws route through the staging layer so
+        # the counter intent fires this tick and the counter commit fires
+        # on tick+1 from the consequence queue. Pre-fix, _try_fire_counter
+        # called _resolve_commit_throw directly, producing a counter that
+        # resolved on the same tick as the action being countered (the
+        # exact pattern HAJ-149 / HAJ-154's intent contract was meant to
+        # dissolve). _stage_commit_intent emits the pre-commit IntentSignal
+        # synchronously and queues FIRE_COMMIT_FROM_INTENT for tick+1, so
+        # the counter is now temporally separated from its trigger.
+        counter_action = Action(
+            kind=ActionKind.COMMIT_THROW,
+            throw_id=counter_id,
+        )
+        events.extend(self._stage_commit_intent(
+            defender, attacker, counter_action, tick,
         ))
         return events
 
@@ -3668,14 +3691,29 @@ class Match:
                 # the door (NEWAZA_TRANSITION) is the consequence of the
                 # stuff and lands on the next tick, distributing the
                 # cause-effect chain across two ticks instead of one.
-                self._consequence_queue.append(_Consequence(
-                    due_tick=tick + 1,
-                    kind="NEWAZA_TRANSITION_AFTER_STUFF",
-                    payload={
-                        "attacker_name": attacker.identity.name,
-                        "defender_name": defender.identity.name,
-                    },
-                ))
+                #
+                # HAJ-157 V3 — dedupe at the STUFFED branch. When both
+                # fighters stuff on the same tick, both _apply_throw_result
+                # invocations would otherwise enqueue a separate
+                # NEWAZA_TRANSITION_AFTER_STUFF, and the dyad's ne-waza
+                # door would fire twice. Skip the enqueue if a door is
+                # already queued for the same target tick — the dyad is
+                # shared between the two stuffs, so a single transition
+                # covers both.
+                already_queued = any(
+                    c.kind == "NEWAZA_TRANSITION_AFTER_STUFF"
+                    and c.due_tick == tick + 1
+                    for c in self._consequence_queue
+                )
+                if not already_queued:
+                    self._consequence_queue.append(_Consequence(
+                        due_tick=tick + 1,
+                        kind="NEWAZA_TRANSITION_AFTER_STUFF",
+                        payload={
+                            "attacker_name": attacker.identity.name,
+                            "defender_name": defender.identity.name,
+                        },
+                    ))
 
         else:  # FAILED
             events.extend(self._resolve_failed_commit(

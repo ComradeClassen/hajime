@@ -141,14 +141,23 @@ def test_t007_reproduction_distributes_across_at_least_three_ticks() -> None:
     try:
         # Tick N: both fighters commit (legal on the same tick — they're
         # different fighters; the within-fighter cap holds because each
-        # only fires one COMMIT_THROW).
+        # only fires one COMMIT_THROW). HAJ-157 V1/V5 — the N=1 throw
+        # spreads across 4 ticks: RK+KA on N, TS on N+1, KC on N+2,
+        # outcome on N+3 from the consequence queue.
         N = 5
         collected.extend(m._resolve_commit_throw(t, s, ThrowID.O_UCHI_GARI, tick=N))
         collected.extend(m._resolve_commit_throw(s, t, ThrowID.O_UCHI_GARI, tick=N))
-        # Tick N+1: consequences resolve from the queue.
-        m._resolve_consequences(tick=N + 1, events=collected)
-        # Tick N+2: the ne-waza door (scheduled by STUFFED on N+1) fires.
-        m._resolve_consequences(tick=N + 2, events=collected)
+        # Tick N+1: tsukuri sub-events emit from _advance.
+        collected.extend(m._advance_throws_in_progress(tick=N + 1))
+        # Tick N+2: kake sub-events emit from _advance.
+        collected.extend(m._advance_throws_in_progress(tick=N + 2))
+        # Tick N+3: STUFFED outcomes fire from RESOLVE_KAKE_N1 consequences;
+        # both stuffs share the same tick, so the ne-waza door dedupe at
+        # the STUFFED branch (HAJ-157 V3) keeps the door queued exactly
+        # once for tick N+4.
+        m._resolve_consequences(tick=N + 3, events=collected)
+        # Tick N+4: the ne-waza door fires.
+        m._resolve_consequences(tick=N + 4, events=collected)
     finally:
         match_module.resolve_throw = real_resolve
 
@@ -210,8 +219,11 @@ def test_simultaneous_commits_legal_consequences_distribute() -> None:
         N = 8
         collected.extend(m._resolve_commit_throw(t, s, ThrowID.SEOI_NAGE, tick=N))
         collected.extend(m._resolve_commit_throw(s, t, ThrowID.UCHI_MATA, tick=N))
-        # Both commits scheduled their resolutions for N+1.
-        m._resolve_consequences(tick=N + 1, events=collected)
+        # HAJ-157 V1/V5 — N=1 throws spread RK+KA / TS / KC over 3 ticks,
+        # outcome lands on N+3 via RESOLVE_KAKE_N1.
+        collected.extend(m._advance_throws_in_progress(tick=N + 1))
+        collected.extend(m._advance_throws_in_progress(tick=N + 2))
+        m._resolve_consequences(tick=N + 3, events=collected)
     finally:
         match_module.resolve_throw = real_resolve
 
@@ -244,12 +256,15 @@ def test_sacrifice_throw_chain_distributes_across_three_ticks() -> None:
     collected: list = []
     try:
         N = 12
-        # Tick N: commit (silent in prose).
+        # Tick N: commit (silent in prose) + RK + KA sub-events.
         collected.extend(m._resolve_commit_throw(t, s, ThrowID.SUMI_GAESHI, tick=N))
-        # Tick N+1: STUFFED resolution fires; ne-waza door scheduled for N+2.
-        m._resolve_consequences(tick=N + 1, events=collected)
-        # Tick N+2: ne-waza door fires.
-        m._resolve_consequences(tick=N + 2, events=collected)
+        # Ticks N+1, N+2: TS and KC sub-events emit from _advance.
+        collected.extend(m._advance_throws_in_progress(tick=N + 1))
+        collected.extend(m._advance_throws_in_progress(tick=N + 2))
+        # Tick N+3: STUFFED resolution fires; ne-waza door scheduled for N+4.
+        m._resolve_consequences(tick=N + 3, events=collected)
+        # Tick N+4: ne-waza door fires.
+        m._resolve_consequences(tick=N + 4, events=collected)
     finally:
         match_module.resolve_throw = real_resolve
 
@@ -257,30 +272,27 @@ def test_sacrifice_throw_chain_distributes_across_three_ticks() -> None:
     stuff_tick = next(
         e.tick for e in collected if e.event_type == "STUFFED"
     )
-    # The ne-waza door event NEWAZA_TRANSITION fires when the door commits
-    # — depending on the random roll inside attempt_ground_commit it may
-    # or may not; we can guarantee it by forcing the position into a
-    # ne-waza-eligible setup. Instead we assert the *consequence* fired:
-    # at minimum, the post-stuff door consequence was queued and pulled
-    # on N+2.
+    # HAJ-157 V1/V5 — N=1 spread defers the outcome to N+3.
     assert commit_tick == N
-    assert stuff_tick == N + 1
+    assert stuff_tick == N + 3
     # Every event from the queue carries the from_consequence_queue mark.
     queue_events = [e for e in collected if e.data.get("from_consequence_queue")]
-    assert any(e.tick == N + 1 for e in queue_events), (
-        "stuff resolution should be a queue event on N+1"
+    assert any(e.tick == N + 3 for e in queue_events), (
+        "stuff resolution should be a queue event on N+3"
     )
 
 
 # ===========================================================================
 # AC#4 — throw landing and score fire on the same tick (post-commit)
 # ===========================================================================
-def test_landing_and_score_share_a_tick_on_n_plus_one() -> None:
+def test_landing_and_score_share_a_tick_on_n_plus_three() -> None:
     """The landing event and the score event share a tick. The commit
-    that produced them lives on the previous tick. Patch both
-    resolve_throw and the actual_signature_match read so the kake-time
-    recompute returns a clean 1.0 (eq=1.0); without that the referee
-    would downgrade the WAZA_ARI to no-score on a 0.0 eq."""
+    that produced them lives 3 ticks earlier (HAJ-157 V1/V5 — N=1
+    throws spread kuzushi/tsukuri/kake across consecutive ticks before
+    the outcome lands). Patch both resolve_throw and the
+    actual_signature_match read so the kake-time recompute returns a
+    clean 1.0 (eq=1.0); without that the referee would downgrade the
+    WAZA_ARI to no-score on a 0.0 eq."""
     t, s, m = _elite_match(seed=99)
     real_resolve = match_module.resolve_throw
     real_sig = match_module.actual_signature_match
@@ -290,7 +302,10 @@ def test_landing_and_score_share_a_tick_on_n_plus_one() -> None:
     try:
         N = 6
         collected.extend(m._resolve_commit_throw(t, s, ThrowID.SEOI_NAGE, tick=N))
-        m._resolve_consequences(tick=N + 1, events=collected)
+        # Walk the four-tick chain.
+        collected.extend(m._advance_throws_in_progress(tick=N + 1))
+        collected.extend(m._advance_throws_in_progress(tick=N + 2))
+        m._resolve_consequences(tick=N + 3, events=collected)
     finally:
         match_module.resolve_throw = real_resolve
         match_module.actual_signature_match = real_sig
@@ -301,7 +316,7 @@ def test_landing_and_score_share_a_tick_on_n_plus_one() -> None:
         if e.event_type in ("WAZA_ARI_AWARDED", "IPPON_AWARDED")
     )
     assert commit.tick == N
-    assert score.tick == N + 1
+    assert score.tick == N + 3
 
 
 # ===========================================================================

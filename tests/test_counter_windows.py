@@ -292,15 +292,27 @@ def test_counter_fires_mid_attempt_and_aborts_original() -> None:
     kinds = [e.event_type for e in events]
     assert "COUNTER_COMMIT" in kinds
     assert "THROW_ABORTED" in kinds
-    # Tanaka's attempt cleared, Sato's counter registered.
+    # Tanaka's attempt cleared, Sato's counter staged.
     assert t.identity.name not in m._throws_in_progress
-    # Sato's counter either resolved immediately (N=1) or stashed (N>1).
-    # Either way a THROW_ENTRY for Sato is present.
-    entries = [e for e in events if e.event_type == "THROW_ENTRY"]
+    # HAJ-157 V2 — counter throws now route through the staging layer.
+    # Tick 2 emits the counter intent and the COUNTER_COMMIT marker; the
+    # actual THROW_ENTRY for Sato's counter fires on tick+1 from the
+    # FIRE_COMMIT_FROM_INTENT consequence.
+    intents = [e for e in events if e.event_type == "INTENT_SIGNAL"]
+    assert any(
+        e.data.get("fighter") == s.identity.name for e in intents
+    ), "counter must emit a pre-commit IntentSignal on the trigger tick"
+    # Counter's commit is staged for tick+1; the placeholder TIP carries
+    # the deferred attempt.
+    assert s.identity.name in m._throws_in_progress
+    # Drain the consequence on tick 3 — the counter's THROW_ENTRY fires now.
+    follow: list = []
+    m._resolve_consequences(tick=3, events=follow)
+    follow_entries = [e for e in follow if e.event_type == "THROW_ENTRY"]
     assert any(
         isinstance(e.description, str) and "Sato" in e.description
-        for e in entries
-    )
+        for e in follow_entries
+    ), "counter's THROW_ENTRY must fire one tick after the trigger"
 
 
 def test_no_counter_when_defender_lacks_resources() -> None:

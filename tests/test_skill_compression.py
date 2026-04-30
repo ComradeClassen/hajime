@@ -90,10 +90,18 @@ def test_tokui_waza_floor_is_one_for_elite() -> None:
 # ---------------------------------------------------------------------------
 # sub_event_schedule shapes per spec
 # ---------------------------------------------------------------------------
-def test_schedule_n1_emits_all_four_on_single_tick() -> None:
+def test_schedule_n1_spreads_across_three_offsets() -> None:
+    """HAJ-157 V1/V5 — N=1 elite throws no longer collapse all four
+    sub-events onto the entry tick. RK + KA pair on the kuzushi tick,
+    TS on the next, KC on the next; the outcome is deferred a further
+    tick via the RESOLVE_KAKE_N1 consequence so kuzushi → tsukuri →
+    kake → outcome occupy 4 distinct ticks in the engine event log."""
     s = sub_event_schedule(1)
-    assert s == {0: [SubEvent.REACH_KUZUSHI, SubEvent.KUZUSHI_ACHIEVED,
-                     SubEvent.TSUKURI, SubEvent.KAKE_COMMIT]}
+    assert s == {
+        0: [SubEvent.REACH_KUZUSHI, SubEvent.KUZUSHI_ACHIEVED],
+        1: [SubEvent.TSUKURI],
+        2: [SubEvent.KAKE_COMMIT],
+    }
 
 
 def test_schedule_n2_pairs_ka_ts_together() -> None:
@@ -124,10 +132,16 @@ def test_schedule_n5_has_silent_padding_and_tight_finish() -> None:
 
 
 def test_schedule_always_ends_with_kake_commit() -> None:
+    """KAKE_COMMIT lands on the final scheduled offset for every N. For
+    N≥2 that's offset N-1 (the schedule's last entry); for the
+    HAJ-157 N=1 spread layout it's offset 2 (the schedule's last
+    entry, which differs from N-1=0)."""
     for n in range(1, 9):
         s = sub_event_schedule(n)
-        assert SubEvent.KAKE_COMMIT in s[n - 1], (
-            f"N={n}: KAKE_COMMIT should be on the final tick"
+        last_offset = max(s.keys())
+        assert SubEvent.KAKE_COMMIT in s[last_offset], (
+            f"N={n}: KAKE_COMMIT should be on the final scheduled tick "
+            f"(offset {last_offset}); got {s}"
         )
 
 
@@ -168,11 +182,13 @@ def test_multi_tick_commit_defers_resolution_until_kake() -> None:
     assert t.identity.name not in m._throws_in_progress
 
 
-def test_elite_single_tick_commit_resolves_immediately() -> None:
-    """An elite's throw (N=1) emits the THROW_ENTRY plus all four sub-events
-    on the commit tick, then defers the landing to tick+1 (HAJ-148 causal
-    ordering). Driving the consequence on tick+1 clears the in-progress
-    bookkeeping just like the synchronous pre-148 path did."""
+def test_elite_single_tick_commit_spreads_across_four_ticks() -> None:
+    """HAJ-157 V1/V5 — an elite's throw (N=1) emits THROW_ENTRY + the
+    kuzushi-phase sub-events (REACH_KUZUSHI + KUZUSHI_ACHIEVED) on the
+    commit tick, then TSUKURI on T+1, KAKE_COMMIT on T+2, and the
+    outcome (LANDED / STUFFED / FAILED) lands on T+3 from the
+    RESOLVE_KAKE_N1 consequence. The four-stage chain occupies 4
+    distinct ticks instead of collapsing into 2."""
     from match import Match
     from referee import build_suzuki
     random.seed(8)
@@ -181,17 +197,36 @@ def test_elite_single_tick_commit_resolves_immediately() -> None:
     m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki())
     _seat_deep_grips(m.grip_graph, t, s)
 
+    # T = 3: commit + offset-0 sub-events (RK, KA).
     events = m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=3)
     kinds = {e.event_type for e in events}
     assert "THROW_ENTRY" in kinds
-    # All four sub-events fired this tick.
-    for ev in (SubEvent.REACH_KUZUSHI, SubEvent.KUZUSHI_ACHIEVED,
-               SubEvent.TSUKURI, SubEvent.KAKE_COMMIT):
-        assert f"SUB_{ev.name}" in kinds
-    # The deferred attempt is parked in throws_in_progress until the
-    # consequence resolves on the next tick.
+    assert "SUB_REACH_KUZUSHI" in kinds
+    assert "SUB_KUZUSHI_ACHIEVED" in kinds
+    # Tsukuri and kake have NOT fired yet on the commit tick.
+    assert "SUB_TSUKURI" not in kinds
+    assert "SUB_KAKE_COMMIT" not in kinds
     assert t.identity.name in m._throws_in_progress
-    m._resolve_consequences(tick=4, events=[])
+
+    # T+1 = 4: tsukuri sub-event fires from _advance_throws_in_progress.
+    advance1 = m._advance_throws_in_progress(tick=4)
+    kinds1 = {e.event_type for e in advance1}
+    assert "SUB_TSUKURI" in kinds1
+    assert "SUB_KAKE_COMMIT" not in kinds1
+    # Outcome has not fired — the tip is still in flight.
+    assert t.identity.name in m._throws_in_progress
+
+    # T+2 = 5: kake sub-event fires; the outcome is still deferred to T+3.
+    advance2 = m._advance_throws_in_progress(tick=5)
+    kinds2 = {e.event_type for e in advance2}
+    assert "SUB_KAKE_COMMIT" in kinds2
+    # The tip stays parked — RESOLVE_KAKE_N1 pops it when it fires.
+    assert t.identity.name in m._throws_in_progress
+
+    # T+3 = 6: RESOLVE_KAKE_N1 consequence fires the outcome and clears
+    # the in-progress bookkeeping.
+    consq_events: list = []
+    m._resolve_consequences(tick=6, events=consq_events)
     assert t.identity.name not in m._throws_in_progress
 
 

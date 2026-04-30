@@ -210,10 +210,13 @@ def test_match_tracks_compromised_state_on_failure() -> None:
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=1)
-        # HAJ-148 — N=1 commits defer their landing to tick+1 via the
-        # consequence queue. Drive the consequence so the FAILED outcome
-        # actually resolves and the compromised-state tag is set.
-        m._resolve_consequences(tick=2, events=[])
+        # HAJ-148 + HAJ-157 V1/V5 — N=1 commits spread across 4 ticks
+        # (RK+KA, TS, KC, outcome). Walk the schedule and the
+        # RESOLVE_KAKE_N1 consequence on tick 4 so the FAILED outcome
+        # resolves and the compromised-state tag is set.
+        m._advance_throws_in_progress(tick=2)
+        m._advance_throws_in_progress(tick=3)
+        m._resolve_consequences(tick=4, events=[])
     finally:
         match_module.resolve_throw = real_resolve
     assert t.identity.name in m._compromised_states
@@ -258,11 +261,14 @@ def test_match_desperation_overlay_in_failed_event() -> None:
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         events = m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=9)
-        # HAJ-148 — drive the deferred N=1 landing on the next tick so the
-        # FAILED resolution events surface for inspection.
+        # HAJ-148 + HAJ-157 V1/V5 — N=1 commits spread sub-events across
+        # 3 ticks before the outcome lands on T+3 from the queue.
+        events = list(events)
+        events.extend(m._advance_throws_in_progress(tick=10))
+        events.extend(m._advance_throws_in_progress(tick=11))
         followup: list = []
-        m._resolve_consequences(tick=10, events=followup)
-        events = list(events) + followup
+        m._resolve_consequences(tick=12, events=followup)
+        events.extend(followup)
     finally:
         match_module.resolve_throw = real_resolve
     failed = [e for e in events if e.event_type == "FAILED"]

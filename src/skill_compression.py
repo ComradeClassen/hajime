@@ -82,11 +82,18 @@ def compression_n_for(judoka: "Judoka", throw_id: ThrowID) -> int:
 # ---------------------------------------------------------------------------
 # SUB-EVENT SCHEDULE
 # Maps tick-offset (0 = first tick of attempt) → list of SubEvents emitted.
-# KAKE_COMMIT is always on the final tick (offset N-1); REACH_KUZUSHI is
-# always on the first tick (offset 0). Intermediate events distribute per
-# spec 6.1's examples:
+# KAKE_COMMIT lands on the final scheduled tick (offset N-1 for N≥2; offset 2
+# for the N=1 spread layout). REACH_KUZUSHI is always on the first tick
+# (offset 0). Intermediate events distribute per spec 6.1's examples:
 #
-#   N = 1 : all four on tick 0 (elite — single continuous action)
+#   N = 1 : REACH + KA on tick 0;  TS on tick 1;  KC on tick 2
+#           (HAJ-157 V1/V5 — even an elite single-tick commit emits its
+#            kuzushi → tsukuri → kake → outcome chain on distinct ticks so
+#            cause and effect occupy the engine event log separately. The
+#            outcome itself lands one tick after KC via the RESOLVE_KAKE_N1
+#            consequence; reach-kuzushi rides with the kuzushi phase
+#            because the intent-stage layer already emits a pre-commit
+#            INTENT_SIGNAL one tick earlier.)
 #   N = 2 : REACH on tick 0;  KA + TS + KC together on tick 1
 #           (spec: "KUZUSHI_ACHIEVED and TSUKURI emit together")
 #   N = 3 : REACH;  KA + TS;  KC      — kuzushi and tsukuri still paired
@@ -102,7 +109,7 @@ def sub_event_schedule(n: int) -> dict[int, list[SubEvent]]:
         SubEvent.TSUKURI,       SubEvent.KAKE_COMMIT,
     )
     if n == 1:
-        return {0: [RK, KA, TS, KC]}
+        return {0: [RK, KA], 1: [TS], 2: [KC]}
     if n == 2:
         return {0: [RK], 1: [KA, TS, KC]}
     if n == 3:

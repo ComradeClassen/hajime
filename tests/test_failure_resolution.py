@@ -173,11 +173,15 @@ def test_match_failed_branch_emits_typed_failure_event_for_worked_throws() -> No
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         events = m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=9)
-        # HAJ-148 — N=1 commits defer landing to tick+1; drive the
-        # consequence so the FAILED event appears.
+        # HAJ-148 + HAJ-157 V1/V5 — N=1 commits spread across 4 ticks.
+        # Walk the in-progress schedule (TS at 10, KC at 11) and drive the
+        # RESOLVE_KAKE_N1 consequence on tick 12 so the FAILED event lands.
+        events = list(events)
+        events.extend(m._advance_throws_in_progress(tick=10))
+        events.extend(m._advance_throws_in_progress(tick=11))
         followup: list = []
-        m._resolve_consequences(tick=10, events=followup)
-        events = list(events) + followup
+        m._resolve_consequences(tick=12, events=followup)
+        events.extend(followup)
     finally:
         match_module.resolve_throw = real_resolve
     failed = [ev for ev in events if ev.event_type == "FAILED"]
@@ -241,10 +245,14 @@ def test_match_failed_branch_for_legacy_throw_is_unchanged() -> None:
     match_module.resolve_throw = lambda *a, **kw: ("FAILED", -5.0)
     try:
         events = m._resolve_commit_throw(t, s, ThrowID.SUMI_GAESHI, tick=9)
-        # HAJ-148 — drive the deferred N=1 landing.
+        # HAJ-148 + HAJ-157 V1/V5 — N=1 throws spread sub-events across
+        # 3 ticks (RK+KA, TS, KC) before the outcome lands on T+3.
+        events = list(events)
+        events.extend(m._advance_throws_in_progress(tick=10))
+        events.extend(m._advance_throws_in_progress(tick=11))
         followup: list = []
-        m._resolve_consequences(tick=10, events=followup)
-        events = list(events) + followup
+        m._resolve_consequences(tick=12, events=followup)
+        events.extend(followup)
     finally:
         match_module.resolve_throw = real_resolve
     failed = [ev for ev in events if ev.event_type == "FAILED"]
