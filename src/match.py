@@ -27,7 +27,7 @@ from typing import Optional, Protocol, runtime_checkable
 
 from enums import (
     BodyArchetype, DominantSide, Position, StanceMatchup,
-    SubLoopState, LandingProfile, GripMode,
+    SubLoopState, LandingProfile, GripMode, MatteReason,
     BodyPart, GripTarget, GripTypeV2,
 )
 from judoka import Judoka
@@ -84,6 +84,12 @@ from grip_initiative import (
     sample_initiative, select_response, clock_pressure_roles,
     GripResponseChoice,
     RESP_CONTEST, RESP_MATCH, RESP_PURSUE_OWN, RESP_DEFENSIVE, RESP_DISENGAGE,
+)
+from chase_decision import (
+    ChaseDecision, ChaseDecisionResult, make_chase_decision,
+)
+from defense_decision import (
+    DefenseDecision, DefenseDecisionResult, make_defense_decision,
 )
 
 
@@ -434,6 +440,17 @@ class _ThrowInProgress:
 #   - "NEWAZA_TRANSITION_AFTER_STUFF" — ne-waza door from a stuffed
 #     standing throw. Payload carries attacker_name, defender_name; the
 #     resolver runs _resolve_newaza_transition at the deferred tick.
+#   - "POST_SCORE_DECISION" — HAJ-152 follow-up window. Fires the tick
+#     after a non-match-ending waza-ari. Payload carries tori_name,
+#     uke_name, throw_id, score_tick. Computes the chase + defense
+#     decisions, emits the engineering events, and either dispatches
+#     to ne-waza (CHASE / DEFENSIVE_CHASE) or queues
+#     POST_SCORE_FOLLOW_UP_MATTE for a clean stand-and-reset.
+#   - "POST_SCORE_FOLLOW_UP_MATTE" — HAJ-152. Explicit matte announcement
+#     after a stand-and-reset follow-up. The matte event AND the
+#     SCORE_RESET that resets the dyad fire from this consequence so
+#     the log always carries a [ref] Matte! line before any reset
+#     after a score (HAJ-152 AC#8).
 #
 # Multi-tick (N>1) throws stay on the existing _throws_in_progress path —
 # they already separate commit and KAKE_COMMIT across ticks naturally.
@@ -791,6 +808,16 @@ class Match:
         # entries per match.
         self._scoring_events: list[Event] = []
 
+        # HAJ-152 — post-score follow-up state. None when no follow-up is
+        # active; otherwise a dict carrying the scorer (tori), the
+        # scored-on (uke), the throw_id, the score-tick, and the chase
+        # decision once it's been computed. The follow-up window opens
+        # the tick after a non-match-ending waza-ari and closes when a
+        # matte fires (either the explicit POST_SCORE_FOLLOW_UP_END
+        # matte after STAND, or the standard ne-waza patience matte
+        # after a chase that stalls).
+        self._post_score_follow_up: Optional[dict] = None
+
         # HAJ-145 — flat append-only log of every BodyPartEvent emitted this
         # match. Each engine event that goes through the decomposition layer
         # (commits, kuzushi attempts, counters, grip changes) extends this
@@ -1001,6 +1028,17 @@ class Match:
         # stuff door), so this branch must run AFTER consequences resolve.
         if self.sub_loop_state == SubLoopState.NE_WAZA:
             self._tick_newaza(tick, events)
+            self._post_tick(tick, events)
+            return
+
+        # HAJ-152 — post-score follow-up window pending. While the
+        # chase decision has resolved to STAND and the explicit
+        # POST_SCORE_FOLLOW_UP_MATTE consequence is queued, suppress
+        # standing-phase action selection so neither fighter can fire
+        # a fresh substantive action between the score and the matte.
+        # The match clock keeps ticking; this just gates the ladder.
+        if (self._post_score_follow_up is not None
+                and self._post_score_follow_up.get("stage") == "STANDING"):
             self._post_tick(tick, events)
             return
 
@@ -1437,7 +1475,12 @@ class Match:
                 # standing tick after escape doesn't fire a "grips
                 # collapsed" abort line for a throw the user already
                 # forgot about.
+                # HAJ-152 — escape from a post-score chase is the
+                # "tachi-waza resumes without matte" exit (AC#7). Clear
+                # the follow-up bookkeeping so the next exchange starts
+                # clean; no explicit matte fires here.
                 self._throws_in_progress.clear()
+                self._post_score_follow_up = None
                 self._reset_dyad_to_distant(
                     tick, recovery_bonus=POST_SCORE_RECOVERY_TICKS,
                 )
@@ -3040,6 +3083,15 @@ class Match:
         if a_name in self._throws_in_progress:
             return events
 
+        # HAJ-152 — a post-score follow-up window is open. Neither
+        # fighter should be staging a fresh COMMIT_THROW between the
+        # score and the post-score-decision tick (uke is on the mat;
+        # tori is owed the chase decision). Pre-fix, action selection
+        # could fire on the score tick AFTER the throw resolved and
+        # produce a stranded commit on tick+1.
+        if self._post_score_follow_up is not None:
+            return events
+
         # Pre-commit intent signal (HAJ-149 AC2 — emitted *before* the
         # commit fires, not on the same tick).
         attacker_disguise = disguise_for(actor)
@@ -3140,6 +3192,300 @@ class Match:
             for ev in ne_events:
                 ev.data.setdefault("from_consequence_queue", True)
             events.extend(ne_events)
+        elif c.kind == "POST_SCORE_DECISION":
+            decision_events = self._fire_post_score_decision(c, tick)
+            for ev in decision_events:
+                ev.data.setdefault("from_consequence_queue", True)
+            events.extend(decision_events)
+        elif c.kind == "POST_SCORE_FOLLOW_UP_MATTE":
+            matte_events = self._fire_post_score_follow_up_matte(c, tick)
+            for ev in matte_events:
+                ev.data.setdefault("from_consequence_queue", True)
+            events.extend(matte_events)
+
+    # -----------------------------------------------------------------------
+    # HAJ-152 — POST-SCORE FOLLOW-UP WINDOW
+    # -----------------------------------------------------------------------
+    def _open_post_score_follow_up(
+        self, tori: Judoka, uke: Judoka, throw_id: ThrowID, tick: int,
+        reason: str, *, force_stand: bool = False,
+    ) -> list[Event]:
+        """Open the post-score follow-up window after a non-match-ending
+        landing. Stashes the follow-up bookkeeping and queues a
+        POST_SCORE_DECISION consequence for tick+1.
+
+        `force_stand` forces tori's branch to STAND without rolling
+        the chase decision — used by the NO_SCORE-downgrade path,
+        where there's no waza-ari to convert.
+        """
+        # Cancel any pending FIRE_COMMIT_FROM_INTENT consequences. A
+        # waza-ari on the same tick as a freshly-staged commit (from
+        # action selection earlier this tick or the prior tick) means
+        # the staged commit should not actually fire — uke is on the
+        # mat, the dyad has a follow-up window to resolve. Pre-fix the
+        # staged commits ran on tick+1 and Sato kept committing fresh
+        # uchi-matas a tick after scoring.
+        self._consequence_queue = [
+            c for c in self._consequence_queue
+            if c.kind != "FIRE_COMMIT_FROM_INTENT"
+        ]
+        # Drop placeholder _ThrowInProgress entries that the staging
+        # layer left behind for those cancelled consequences.
+        for name in (tori.identity.name, uke.identity.name):
+            tip = self._throws_in_progress.get(name)
+            if tip is not None and tip.start_tick == tick:
+                self._throws_in_progress.pop(name, None)
+        # Defensive: clobbering an existing follow-up would leak state.
+        # In practice this can't happen (only one waza-ari can land per
+        # tick), but a guard keeps the test surface honest.
+        self._post_score_follow_up = {
+            "tori_name":    tori.identity.name,
+            "uke_name":     uke.identity.name,
+            "throw_id":     throw_id,
+            "score_tick":   tick,
+            "reason":       reason,
+            "force_stand":  force_stand,
+            "decision":     None,
+            "stage":        "PENDING_DECISION",
+        }
+        self._consequence_queue.append(_Consequence(
+            due_tick=tick + 1,
+            kind="POST_SCORE_DECISION",
+            payload={
+                "tori_name": tori.identity.name,
+                "uke_name":  uke.identity.name,
+                "throw_id":  throw_id,
+                "score_tick": tick,
+            },
+        ))
+        return [Event(
+            tick=tick,
+            event_type="POST_SCORE_FOLLOW_UP_OPEN",
+            description=(
+                f"[follow-up] {tori.identity.name} scored {reason} on "
+                f"{uke.identity.name} — chase decision pending."
+            ),
+            data={
+                "tori":      tori.identity.name,
+                "uke":       uke.identity.name,
+                "throw_id":  throw_id.name,
+                "reason":    reason,
+                "prose_silent": True,
+            },
+        )]
+
+    def _fire_post_score_decision(
+        self, c: "_Consequence", tick: int,
+    ) -> list[Event]:
+        """Resolve the chase decision (tori) and defense decision (uke)
+        for the post-score follow-up window. Either dispatches into
+        ne-waza (CHASE / DEFENSIVE_CHASE) or queues the
+        POST_SCORE_FOLLOW_UP_MATTE consequence for an explicit
+        stand-and-reset matte."""
+        events: list[Event] = []
+        follow_up = self._post_score_follow_up
+        tori = self._fighter_by_name(c.payload["tori_name"])
+        uke  = self._fighter_by_name(c.payload["uke_name"])
+        throw_id = c.payload["throw_id"]
+        if follow_up is None or tori is None or uke is None:
+            # State got cleared (match end?). Fall back to a clean
+            # matte sequence so the dyad can't get stranded.
+            self._consequence_queue.append(_Consequence(
+                due_tick=tick + 1,
+                kind="POST_SCORE_FOLLOW_UP_MATTE",
+                payload={"reason": "stand"},
+            ))
+            return events
+
+        td = THROW_DEFS.get(throw_id)
+        chase_advantage = (
+            td.post_score_chase_advantage if td is not None else 0.5
+        )
+        landing_profile = (
+            td.landing_profile if td is not None else LandingProfile.LATERAL
+        )
+
+        # score_diff_before: tori's waza-ari count minus uke's, BEFORE
+        # this waza-ari was awarded. The award has already mutated the
+        # scoreboard, so subtract one from tori's current count.
+        # `force_stand` paths (NO_SCORE downgrade) skip the arithmetic
+        # because nothing was awarded.
+        if follow_up.get("force_stand"):
+            score_diff_before = (
+                tori.state.score["waza_ari"] - uke.state.score["waza_ari"]
+            )
+        else:
+            score_diff_before = (
+                (tori.state.score["waza_ari"] - 1)
+                - uke.state.score["waza_ari"]
+            )
+        clock_remaining = max(0, self.max_ticks - tick)
+
+        # Tori's chase decision (or forced STAND on NO_SCORE).
+        if follow_up.get("force_stand"):
+            chase_result = ChaseDecisionResult(
+                decision=ChaseDecision.STAND,
+                probability=0.0,
+                factors={"force_stand": 1.0},
+            )
+        else:
+            chase_rng = random.Random(
+                f"haj152:chase:{tori.identity.name}:{self.seed}:{tick}"
+            )
+            chase_result = make_chase_decision(
+                tori, throw_id,
+                landing_profile=landing_profile,
+                chase_advantage=chase_advantage,
+                score_diff_before=score_diff_before,
+                clock_remaining=clock_remaining,
+                rng=chase_rng,
+            )
+
+        events.append(Event(
+            tick=tick,
+            event_type="CHASE_DECISION",
+            description=(
+                f"[chase_decision] {tori.identity.name} → "
+                f"{chase_result.decision.name} "
+                f"(p={chase_result.probability:.2f})"
+            ),
+            data={
+                "tori":        tori.identity.name,
+                "uke":         uke.identity.name,
+                "throw_id":    throw_id.name,
+                "decision":    chase_result.decision.name,
+                "probability": chase_result.probability,
+                "factors":     dict(chase_result.factors),
+                "prose_silent": True,
+            },
+        ))
+
+        # Uke's defense decision.
+        tori_chasing = chase_result.decision != ChaseDecision.STAND
+        # uke's score_diff_before is the negation of tori's.
+        defense_rng = random.Random(
+            f"haj152:defense:{uke.identity.name}:{self.seed}:{tick}"
+        )
+        defense_result = make_defense_decision(
+            uke,
+            landing_profile=landing_profile,
+            score_diff_before=-score_diff_before,
+            clock_remaining=clock_remaining,
+            tori_chasing=tori_chasing,
+            rng=defense_rng,
+        )
+        events.append(Event(
+            tick=tick,
+            event_type="DEFENSE_DECISION",
+            description=(
+                f"[defense_decision] {uke.identity.name} → "
+                f"{defense_result.decision.name}"
+            ),
+            data={
+                "uke":      uke.identity.name,
+                "tori":     tori.identity.name,
+                "decision": defense_result.decision.name,
+                "factors":  dict(defense_result.factors),
+                "prose_silent": True,
+            },
+        ))
+
+        follow_up["decision"]         = chase_result.decision.name
+        follow_up["defense_decision"] = defense_result.decision.name
+
+        if chase_result.decision in (
+            ChaseDecision.CHASE, ChaseDecision.DEFENSIVE_CHASE,
+        ):
+            # Dispatch into ne-waza via the existing transition helper.
+            # DEFENSIVE_CHASE means tori is on the bottom (sacrifice
+            # throw); pass the orientation through so the position
+            # machine seats GUARD_BOTTOM / SIDE_CONTROL appropriately.
+            follow_up["stage"] = "NE_WAZA_LIVE"
+            ne_events = self._dispatch_post_score_newaza(
+                tori, uke, tick,
+                defensive_chase=(
+                    chase_result.decision == ChaseDecision.DEFENSIVE_CHASE
+                ),
+            )
+            events.extend(ne_events)
+            # If the ne-waza dispatch didn't actually land (resolver
+            # declined), fall back to STAND-and-reset so the dyad
+            # can't be stranded without an exit path.
+            dispatched = any(
+                ev.event_type == "NEWAZA_TRANSITION" for ev in ne_events
+            )
+            if not dispatched:
+                follow_up["stage"] = "STANDING"
+                self._consequence_queue.append(_Consequence(
+                    due_tick=tick + 2,
+                    kind="POST_SCORE_FOLLOW_UP_MATTE",
+                    payload={"reason": "stand"},
+                ))
+        else:
+            # STAND path: tori opts out, uke also stands. Queue the
+            # explicit matte for tick+2 so the rhythm is
+            # decision (T+1) → stand (T+2) → matte (T+2 from the
+            # consequence; ref reset follows).
+            follow_up["stage"] = "STANDING"
+            self._consequence_queue.append(_Consequence(
+                due_tick=tick + 2,
+                kind="POST_SCORE_FOLLOW_UP_MATTE",
+                payload={"reason": "stand"},
+            ))
+
+        return events
+
+    def _dispatch_post_score_newaza(
+        self, tori: Judoka, uke: Judoka, tick: int, *,
+        defensive_chase: bool,
+    ) -> list[Event]:
+        """Route the chase into the existing ne-waza substrate. Mirrors
+        `_resolve_newaza_transition` but tagged source="POST_SCORE_CHASE"
+        so altitude readers can group it. The ne-waza substrate handles
+        unfolding, escape, conversion to ippon, and the standard
+        ne-waza-patience matte from there on.
+        """
+        events: list[Event] = []
+        # Aggressor / defender pair: forward chase puts tori on top,
+        # defensive chase puts tori on bottom.
+        if defensive_chase:
+            aggressor, defender = uke, tori
+        else:
+            aggressor, defender = tori, uke
+        ne_events = self._resolve_newaza_transition(aggressor, defender, tick)
+        # Tag the transition event so the post-score path is traceable
+        # in the log; the existing NEWAZA_TRANSITION shape is preserved
+        # for downstream consumers.
+        for ev in ne_events:
+            if ev.event_type == "NEWAZA_TRANSITION":
+                ev.data["source"]              = "POST_SCORE_CHASE"
+                ev.data["defensive_chase"]     = defensive_chase
+                ev.data["scorer"]              = tori.identity.name
+        events.extend(ne_events)
+        return events
+
+    def _fire_post_score_follow_up_matte(
+        self, c: "_Consequence", tick: int,
+    ) -> list[Event]:
+        """Explicit matte announcement at the end of a STAND-path
+        post-score follow-up. Emits the matte event AND the SCORE_RESET
+        that resets the dyad — no reset path can fire after a score
+        without going through this matte (HAJ-152 AC#8)."""
+        events: list[Event] = []
+        if self.match_over:
+            return events
+        events.append(self.referee.announce_matte(
+            MatteReason.POST_SCORE_FOLLOW_UP_END, tick,
+        ))
+        reason = (
+            self._post_score_follow_up.get("reason", "post-score reset")
+            if self._post_score_follow_up is not None
+            else "post-score reset"
+        )
+        events.extend(self._post_score_reset(tick, reason))
+        # Close the follow-up window.
+        self._post_score_follow_up = None
+        return events
 
     def _check_hip_blocks(
         self,
@@ -3620,16 +3966,22 @@ class Match:
                         description=f"[ref: {self.referee.name}] Two waza-ari — Ippon! {a_name} wins.",
                     ))
                 else:
-                    # HAJ-139 — single waza-ari is announced and play
-                    # continues, but the dyad must reset to STANDING_DISTANT
-                    # before the next throw can fire. Pre-HAJ-139 the
-                    # sub-loop carried on with all the same grips, so
-                    # the next commit could land the very next tick;
-                    # post-fix, both fighters disengage, recover, and
-                    # close distance again. Real judo: ~5s beat for the
-                    # uke to roll, both to get up, gi adjustment, walk
-                    # back near the mark.
-                    events.extend(self._post_score_reset(tick, "waza-ari"))
+                    # HAJ-152 — single waza-ari opens the post-score
+                    # follow-up window. Pre-fix this dispatched directly
+                    # through `_post_score_reset` on the same tick as
+                    # the score, with no chase decision and no matte —
+                    # producing the t017–t018 narrative break (waza-ari
+                    # → same-tick reset). Post-fix the score fires
+                    # silently here and a POST_SCORE_DECISION
+                    # consequence runs on tick+1; tori chooses chase or
+                    # stand, uke chooses defense, and ne-waza unfolds
+                    # in the existing substrate. Reset only happens
+                    # after an explicit matte (either the STAND-path
+                    # POST_SCORE_FOLLOW_UP_MATTE or the standard
+                    # ne-waza patience clock).
+                    events.extend(self._open_post_score_follow_up(
+                        attacker, defender, throw_id, tick, "waza-ari",
+                    ))
 
             else:  # NO_SCORE despite high raw net — ref downgraded it
                 events.append(Event(
@@ -3643,10 +3995,17 @@ class Match:
                     data={"execution_quality": execution_quality,
                           "quality_band": band.name},
                 ))
-                # HAJ-139 — even a downgraded landing put a fighter on
-                # the mat; reset to STANDING_DISTANT so the post-throw
-                # beat plays out before re-engagement.
-                events.extend(self._post_score_reset(tick, "no-score landing"))
+                # HAJ-139 + HAJ-152 — a downgraded landing put a fighter
+                # on the mat, but the score didn't actually award; tori
+                # has no waza-ari to convert, so there's no chase
+                # decision. Open the follow-up window with chase
+                # forced to STAND so the matte sequence still fires
+                # explicitly (HAJ-152 AC#8 — every reset after a
+                # landing must carry an intervening matte).
+                events.extend(self._open_post_score_follow_up(
+                    attacker, defender, throw_id, tick,
+                    "no-score landing", force_stand=True,
+                ))
 
         elif outcome == "STUFFED":
             # HAJ-49 / HAJ-67 — a STUFFED result on any non-scoring
@@ -4033,8 +4392,21 @@ class Match:
         matte standing tick doesn't fire stale "grips collapsed" abort
         lines for a throw that was parked when ne-waza started. A matte
         cleanly ends the prior exchange.
+
+        HAJ-152 — close any active post-score follow-up window. Matte
+        from the standard ne-waza patience clock (called via the
+        post-tick check) is one of the three ne-waza exits the
+        follow-up routes through; clearing the bookkeeping here keeps
+        the state from leaking into the next exchange. Drop any
+        queued POST_SCORE_FOLLOW_UP_MATTE consequence too — the matte
+        we're handling now satisfies the same beat.
         """
         self._throws_in_progress.clear()
+        self._post_score_follow_up = None
+        self._consequence_queue = [
+            c for c in self._consequence_queue
+            if c.kind != "POST_SCORE_FOLLOW_UP_MATTE"
+        ]
         self._reset_dyad_to_distant(tick, recovery_bonus=0)
 
     def _post_score_reset(self, tick: int, reason: str) -> list[Event]:

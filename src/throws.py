@@ -133,6 +133,16 @@ class ThrowDef:
     # toward configurations the throw was designed for, not to gate.
     preferred_stance_parity: Optional[StanceMatchup] = None
 
+    # HAJ-152 — post-score chase advantage. Probability scaling factor
+    # (0.0–1.0) representing the geometric / tactical likelihood that
+    # tori lands in a chase-ready position after the throw scores. High
+    # values (hip throws, reaping throws) bias tori's post-score decision
+    # toward chasing into ne-waza; low values (sacrifice throws) bias
+    # toward standing or defensive chase from the bottom. Read by
+    # chase_decision.make_chase_decision; default 0.5 keeps legacy
+    # throws on a neutral chase footing.
+    post_score_chase_advantage: float = 0.5
+
 
 # ---------------------------------------------------------------------------
 # NE-WAZA TECHNIQUE IDs
@@ -301,6 +311,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=9.0,
         base_effectiveness_off_side=3.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # standard cross-grip seoi
+        # HAJ-152 — shoulder throws often turn uke through; tori may need
+        # to recover posture before chasing. Mid-range chase advantage.
+        post_score_chase_advantage=0.5,
     ),
 
     ThrowID.UCHI_MATA: ThrowDef(
@@ -327,6 +340,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=9.0,
         base_effectiveness_off_side=5.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # canonical morote-grip uchi-mata
+        # HAJ-152 — hip throw; tori often lands in or near GUARD_TOP with
+        # uke flat. High chase advantage.
+        post_score_chase_advantage=0.85,
     ),
 
     ThrowID.O_SOTO_GARI: ThrowDef(
@@ -351,6 +367,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=5.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # outside reap aligns
+        # HAJ-152 — reaping throw; tori in good standing position over
+        # uke for a clean ne-waza transition.
+        post_score_chase_advantage=0.75,
     ),
 
     ThrowID.O_UCHI_GARI: ThrowDef(
@@ -370,6 +389,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=6.0,
         requires_both_hands=False,   # Inside hook works off any one grip
+        # HAJ-152 — reaping throw; uke lands on side, tori upright and
+        # close. Strong chase advantage.
+        post_score_chase_advantage=0.7,
     ),
 
     ThrowID.KO_UCHI_GARI: ThrowDef(
@@ -389,6 +411,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=5.0,
         base_effectiveness_off_side=5.0,
         requires_both_hands=False,   # Low-commitment setup; fires from one grip
+        # HAJ-152 — forward foot sweep; uke lands on side, tori upright
+        # and can step over.
+        post_score_chase_advantage=0.6,
     ),
 
     ThrowID.HARAI_GOSHI: ThrowDef(
@@ -416,6 +441,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=4.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # hip entry favors aligned stance
+        # HAJ-152 — hip throw; tori often lands in or near GUARD_TOP.
+        post_score_chase_advantage=0.85,
     ),
 
     ThrowID.TAI_OTOSHI: ThrowDef(
@@ -441,6 +468,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=6.0,
         base_effectiveness_off_side=5.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # cross-grip body drop
+        # HAJ-152 — body drop; tori stays upright but uke often turns
+        # through. Mid-range chase advantage.
+        post_score_chase_advantage=0.5,
     ),
 
     ThrowID.SUMI_GAESHI: ThrowDef(
@@ -461,6 +491,10 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_off_side=7.0,  # Higher off-side: mirrored stance specialty
         requires_both_hands=False,        # Sacrifice throw — one grip is enough
         preferred_stance_parity=StanceMatchup.MIRRORED,  # canonical kenka-yotsu throw
+        # HAJ-152 — sacrifice throw; tori is on the bottom after the
+        # score. Low forward-chase advantage; chase_decision routes the
+        # SACRIFICE landing profile to the defensive-chase path instead.
+        post_score_chase_advantage=0.4,
     ),
 
     ThrowID.DE_ASHI_HARAI: ThrowDef(
@@ -480,6 +514,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=6.0,   # low raw effectiveness; the payoff is the timing
         base_effectiveness_off_side=5.0,
         requires_both_hands=False,        # Timing-window sweep; sleeve grip sufficient
+        # HAJ-152 — forward foot sweep; uke on side, tori upright.
+        post_score_chase_advantage=0.6,
     ),
 
     ThrowID.O_GOSHI: ThrowDef(
@@ -504,6 +540,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=5.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # standard hip throw
+        # HAJ-152 — major hip throw; tori lands close to GUARD_TOP.
+        post_score_chase_advantage=0.8,
     ),
 
     ThrowID.HARAI_GOSHI_CLASSICAL: ThrowDef(
@@ -528,6 +566,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=4.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # classical hip-fulcrum form
+        # HAJ-152 — classical hip throw; same chase geometry as Harai-goshi.
+        post_score_chase_advantage=0.85,
     ),
 
     ThrowID.TOMOE_NAGE: ThrowDef(
@@ -551,6 +591,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         landing_profile=LandingProfile.SACRIFICE,
         base_effectiveness_dominant=6.0,
         base_effectiveness_off_side=6.0,
+        # HAJ-152 — sacrifice throw; tori on bottom after the score.
+        # Routes to defensive-chase path via SACRIFICE landing profile.
+        post_score_chase_advantage=0.4,
     ),
 
     ThrowID.O_GURUMA: ThrowDef(
@@ -575,6 +618,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         base_effectiveness_dominant=7.0,
         base_effectiveness_off_side=4.0,
         preferred_stance_parity=StanceMatchup.MATCHED,  # extended-leg fulcrum
+        # HAJ-152 — wheel throw; tori lands upright over uke on the mat.
+        post_score_chase_advantage=0.7,
     ),
 }
 

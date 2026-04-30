@@ -393,6 +393,12 @@ class MatteReason(Enum):
     STUFFED_THROW_TIMEOUT = auto()  # Stuffed throw; ref closes ne-waza window
     INJURY                = auto()  # Medical stop
     OSAEKOMI_DECISION     = auto()  # Pin clock reached decision threshold
+    # HAJ-152 — explicit matte after a post-score follow-up window. Fires
+    # when tori chose STAND (or chase ended in stalemate without a
+    # matte from the standard ne-waza patience clock). The reset is
+    # always preceded by this matte so the log carries the visible
+    # matte beat even when both fighters disengaged cleanly.
+    POST_SCORE_FOLLOW_UP_END = auto()
 
 
 # ---------------------------------------------------------------------------

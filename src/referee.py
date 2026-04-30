@@ -306,6 +306,7 @@ class Referee:
             MatteReason.STUFFED_THROW_TIMEOUT: "stuffed throw — reset",
             MatteReason.INJURY:                "injury",
             MatteReason.OSAEKOMI_DECISION:     "osaekomi decision",
+            MatteReason.POST_SCORE_FOLLOW_UP_END: "post-score reset",
         }.get(reason, reason.name)
         return Event(
             tick=tick,

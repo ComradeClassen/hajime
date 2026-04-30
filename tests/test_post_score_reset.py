@@ -109,9 +109,13 @@ def test_post_score_reset_pause_is_floor_plus_recovery() -> None:
 # ---------------------------------------------------------------------------
 # 3. Single waza-ari from a throw triggers the reset; two waza-ari does not.
 # ---------------------------------------------------------------------------
-def test_single_waza_ari_triggers_post_score_reset() -> None:
-    """A waza-ari award through _apply_throw_result must dispatch through
-    the post-score reset when match continues."""
+def test_single_waza_ari_opens_follow_up_window() -> None:
+    """HAJ-152 — a waza-ari award no longer fires SCORE_RESET on the
+    score tick. The follow-up window opens, the chase decision runs
+    on tick+1, and (when chase = STAND) the explicit
+    POST_SCORE_FOLLOW_UP_END matte fires on tick+2 followed by the
+    SCORE_RESET. This test pins the follow-up open + queued
+    consequence; downstream tests cover the chase / matte sequence."""
     import match as match_module
     t, s, m = _pair_match()
     m.position = Position.GRIPPING
@@ -130,11 +134,20 @@ def test_single_waza_ari_triggers_post_score_reset() -> None:
     # Match continues (single waza-ari).
     assert not m.match_over
     assert t.state.score["waza_ari"] == 1
-    # SCORE_RESET fired.
-    assert any(ev.event_type == "SCORE_RESET" for ev in events)
-    # Dyad is back in distant with no edges.
-    assert m.position == Position.STANDING_DISTANT
-    assert m.grip_graph.edge_count() == 0
+    # SCORE_RESET must NOT fire on the score tick — that's the HAJ-152
+    # contract. The follow-up window is open instead.
+    assert not any(ev.event_type == "SCORE_RESET" for ev in events)
+    assert any(
+        ev.event_type == "POST_SCORE_FOLLOW_UP_OPEN" for ev in events
+    )
+    assert m._post_score_follow_up is not None
+    assert m._post_score_follow_up["tori_name"] == t.identity.name
+    # POST_SCORE_DECISION queued for tick+1.
+    queued = [
+        c for c in m._consequence_queue
+        if c.kind == "POST_SCORE_DECISION" and c.due_tick == 30
+    ]
+    assert queued, "POST_SCORE_DECISION must be queued for tick+1"
 
 
 def test_two_waza_ari_ends_match_no_reset_event() -> None:
@@ -162,9 +175,12 @@ def test_two_waza_ari_ends_match_no_reset_event() -> None:
     assert not any(ev.event_type == "SCORE_RESET" for ev in events)
 
 
-def test_no_score_downgrade_triggers_reset() -> None:
-    """Even a NO_SCORE-downgraded landing put a fighter on the mat;
-    re-engagement must go through STANDING_DISTANT."""
+def test_no_score_downgrade_opens_forced_stand_follow_up() -> None:
+    """HAJ-152 — even a NO_SCORE-downgraded landing routes through the
+    follow-up window with `force_stand=True`. Chase decision is
+    skipped (no waza-ari to convert) but the explicit matte sequence
+    still fires before any reset, so the log carries the matte beat
+    even on downgraded landings."""
     import match as match_module
     t, s, m = _pair_match()
     m.position = Position.GRIPPING
@@ -187,9 +203,14 @@ def test_no_score_downgrade_triggers_reset() -> None:
     finally:
         match_module.resolve_throw = real_resolve
         m.referee.score_throw = real_score
-    assert any(ev.event_type == "SCORE_RESET" for ev in events)
-    assert m.position == Position.STANDING_DISTANT
-    assert m.grip_graph.edge_count() == 0
+    # No SCORE_RESET on the landing tick (HAJ-152 — every reset is
+    # preceded by an explicit matte from a deferred consequence).
+    assert not any(ev.event_type == "SCORE_RESET" for ev in events)
+    assert any(
+        ev.event_type == "POST_SCORE_FOLLOW_UP_OPEN" for ev in events
+    )
+    assert m._post_score_follow_up is not None
+    assert m._post_score_follow_up["force_stand"] is True
 
 
 # ---------------------------------------------------------------------------
