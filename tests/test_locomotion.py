@@ -141,7 +141,17 @@ def test_perception_std_pipeline_inherited() -> None:
 # STEP physics moves CoM with the foot (HAJ-128 semantics)
 # ---------------------------------------------------------------------------
 def test_step_action_advances_com_with_foot() -> None:
-    """STEP at magnitude m moves the foot by m and CoM by m/2."""
+    """STEP at magnitude m moves the foot by m × foot_speed_factor and
+    CoM by m × foot_speed_factor / 2.
+
+    HAJ-156 — the action selector's chosen base magnitude is scaled
+    by `effective_foot_speed_factor` at apply time. The legacy
+    contract (foot moves by m, CoM by m/2) still holds when the
+    fighter's effective factor is 1.0; this test pins the relationship
+    relative to the actual scaled magnitude so foot_speed scaling
+    can't silently drift the displacement.
+    """
+    from action_selection import effective_step_magnitude
     t, _ = _pair()
     t.state.body_state.com_position = (0.0, 0.0)
     t.state.body_state.foot_state_right.position = (0.05, 0.0)
@@ -149,11 +159,14 @@ def test_step_action_advances_com_with_foot() -> None:
     place_judoka(s, com_position=(2.0, 0.0), facing=(-1.0, 0.0))
     m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
     step_action = step("right_foot", (1.0, 0.0), 0.40)
+    expected_mag = effective_step_magnitude(t, 0.40)
     m._apply_body_actions(t, [step_action])
     fx, fy = t.state.body_state.foot_state_right.position
-    assert abs(fx - (0.05 + 0.40)) < 1e-6
+    assert abs(fx - (0.05 + expected_mag)) < 1e-6
     cx, cy = t.state.body_state.com_position
-    assert abs(cx - 0.20) < 1e-6, f"CoM should advance by mag/2 = 0.20; got {cx}"
+    assert abs(cx - expected_mag / 2.0) < 1e-6, (
+        f"CoM should advance by scaled_mag/2 = {expected_mag / 2:.4f}; got {cx}"
+    )
 
 
 def test_step_costs_cardio() -> None:

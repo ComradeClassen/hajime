@@ -204,6 +204,18 @@ STUFFED_AGGRESSOR_STUN_TICKS: int = 3
 # area now — OOB no longer needs the tighter 1.5 m stop-gap.
 MAT_HALF_WIDTH: float = 4.0
 
+# HAJ-156 — edge-zone bookkeeping. EDGE_ZONE_M is the buffer width
+# inside the contest boundary considered "near edge"; SAFE_ZONE_M is
+# the central area where the time_in_edge_zone counter resets.
+#
+# The push-out shido fires when a retreating fighter (last STEP with
+# tactical_intent=GIVE_GROUND) accumulates time_in_edge_zone past the
+# referee's `mat_edge_strictness` threshold. A pressing fighter who
+# shares the zone but was last advancing isn't penalised — the shido
+# follows non-combativity, not proximity.
+EDGE_ZONE_M: float = 0.75   # within this many meters of any boundary → "edge zone"
+SAFE_ZONE_M: float = 1.5    # outside this many meters of every boundary → counter resets
+
 
 def is_out_of_bounds(judoka: Judoka) -> bool:
     """HAJ-127 — True when the fighter's CoM is outside the contest area.
@@ -213,6 +225,85 @@ def is_out_of_bounds(judoka: Judoka) -> bool:
     """
     x, y = judoka.state.body_state.com_position
     return abs(x) > MAT_HALF_WIDTH or abs(y) > MAT_HALF_WIDTH
+
+
+def _distance_to_nearest_edge(com: tuple[float, float]) -> float:
+    """HAJ-156 — meters from the CoM to the nearest contest boundary.
+    Negative when the fighter is outside the boundary."""
+    x, y = com
+    return MAT_HALF_WIDTH - max(abs(x), abs(y))
+
+
+def _spatial_mismatch_penalty(
+    attacker: Judoka, defender: Judoka, td: "ThrowDef",
+) -> float:
+    """HAJ-156 — penalty applied to a throw's actual signature when
+    the spatial conditions don't match the throw's preferred entry
+    direction.
+
+    ADVANCING (forward-loading hip throws): tori needs forward room.
+    Pressed against the edge (within EDGE_ZONE_M and pointing at the
+    edge with no opponent space) → 0.15 penalty.
+
+    RETREATING_THEN_DRIVING (foot sweeps): tori needs to draw uke
+    forward. Uke pressed against the edge with no room to be drawn
+    further → 0.10 penalty.
+
+    ADVANCING_LATERAL (reaping throws): minor side-room penalty when
+    tori is in a corner (within EDGE_ZONE_M of two adjacent edges).
+
+    DROPPING (sacrifice throws): no penalty — the throw drops in
+    place; spatial conditions don't apply.
+    """
+    from throws import EntryDirection
+    direction = getattr(td, "entry_direction", EntryDirection.ADVANCING)
+    if direction == EntryDirection.DROPPING:
+        return 0.0
+    a_com = attacker.state.body_state.com_position
+    d_com = defender.state.body_state.com_position
+    a_edge = _distance_to_nearest_edge(a_com)
+    d_edge = _distance_to_nearest_edge(d_com)
+    if direction == EntryDirection.ADVANCING:
+        # Tori at the edge: no forward room to step in. The penalty
+        # bites when the attacker's edge proximity is small AND the
+        # opponent is on the centre side (not pinned against the
+        # opposite line where the attacker could still step in).
+        if a_edge <= EDGE_ZONE_M:
+            return 0.15
+        return 0.0
+    if direction == EntryDirection.RETREATING_THEN_DRIVING:
+        # Uke already at the line: nowhere to draw them forward.
+        if d_edge <= EDGE_ZONE_M:
+            return 0.10
+        return 0.0
+    if direction == EntryDirection.ADVANCING_LATERAL:
+        # Cornered tori loses lateral options. Detect by checking if
+        # both axes put tori in the edge zone (i.e. inside a corner).
+        ax, ay = a_com
+        if (MAT_HALF_WIDTH - abs(ax) <= EDGE_ZONE_M
+                and MAT_HALF_WIDTH - abs(ay) <= EDGE_ZONE_M):
+            return 0.10
+        return 0.0
+    return 0.0
+
+
+def _step_direction_sign(
+    com_before: tuple[float, float], com_after: tuple[float, float],
+) -> int:
+    """HAJ-156 — classify a step's direction relative to the mat
+    centre. Returns -1 if the step moved the fighter further from
+    centre (retreating), +1 if it brought them closer (advancing),
+    0 if the move was lateral / negligible."""
+    bx, by = com_before
+    ax, ay = com_after
+    before_dist = (bx * bx + by * by) ** 0.5
+    after_dist  = (ax * ax + ay * ay) ** 0.5
+    delta = after_dist - before_dist
+    if delta > 0.05:
+        return -1
+    if delta < -0.05:
+        return +1
+    return 0
 
 # Part 3 force-model calibration stubs. Phase 3 telemetry will tune these.
 JUDOKA_MASS_KG:           float = 80.0   # v0.1 uniform; Part 6 can pull from identity.
@@ -1197,8 +1288,8 @@ class Match:
         self._apply_physics_update(self.fighter_b, net_force_b)
 
         # Step 8 — BoS update (STEP/SWEEP_LEG are v0.1 stubs).
-        self._apply_body_actions(self.fighter_a, actions_a, tick=tick)
-        self._apply_body_actions(self.fighter_b, actions_b, tick=tick)
+        self._apply_body_actions(self.fighter_a, actions_a, tick=tick, events=events)
+        self._apply_body_actions(self.fighter_b, actions_b, tick=tick, events=events)
 
         # HAJ-133 — FOOT_ATTACK family emits KuzushiEvents into uke's
         # buffer (parallel to PULL emission inside _compute_net_force_on).
@@ -1343,6 +1434,15 @@ class Match:
                     score_str, self.osaekomi.holder_id, tick
                 )
                 events.extend(pin_events)
+
+        # HAJ-156 — push-out shido bookkeeping. Update each fighter's
+        # time_in_edge_zone counter against the current CoM position;
+        # when a retreating fighter accumulates enough time in the
+        # edge zone past the ref's `mat_edge_strictness` threshold,
+        # fire a non-combativity shido. Runs every tick (cheap),
+        # before the matte check so an OOB matte still wins priority.
+        if self.sub_loop_state == SubLoopState.STANDING and not self.match_over:
+            self._update_edge_zone_counters_and_shido(tick, events)
 
         # Referee: Matte?
         if not self.match_over:
@@ -2358,7 +2458,24 @@ class Match:
 
     def _apply_body_actions(
         self, judoka: Judoka, actions: list[Action], tick: int = 0,
+        events: Optional[list[Event]] = None,
     ) -> None:
+        """Apply STEP actions selected by the action ladder.
+
+        HAJ-156 additions on top of HAJ-128's existing CoM advancement:
+          - Step magnitude is scaled by the per-fighter `foot_speed`
+            (with leg-fatigue, age, and posture modifiers) so fast
+            fighters traverse the mat faster than slow ones.
+          - A `[move]` engine event fires for each STEP. The event
+            carries the tactical_intent label, the direction, the
+            magnitude, and the before/after CoM positions so prose,
+            viewer, and HAJ-149 perception can read what kind of step
+            it was.
+          - last_move_direction_sign is updated on the fighter's State
+            so the post-tick edge-zone check can identify who was
+            retreating when the push-out shido decision fires.
+        """
+        from action_selection import effective_step_magnitude
         for act in actions:
             if act.kind != ActionKind.STEP or act.foot is None or act.direction is None:
                 continue
@@ -2366,7 +2483,13 @@ class Match:
             foot = (bs.foot_state_right if act.foot == "right_foot"
                     else bs.foot_state_left)
             dx, dy = act.direction
-            mag = max(0.0, act.magnitude)
+            base_mag = max(0.0, act.magnitude)
+            # HAJ-156 — scale by effective foot-speed (foot_speed +
+            # leg-fatigue + age + stance modifiers). The action
+            # selector already chose the base magnitude (e.g.
+            # STEP_MAGNITUDE_M); this scales it so per-fighter speed
+            # finally has a per-tick consequence.
+            mag = effective_step_magnitude(judoka, base_mag)
             fx, fy = foot.position
             foot.position = (fx + dx * mag, fy + dy * mag)
             # HAJ-145 — emit a FEET-STEP body-part event. Direction carries
@@ -2382,12 +2505,48 @@ class Match:
             # is restored by the next step. CoM movement is what makes
             # locomotion visible and what drives OOB / mat positioning.
             cx, cy = bs.com_position
-            bs.com_position = (cx + dx * mag * 0.5, cy + dy * mag * 0.5)
+            new_com = (cx + dx * mag * 0.5, cy + dy * mag * 0.5)
+            bs.com_position = new_com
             # Small cardio cost: stepping spends fuel. Calibrated to be
             # noticeable across many ticks but not dominant.
             judoka.state.cardio_current = max(
                 0.0, judoka.state.cardio_current - STEP_CARDIO_COST
             )
+            # HAJ-156 — record the step's direction sign so the post-tick
+            # edge-zone check knows which fighter was retreating when both
+            # land in the edge zone simultaneously. Sign is computed
+            # against the line-from-origin: a step away from center is
+            # GIVE_GROUND-class (-1); a step toward center / opponent is
+            # PRESSURE-class (+1). Lateral steps register as 0.
+            judoka.state.last_move_direction_sign = _step_direction_sign(
+                (cx, cy), new_com,
+            )
+            # HAJ-156 — emit a MOVE engine event. Surfaces the
+            # tactical intent and the position delta so prose,
+            # viewer, and the HAJ-149 perception layer can read what
+            # the fighter just did spatially. Marked prose_silent
+            # because v0.1 narration doesn't yet promote MOVE events;
+            # the engineering stream still shows them.
+            if events is not None:
+                events.append(Event(
+                    tick=tick,
+                    event_type="MOVE",
+                    description=(
+                        f"[move] {judoka.identity.name} → "
+                        f"{act.tactical_intent or 'step'} "
+                        f"({mag:.2f} m, dir=({dx:+.2f}, {dy:+.2f}))."
+                    ),
+                    data={
+                        "fighter":         judoka.identity.name,
+                        "tactical_intent": act.tactical_intent,
+                        "direction":       (dx, dy),
+                        "magnitude":       mag,
+                        "base_magnitude":  base_mag,
+                        "com_before":      (cx, cy),
+                        "com_after":       new_com,
+                        "prose_silent":    True,
+                    },
+                ))
 
     # -----------------------------------------------------------------------
     # STEP 9 — KUZUSHI CHECK
@@ -2488,6 +2647,20 @@ class Match:
 
         actual = actual_signature_match(throw_id, attacker, defender, self.grip_graph,
                                         current_tick=tick)
+        # HAJ-156 — spatial-mismatch kuzushi penalty. An ADVANCING
+        # throw fired with tori pinned against the edge (no forward
+        # room) loses signature quality; same for a
+        # RETREATING_THEN_DRIVING throw with the opponent already at
+        # the line and unable to be drawn forward. SACRIFICE / lateral
+        # entries are spatially flexible and incur no penalty.
+        td_for_entry = THROW_DEFS.get(throw_id)
+        spatial_penalty = 0.0
+        if td_for_entry is not None:
+            spatial_penalty = _spatial_mismatch_penalty(
+                attacker, defender, td_for_entry,
+            )
+            if spatial_penalty > 0.0:
+                actual = max(0.0, actual - spatial_penalty)
         commit_threshold = commit_threshold_for(throw_id)
         eq = compute_execution_quality(actual, commit_threshold)
         n = compression_n_for(attacker, throw_id)
@@ -4634,6 +4807,87 @@ class Match:
                                    else self.fighter_a)
                 self.win_method = "hansoku-make"
                 self.match_over = True
+
+    def _update_edge_zone_counters_and_shido(
+        self, tick: int, events: list[Event],
+    ) -> None:
+        """HAJ-156 push-out shido bookkeeping.
+
+        For each fighter:
+          - If they're inside the edge zone (within EDGE_ZONE_M of any
+            boundary), increment time_in_edge_zone and stash the entry
+            tick for the "who got there first" tie-break.
+          - If they're back in the safe zone (>SAFE_ZONE_M from every
+            boundary), reset the counter and entry-tick.
+          - Otherwise (in the no-man's-land between EDGE_ZONE_M and
+            SAFE_ZONE_M), hold the counter steady — neither retreating
+            into edge nor recovering to centre.
+
+        Shido fires when a fighter's time_in_edge_zone exceeds the
+        ref's `_PUSH_OUT_SHIDO_TICKS` threshold AND that fighter's
+        last STEP was retreating-class. The shido goes to the
+        retreating fighter, not the pressing one — IJF non-combativity
+        rule: backing yourself toward the boundary is the punished
+        behaviour, not pressuring someone else there.
+        """
+        for fighter in (self.fighter_a, self.fighter_b):
+            com = fighter.state.body_state.com_position
+            edge_dist = _distance_to_nearest_edge(com)
+            if edge_dist <= EDGE_ZONE_M:
+                # Inside the edge zone. First entry stamps the tick;
+                # subsequent ticks accumulate the counter.
+                if fighter.state.edge_zone_entry_tick < 0:
+                    fighter.state.edge_zone_entry_tick = tick
+                fighter.state.time_in_edge_zone += 1
+            elif edge_dist >= SAFE_ZONE_M:
+                # Back in the safe central area — reset.
+                fighter.state.time_in_edge_zone = 0
+                fighter.state.edge_zone_entry_tick = -1
+            # Else: between EDGE_ZONE_M and SAFE_ZONE_M; hold counter.
+
+        # Decide the shido. Walk both fighters; emit at most one shido
+        # per tick (the retreating fighter at threshold). When both
+        # fighters are at threshold simultaneously, the earlier-
+        # arriving fighter eats it — they were the one being driven.
+        threshold = self.referee._PUSH_OUT_SHIDO_TICKS
+        candidates = [
+            f for f in (self.fighter_a, self.fighter_b)
+            if f.state.time_in_edge_zone >= threshold
+            and f.state.last_move_direction_sign < 0
+        ]
+        if not candidates:
+            return
+        # Pick the earliest entrant.
+        candidates.sort(key=lambda f: f.state.edge_zone_entry_tick)
+        retreater = candidates[0]
+        # Emit the shido through the same path the existing passivity
+        # code uses so accumulation toward hansoku-make is consistent.
+        retreater.state.shidos += 1
+        events.append(Event(
+            tick=tick,
+            event_type="SHIDO_AWARDED",
+            description=(
+                f"[ref: {self.referee.name}] Shido — "
+                f"{retreater.identity.name} (push-out / non-combativity at edge). "
+                f"Total: {retreater.state.shidos}."
+            ),
+            data={
+                "fighter": retreater.identity.name,
+                "reason":  "push_out",
+                "time_in_edge_zone": retreater.state.time_in_edge_zone,
+            },
+        ))
+        # Reset the counter so the same fighter doesn't draw a second
+        # shido on the very next tick — they get one shido per
+        # sustained edge stay; if they don't move out and back in,
+        # the counter is back at zero now anyway.
+        retreater.state.time_in_edge_zone = 0
+        retreater.state.edge_zone_entry_tick = -1
+        if retreater.state.shidos >= 3:
+            self.winner     = (self.fighter_b if retreater is self.fighter_a
+                               else self.fighter_a)
+            self.win_method = "hansoku-make"
+            self.match_over = True
 
     def _update_passivity(self, tick: int, events: list[Event]) -> None:
         # "Active" = fighter attempted a throw within the last 30 ticks

@@ -17,6 +17,8 @@ from actions import (
     reach, deepen, strip, release, pull, push, hold_connective, step, commit_throw,
     block_hip,
     foot_sweep_setup, leg_attack_setup, disruptive_step,
+    TACTICAL_INTENT_PRESSURE, TACTICAL_INTENT_GIVE_GROUND,
+    TACTICAL_INTENT_CIRCLE, TACTICAL_INTENT_HOLD_CENTER,
 )
 from enums import (
     GripTypeV2, GripDepth, GripTarget, GripMode, DominantSide, StanceMatchup,
@@ -876,6 +878,67 @@ def _free_hand(judoka: "Judoka") -> Optional[str]:
 STEP_MAGNITUDE_M:           float = 0.30
 STEP_MAGNITUDE_REDUCED_M:   float = 0.14   # under heavy opponent grips
 
+
+# HAJ-156 — per-fighter effective foot-speed scaler. The action ladder
+# picks a base magnitude (STEP_MAGNITUDE_M / STEP_MAGNITUDE_REDUCED_M
+# / GRIP_WAR_EVASION_MAG_M); this scales it by the fighter's
+# `foot_speed` attribute and the leg-fatigue / age / posture modifiers
+# the spec calls for. The output is the magnitude actually applied
+# to the foot + CoM on this tick.
+def effective_foot_speed_factor(judoka: "Judoka") -> float:
+    """0.4–1.4 multiplier on the action selector's base step magnitude.
+
+    foot_speed=5 (the default) yields ~1.0 (no change). foot_speed=9 →
+    ~1.3, foot_speed=2 → ~0.55. Modulators:
+      - leg_fatigue_modifier: average leg fatigue eats up to half the
+        speed when both legs are exhausted.
+      - age_modifier: identity-driven; peaks 22–24, declines after 30.
+      - stance_modifier: small reduction when bent / kuzushi-shaped,
+        small bonus when upright.
+    """
+    cap = judoka.capability
+    foot_speed = max(0, min(10, int(getattr(cap, "foot_speed", 5))))
+    # Map 0..10 → 0.4..1.4 linearly. foot_speed=5 → 0.9; the leg-
+    # fatigue / age / stance modifiers below carry the rest of the
+    # variance, so a fresh foot_speed=5 fighter still steps at ~1.0
+    # of the base magnitude.
+    base = 0.4 + foot_speed * 0.10
+    body = judoka.state.body
+    leg_fat = 0.5 * (
+        body["right_leg"].fatigue + body["left_leg"].fatigue
+    ) if "right_leg" in body and "left_leg" in body else 0.0
+    leg_modifier = max(0.5, 1.0 - 0.5 * leg_fat)
+    age = getattr(judoka.identity, "age", 26)
+    if age <= 22:
+        age_modifier = 1.0
+    elif age <= 30:
+        age_modifier = 1.0 - (age - 22) * 0.01
+    else:
+        age_modifier = max(0.7, 0.92 - (age - 30) * 0.012)
+    bs = judoka.state.body_state
+    bend = abs(bs.trunk_sagittal) + abs(bs.trunk_frontal)
+    if bend < 0.05:
+        stance_modifier = 1.05
+    elif bend < 0.20:
+        stance_modifier = 1.0
+    else:
+        stance_modifier = max(0.7, 1.0 - bend * 0.5)
+    factor = base * leg_modifier * age_modifier * stance_modifier
+    # The base STEP_MAGNITUDE_M (0.30 m) was calibrated for a
+    # neutral fighter pre-HAJ-156, so a factor of 1.0 should reproduce
+    # the legacy magnitude. Apply a normalising fudge so foot_speed=5
+    # + leg_fat=0 + age=26 lands almost exactly at 1.0.
+    return factor / 0.9
+
+
+def effective_step_magnitude(
+    judoka: "Judoka", base_magnitude: float,
+) -> float:
+    """Apply the foot-speed scaler to a base STEP magnitude. Floored
+    at zero so a thoroughly cooked / panicked fighter still nudges
+    forward instead of producing a negative-distance step."""
+    return max(0.0, base_magnitude * effective_foot_speed_factor(judoka))
+
 # How frequently each style attempts a step (per-tick probability gates).
 PRESSURE_BASE_STEP_PROB:    float = 0.55   # PRESSURE keeps the heat on
 PRESSURE_RAMP_PROB_PER_M:   float = 0.10   # extra prob per meter opp is from edge
@@ -919,18 +982,26 @@ def _trailing_step_foot(
     return "left_foot" if left_proj < right_proj else "right_foot"
 
 
-def _step_action(judoka: "Judoka", direction: tuple[float, float],
-                 magnitude: float) -> Optional[Action]:
+def _step_action(
+    judoka: "Judoka", direction: tuple[float, float],
+    magnitude: float,
+    *, tactical_intent: Optional[str] = None,
+) -> Optional[Action]:
     """Build a STEP action in `direction` of `magnitude`, picking the
     trailing foot for the chosen direction so the pair walks naturally
-    instead of abandoning the off-side foot."""
+    instead of abandoning the off-side foot.
+
+    HAJ-156 — accepts a `tactical_intent` string so the engine event
+    log, viewer state pill, and HAJ-149 perception layer can read what
+    kind of step the fighter took on this tick.
+    """
     nx, ny = direction
     norm = (nx * nx + ny * ny) ** 0.5
     if norm == 0:
         return None
     unit = (nx / norm, ny / norm)
     foot = _trailing_step_foot(judoka, unit)
-    return step(foot, unit, magnitude)
+    return step(foot, unit, magnitude, tactical_intent=tactical_intent)
 
 
 # Grip-war evasion: every fighter, regardless of positional style,
@@ -973,7 +1044,10 @@ def _maybe_emit_step(
     if own_edges and opp_edges and rng.random() < GRIP_WAR_EVASION_PROB:
         evade = _grip_war_evasion_direction(judoka, opponent, rng)
         if evade is not None:
-            return _step_action(judoka, evade, GRIP_WAR_EVASION_MAG_M)
+            return _step_action(
+                judoka, evade, GRIP_WAR_EVASION_MAG_M,
+                tactical_intent=TACTICAL_INTENT_CIRCLE,
+            )
 
     if style == PositionalStyle.HOLD_CENTER:
         # Only step toward center when the fighter has drifted noticeably.
@@ -982,7 +1056,10 @@ def _maybe_emit_step(
             return None
         if rng.random() > HOLD_CENTER_STEP_PROB:
             return None
-        return _step_action(judoka, (-x, -y), mag)
+        return _step_action(
+            judoka, (-x, -y), mag,
+            tactical_intent=TACTICAL_INTENT_HOLD_CENTER,
+        )
 
     if style == PositionalStyle.DEFENSIVE_EDGE:
         # Retreat toward center when own perceived edge is close.
@@ -994,7 +1071,13 @@ def _maybe_emit_step(
         x, y = judoka.state.body_state.com_position
         if abs(x) < 1e-6 and abs(y) < 1e-6:
             return None
-        return _step_action(judoka, (-x, -y), mag)
+        # The "retreat to center" step is itself a give-ground move
+        # from the edge perspective — surface the intent so push-out
+        # shido bookkeeping can read it.
+        return _step_action(
+            judoka, (-x, -y), mag,
+            tactical_intent=TACTICAL_INTENT_GIVE_GROUND,
+        )
 
     if style == PositionalStyle.PRESSURE:
         # Drive opponent toward the edge by stepping into them. Probability
@@ -1005,7 +1088,10 @@ def _maybe_emit_step(
         prob = min(0.95, PRESSURE_BASE_STEP_PROB + proximity_term)
         if rng.random() > prob:
             return None
-        return _step_action(judoka, _pressure_direction(judoka, opponent, rng), mag)
+        return _step_action(
+            judoka, _pressure_direction(judoka, opponent, rng), mag,
+            tactical_intent=TACTICAL_INTENT_PRESSURE,
+        )
 
     return None
 

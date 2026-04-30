@@ -165,6 +165,13 @@ class Capability:
     fight_iq: int
     ne_waza_skill: int
 
+    # --- FOOTWORK (HAJ-156) ---
+    # 0–10 scale. Drives the per-tick mat traversal speed. Default 5
+    # represents an average judoka; elite footwork sweeps and reaping
+    # specialists run 7–9. Effective per-tick speed degrades with leg
+    # fatigue, age, and broken posture (see action_selection.effective_foot_speed_m).
+    foot_speed: int = 5
+
     # --- THROW VOCABULARY ---
     throw_vocabulary: list[ThrowID] = field(default_factory=list)
     throw_profiles: dict[ThrowID, JudokaThrowProfile] = field(default_factory=dict)
@@ -243,6 +250,24 @@ class State:
     score: dict = field(default_factory=lambda: {"waza_ari": 0, "ippon": False})
     shidos: int = 0
 
+    # --- HAJ-156 — push-out shido tracking ---
+    # Counter accumulating ticks the fighter has spent inside the edge
+    # zone (within EDGE_ZONE_M of the contest boundary). Resets when the
+    # fighter returns to the central area (>SAFE_ZONE_M from any edge).
+    # The referee consults this against `mat_edge_strictness` to decide
+    # whether to call non-combativity / push-out shido on the retreating
+    # fighter.
+    time_in_edge_zone: int = 0
+    # Last STEP direction sign (-1 retreating, 0 neutral / lateral, +1
+    # advancing). The push-out check reads this to decide which fighter
+    # is "the retreating one" when both end up in the edge zone.
+    last_move_direction_sign: int = 0
+    # Tick the fighter most recently entered the edge zone — used to
+    # break the "who got there first" tie when both fighters share the
+    # zone, preserving the IJF rule that the earlier-arriving retreater
+    # eats the shido.
+    edge_zone_entry_tick: int = -1
+
     # --- INSTRUCTION TRACKING ---
     recent_events: list = field(default_factory=list)
     current_instruction: str = ""
@@ -299,6 +324,9 @@ class State:
             stun_ticks=0,
             score={"waza_ari": 0, "ippon": False},
             shidos=0,
+            time_in_edge_zone=0,
+            last_move_direction_sign=0,
+            edge_zone_entry_tick=-1,
             recent_events=[],
             current_instruction="",
             instruction_received_strength=0.0,

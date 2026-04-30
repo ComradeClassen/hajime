@@ -115,6 +115,7 @@ class Referee:
         grip_initiative_strictness: float = 0.5,
         ippon_strictness: float = 0.5,
         waza_ari_strictness: float = 0.5,
+        mat_edge_strictness: float = 0.5,
     ) -> None:
         self.name = name
         self.nationality = nationality
@@ -142,6 +143,12 @@ class Referee:
         # waza_ari_strictness: how clean for WAZA_ARI vs NO_SCORE
         self.waza_ari_strictness = waza_ari_strictness
 
+        # HAJ-156 — mat_edge_strictness: how quickly the ref calls
+        # non-combativity / push-out shido on a fighter who's been
+        # driven to (or backed themselves into) the edge zone.
+        # High = strict (8 ticks); Low = generous (15 ticks).
+        self.mat_edge_strictness = mat_edge_strictness
+
         # --- Internal state ---
         self._cumulative_passive_ticks: dict[str, int] = {}
         self._last_attack_tick: dict[str, int] = {}
@@ -151,6 +158,10 @@ class Referee:
         self._STUFFED_MATTE_TICKS     = int(8  - stuffed_throw_tolerance * 6)  # 2–8 ticks
         self._NEWAZA_MATTE_TICKS      = int(30 + newaza_patience * 30)      # 30–60 ticks
         self._PASSIVITY_SHIDO_TICKS   = int(120 - grip_initiative_strictness * 60)  # 60–120 ticks
+        # HAJ-156 — push-out shido threshold in ticks. Strict ref
+        # (mat_edge_strictness=1.0) shidos at 8 ticks; generous ref
+        # (mat_edge_strictness=0.0) at 15.
+        self._PUSH_OUT_SHIDO_TICKS    = int(15 - mat_edge_strictness * 7)
 
     # -----------------------------------------------------------------------
     # SHOULD CALL MATTE

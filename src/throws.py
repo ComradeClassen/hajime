@@ -23,6 +23,21 @@ from enums import (
 
 
 # ---------------------------------------------------------------------------
+# ENTRY DIRECTION (HAJ-156)
+# Spatial direction tori needs to step in to commit a throw. Reading
+# this against the available mat space lets the engine penalise
+# "throws fired into a wall" — an ADVANCING hip throw committed when
+# tori is pinned against the edge with no room to step in produces
+# reduced kuzushi quality.
+# ---------------------------------------------------------------------------
+class EntryDirection(Enum):
+    ADVANCING                = auto()  # Tori steps in toward uke.
+    RETREATING_THEN_DRIVING  = auto()  # Two-phase: draw uke forward, then sweep.
+    ADVANCING_LATERAL        = auto()  # Step to the side and reap.
+    DROPPING                 = auto()  # Drop in place (sacrifice throws).
+
+
+# ---------------------------------------------------------------------------
 # THROW IDs — unchanged from Phase 1
 # ---------------------------------------------------------------------------
 class ThrowID(Enum):
@@ -142,6 +157,13 @@ class ThrowDef:
     # chase_decision.make_chase_decision; default 0.5 keeps legacy
     # throws on a neutral chase footing.
     post_score_chase_advantage: float = 0.5
+    # HAJ-156 — preferred entry direction. Read at commit time against
+    # the available mat space; firing an ADVANCING throw with tori
+    # pressed against the edge (no forward room) reduces signature
+    # quality by the spatial-mismatch penalty. Default is ADVANCING
+    # because most legacy throws are forward-loading; the SACRIFICE
+    # / lateral / two-phase paths set their own values.
+    entry_direction: EntryDirection = EntryDirection.ADVANCING
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +392,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         # HAJ-152 — reaping throw; tori in good standing position over
         # uke for a clean ne-waza transition.
         post_score_chase_advantage=0.75,
+        # HAJ-156 — outside reap steps to the side and reaps.
+        entry_direction=EntryDirection.ADVANCING_LATERAL,
     ),
 
     ThrowID.O_UCHI_GARI: ThrowDef(
@@ -392,6 +416,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         # HAJ-152 — reaping throw; uke lands on side, tori upright and
         # close. Strong chase advantage.
         post_score_chase_advantage=0.7,
+        # HAJ-156 — inside reap steps to the side and reaps.
+        entry_direction=EntryDirection.ADVANCING_LATERAL,
     ),
 
     ThrowID.KO_UCHI_GARI: ThrowDef(
@@ -414,6 +440,9 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         # HAJ-152 — forward foot sweep; uke lands on side, tori upright
         # and can step over.
         post_score_chase_advantage=0.6,
+        # HAJ-156 — backward kuzushi setup: draw uke forward, then sweep
+        # the foot. Two-phase entry.
+        entry_direction=EntryDirection.RETREATING_THEN_DRIVING,
     ),
 
     ThrowID.HARAI_GOSHI: ThrowDef(
@@ -495,6 +524,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         # score. Low forward-chase advantage; chase_decision routes the
         # SACRIFICE landing profile to the defensive-chase path instead.
         post_score_chase_advantage=0.4,
+        # HAJ-156 — sacrifice throw drops in place; no edge penalty.
+        entry_direction=EntryDirection.DROPPING,
     ),
 
     ThrowID.DE_ASHI_HARAI: ThrowDef(
@@ -516,6 +547,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         requires_both_hands=False,        # Timing-window sweep; sleeve grip sufficient
         # HAJ-152 — forward foot sweep; uke on side, tori upright.
         post_score_chase_advantage=0.6,
+        # HAJ-156 — backward kuzushi setup mirrors KO_UCHI_GARI.
+        entry_direction=EntryDirection.RETREATING_THEN_DRIVING,
     ),
 
     ThrowID.O_GOSHI: ThrowDef(
@@ -594,6 +627,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         # HAJ-152 — sacrifice throw; tori on bottom after the score.
         # Routes to defensive-chase path via SACRIFICE landing profile.
         post_score_chase_advantage=0.4,
+        # HAJ-156 — sacrifice throw drops in place.
+        entry_direction=EntryDirection.DROPPING,
     ),
 
     ThrowID.O_GURUMA: ThrowDef(

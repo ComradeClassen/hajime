@@ -161,6 +161,14 @@ class Action:
     # `intentional_false_attack: bool` (the legacy flag collapses to
     # `commit_motivation == CommitMotivation.CLOCK_RESET`).
     commit_motivation: Optional["CommitMotivation"] = None
+    # HAJ-156 — tactical / strategic intent attached to STEP actions.
+    # One of the TACTICAL_INTENT_* constants. The action selector
+    # classifies the chosen step's intent (PRESSURE / GIVE_GROUND /
+    # CIRCLE / HOLD_CENTER), and the new strategic-intent layer can tag
+    # GAIN_ANGLE / RUN_CLOCK / CATCH_BREATH / BAIT / CATCH_MOMENT.
+    # Surfaced on the MOVE engine event so prose / viewer / HAJ-149
+    # perception can read what kind of step it was.
+    tactical_intent: Optional[str] = None
 
     @property
     def intentional_false_attack(self) -> bool:
@@ -203,9 +211,54 @@ def feint(hand: str, direction: Tuple[float, float], magnitude: float) -> Action
     return Action(kind=ActionKind.FEINT, hand=hand,
                   direction=direction, magnitude=magnitude, is_feint=True)
 
-def step(foot: str, direction: Tuple[float, float], magnitude: float) -> Action:
+def step(
+    foot: str, direction: Tuple[float, float], magnitude: float,
+    *, tactical_intent: Optional[str] = None,
+) -> Action:
     return Action(kind=ActionKind.STEP, foot=foot,
-                  direction=direction, magnitude=magnitude)
+                  direction=direction, magnitude=magnitude,
+                  tactical_intent=tactical_intent)
+
+
+# ---------------------------------------------------------------------------
+# HAJ-156 — TACTICAL & STRATEGIC MOVEMENT INTENTS
+# ---------------------------------------------------------------------------
+# Tactical intents classify what kind of step the fighter is taking.
+# Layered on top of HAJ-128's PositionalStyle (HOLD_CENTER / PRESSURE /
+# DEFENSIVE_EDGE) which is a fighter-level disposition — the per-tick
+# step also carries one of these intents so the engine event log,
+# prose narration, and HAJ-149 perception layer can all see the kind
+# of step that was taken on this specific tick.
+#
+# Edge-relative tactical intents (extend HAJ-128's three styles):
+TACTICAL_INTENT_PRESSURE     = "pressure"        # advance into opponent
+TACTICAL_INTENT_GIVE_GROUND  = "give_ground"     # retreat
+TACTICAL_INTENT_CIRCLE       = "circle"          # lateral angle-finding
+TACTICAL_INTENT_HOLD_CENTER  = "hold_center"     # anchor / re-center
+
+# Strategic intents — additive, not edge-driven (per HAJ-156 review
+# comment). Composable with the tactical intents above; a step may be
+# `circle` tactically AND `gain_angle` strategically. v0.1 surfaces
+# them as the per-step intent label; the perception / counter layer is
+# follow-up work.
+TACTICAL_INTENT_GAIN_ANGLE   = "gain_angle"      # lateral for attack line
+TACTICAL_INTENT_RUN_CLOCK    = "run_clock"       # leading + late match
+TACTICAL_INTENT_CATCH_MOMENT = "catch_moment"    # close on a posture break
+TACTICAL_INTENT_BAIT         = "bait"            # expose to draw attack
+TACTICAL_INTENT_CATCH_BREATH = "catch_breath"    # cardio-recovery shuffle
+
+# Set of all known intents. Used by tests and the viewer state pill.
+TACTICAL_INTENTS = frozenset({
+    TACTICAL_INTENT_PRESSURE,
+    TACTICAL_INTENT_GIVE_GROUND,
+    TACTICAL_INTENT_CIRCLE,
+    TACTICAL_INTENT_HOLD_CENTER,
+    TACTICAL_INTENT_GAIN_ANGLE,
+    TACTICAL_INTENT_RUN_CLOCK,
+    TACTICAL_INTENT_CATCH_MOMENT,
+    TACTICAL_INTENT_BAIT,
+    TACTICAL_INTENT_CATCH_BREATH,
+})
 
 
 # HAJ-133 — FOOT_ATTACK family constructors. Each takes the attacking
