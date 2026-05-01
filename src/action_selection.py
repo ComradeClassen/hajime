@@ -213,7 +213,11 @@ def select_actions(
     actions = _apply_plan_layer(
         judoka, opponent, graph, kumi_kata_clock, r, actions, current_tick,
     )
-    step_action = _maybe_emit_step(judoka, opponent, graph, r)
+    step_action = _maybe_emit_step(
+        judoka, opponent, graph, r,
+        current_tick=current_tick,
+        opponent_in_progress_throw=opponent_in_progress_throw,
+    )
     if step_action is not None:
         actions = list(actions) + [step_action]
     return actions
@@ -1280,15 +1284,90 @@ def _step_action(
 # circles laterally during active grip exchanges. Real judo: grip
 # fighting is constant lateral motion — angling, breaking line, evading
 # the next reach. Without this, fighters who aren't PRESSURE-styled
-# stand still while throws fire on top of them. Probability is modest
-# so style-driven motion still dominates when it fires.
-GRIP_WAR_EVASION_PROB:      float = 0.30
+# stand still while throws fire on top of them.
+#
+# HAJ-164 — engagement-phase frequency calibration. Pre-fix, the
+# 0.30 base probability paired with HOLD_CENTER fighters who only
+# stepped when drifted past 0.6 m yielded ~1 [move] event per 22
+# engaged ticks (Renard vs Sato playthrough). Real grip-fighting
+# between elite judoka produces footwork roughly every 2–3 seconds;
+# at ~1 sec/tick the engaged window should emit STEP every 2–3 ticks
+# per fighter. Fix is two-piece: lift the base probability for
+# low-stakes engaged ticks, and suppress to a near-zero floor on
+# high-stakes ticks (opponent mid-throw, or judoka actively staging
+# their own multi-tick plan) so footwork doesn't interrupt sequences.
 GRIP_WAR_EVASION_MAG_M:     float = 0.18
+ENGAGED_STEP_PROB_LOW_STAKES:    float = 0.45
+ENGAGED_STEP_PROB_HIGH_STAKES:   float = 0.05
+# Probability that an engaged step takes its style-primary intent label
+# (PRESSURE / GIVE_GROUND / CIRCLE) versus its secondary (CIRCLE for
+# directional styles, HOLD_CENTER for HOLD_CENTER). Tuned so each style
+# still emits some CIRCLE for visible angle-finding without losing the
+# style-distinctive bias.
+ENGAGED_STEP_INTENT_PRIMARY_PROB: float = 0.70
+
+# Backwards-compat: tests / external callers still reference
+# GRIP_WAR_EVASION_PROB. After HAJ-164 it tracks the low-stakes prob.
+GRIP_WAR_EVASION_PROB:      float = ENGAGED_STEP_PROB_LOW_STAKES
+
+
+def _is_engaged_high_stakes(
+    judoka: "Judoka",
+    opponent: "Judoka",
+    current_tick: int,
+    opponent_in_progress_throw: Optional[ThrowID],
+) -> bool:
+    """HAJ-164 — true when the engaged tick is mid-sequence and footwork
+    should be suppressed.
+
+    Two signals are reliable; each routine PULL/DEEPEN tick already opens
+    a vulnerability window and emits a kuzushi event, so those are too
+    noisy to use as high-stakes proxies. The reliable signals:
+
+      - `opponent_in_progress_throw` is set — opponent is mid-throw and
+        judoka is the defender; a footwork tangent now is a step away
+        from the resolution window.
+      - judoka's own multi-tick plan is past stage 0 — the fighter is
+        actively staging a combo and inserting footwork would break the
+        sequence's tick-locking that produces emergent throws.
+    """
+    if opponent_in_progress_throw is not None:
+        return True
+    plan = getattr(judoka, "current_plan", None)
+    if plan is not None and getattr(plan, "step_index", 0) > 0:
+        return True
+    return False
+
+
+# Style → (primary, secondary) intent labels for an engaged step. The
+# direction-of-step (forward/back/lateral) is computed by
+# `_grip_war_evasion_direction`, which already applies a style-keyed
+# forward bias; the label here makes the MOVE event mix readable in
+# logs / viewer / narration so a PRESSURE fighter shows visibly more
+# PRESSURE-tagged steps than a DEFENSIVE_EDGE fighter.
+_ENGAGED_STEP_INTENT_BY_STYLE: dict = {
+    PositionalStyle.PRESSURE:       (TACTICAL_INTENT_PRESSURE,    TACTICAL_INTENT_CIRCLE),
+    PositionalStyle.DEFENSIVE_EDGE: (TACTICAL_INTENT_GIVE_GROUND, TACTICAL_INTENT_CIRCLE),
+    PositionalStyle.HOLD_CENTER:    (TACTICAL_INTENT_CIRCLE,      TACTICAL_INTENT_HOLD_CENTER),
+}
+
+
+def _engaged_step_intent(
+    style: PositionalStyle, rng: random.Random,
+) -> str:
+    primary, secondary = _ENGAGED_STEP_INTENT_BY_STYLE.get(
+        style, (TACTICAL_INTENT_CIRCLE, TACTICAL_INTENT_HOLD_CENTER),
+    )
+    if rng.random() < ENGAGED_STEP_INTENT_PRIMARY_PROB:
+        return primary
+    return secondary
 
 
 def _maybe_emit_step(
     judoka: "Judoka", opponent: "Judoka", graph: "GripGraph",
     rng: random.Random,
+    current_tick: int = 0,
+    opponent_in_progress_throw: Optional[ThrowID] = None,
 ) -> Optional[Action]:
     """Decide whether to emit a STEP action this tick based on the
     fighter's positional style. Returns the Action or None.
@@ -1306,20 +1385,29 @@ def _maybe_emit_step(
     mag = (STEP_MAGNITUDE_REDUCED_M if _opponent_grip_drag(judoka, graph)
            else STEP_MAGNITUDE_M)
 
-    # HAJ-128 — grip-war evasion. When both fighters have edges (active
-    # grip war), every fighter takes occasional small lateral steps to
-    # angle / break line. Fires before the style-specific intent so the
-    # constant tactical motion is visible on the viewer regardless of
-    # whether the style is PRESSURE.
+    # HAJ-128 / HAJ-164 — engagement-phase step. When both fighters
+    # have edges (active grip war), fire a tactical step probabilistically
+    # so constant footwork is visible regardless of style. The probability
+    # is high during low-stakes ticks and suppressed during high-stakes
+    # ticks (recent kuzushi event, vulnerability window, or opponent
+    # mid-throw) so the selector doesn't insert footwork tangents into
+    # throw sequences.
     own_edges = graph.edges_owned_by(judoka.identity.name)
     opp_edges = graph.edges_owned_by(opponent.identity.name)
-    if own_edges and opp_edges and rng.random() < GRIP_WAR_EVASION_PROB:
-        evade = _grip_war_evasion_direction(judoka, opponent, rng)
-        if evade is not None:
-            return _step_action(
-                judoka, evade, GRIP_WAR_EVASION_MAG_M,
-                tactical_intent=TACTICAL_INTENT_CIRCLE,
-            )
+    if own_edges and opp_edges:
+        high_stakes = _is_engaged_high_stakes(
+            judoka, opponent, current_tick, opponent_in_progress_throw,
+        )
+        prob = (ENGAGED_STEP_PROB_HIGH_STAKES if high_stakes
+                else ENGAGED_STEP_PROB_LOW_STAKES)
+        if rng.random() < prob:
+            evade = _grip_war_evasion_direction(judoka, opponent, rng)
+            if evade is not None:
+                intent = _engaged_step_intent(style, rng)
+                return _step_action(
+                    judoka, evade, GRIP_WAR_EVASION_MAG_M,
+                    tactical_intent=intent,
+                )
 
     if style == PositionalStyle.HOLD_CENTER:
         # Only step toward center when the fighter has drifted noticeably.
