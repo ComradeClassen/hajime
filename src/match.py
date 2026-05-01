@@ -5097,20 +5097,41 @@ class Match:
         ))
 
     def _check_regulation_end(self, tick: int, events: list[Event]) -> None:
-        """HAJ-93 — at the regulation boundary, route the match into
-        golden score (if waza-ari counts are tied) or resolve by decision
-        (if unequal). Called once from `_post_tick` when
-        `tick >= regulation_ticks` and the match is still live.
+        """HAJ-95 + HAJ-93 — at the regulation boundary, emit a single
+        `TIME_EXPIRED` event (HAJ-95) and route the match into golden
+        score (if waza-ari counts are tied) or resolve by decision (if
+        unequal — HAJ-93 / HAJ-68 paths 3, 4). Called once from
+        `_post_tick` when `tick >= regulation_ticks` and the match is
+        still live.
 
         Tie includes 0-0: per IJF rules, a scoreless regulation enters
         golden score, not a draw. Decision uses waza-ari counts only;
         ippon at this point would already have ended the match earlier.
+        TIME_EXPIRED fires before either branch so coach-stream readers
+        always see the regulation-end beat as its own visible line.
         """
         if self.match_over or self.golden_score:
             return
         a, b = self.fighter_a, self.fighter_b
         a_wa = a.state.score["waza_ari"]
         b_wa = b.state.score["waza_ari"]
+        # HAJ-95 — single regulation-end beat. Both downstream paths
+        # (decision, golden-score transition) follow this; consumers can
+        # latch off TIME_EXPIRED to know the regulation clock has
+        # stopped.
+        events.append(Event(
+            tick=tick,
+            event_type="TIME_EXPIRED",
+            description=(
+                f"[ref: {self.referee.name}] Time! Regulation expires "
+                f"at {a_wa}-{b_wa}."
+            ),
+            data={
+                "tick":       tick,
+                "a_waza_ari": a_wa,
+                "b_waza_ari": b_wa,
+            },
+        ))
         if a_wa == b_wa:
             self.golden_score = True
             self.golden_score_start_tick = tick
@@ -5118,9 +5139,8 @@ class Match:
                 tick=tick,
                 event_type="GOLDEN_SCORE_START",
                 description=(
-                    f"[ref: {self.referee.name}] Regulation ends — "
-                    f"scores level {a_wa}-{b_wa}. Golden score begins; "
-                    f"first score or third shido decides it."
+                    f"[ref: {self.referee.name}] Scores level — golden "
+                    f"score begins. First score or third shido decides it."
                 ),
                 data={
                     "a_waza_ari": a_wa,
