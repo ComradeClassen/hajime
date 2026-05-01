@@ -809,6 +809,13 @@ class Match:
         self.golden_score: bool = False
         self.golden_score_start_tick: Optional[int] = None
 
+        # HAJ-160 — restart-hajime emission. Set to (matte_tick + 1) when
+        # _handle_matte fires, so the next tick opens with a HAJIME_CALLED
+        # event that mirrors the match-start announcement at every restart.
+        # The viewer's hajime banner reads off these events; the engine
+        # itself doesn't otherwise depend on the timing.
+        self._pending_hajime_tick: Optional[int] = None
+
         # Passivity tracking
         self._last_attack_tick: dict[str, int] = {
             fighter_a.identity.name: 0,
@@ -1130,6 +1137,14 @@ class Match:
     # -----------------------------------------------------------------------
     def _tick(self, tick: int) -> None:
         events: list[Event] = []
+
+        # HAJ-160 — restart-hajime emission. Fires on the tick after a
+        # matte resolved, marking the start of the next exchange so the
+        # viewer's hajime banner mirrors the match-start announcement.
+        # No engine state is gated by this; it's purely a visible beat.
+        if self._pending_hajime_tick == tick:
+            events.append(self.referee.announce_hajime(tick))
+            self._pending_hajime_tick = None
 
         # Background: fatigue drain + stun decay (Step 12 partial; we do it
         # first so action selection sees the up-to-date state).
@@ -4662,6 +4677,10 @@ class Match:
             if c.kind != "POST_SCORE_FOLLOW_UP_MATTE"
         ]
         self._reset_dyad_to_distant(tick, recovery_bonus=0)
+        # HAJ-160 — queue the restart-hajime announcement for the next
+        # tick so the viewer's hajime banner fires at every restart, not
+        # only at match start.
+        self._pending_hajime_tick = tick + 1
 
     def _post_score_reset(self, tick: int, reason: str) -> list[Event]:
         """HAJ-139 — reset the dyad to STANDING_DISTANT after a non-match-

@@ -122,6 +122,11 @@ class ViewState:
     # the engine event list at capture time so review-mode rendering
     # produces the same visual cue the live tick did.
     matte_reason:       Optional[str] = None    # MATTE_CALLED reason this tick
+    # HAJ-160 — hajime banner symmetric with the matte banner. Set when
+    # the tick's events include a HAJIME_CALLED (match start at t000 +
+    # every restart after a matte). Pure cue field; the renderer reads
+    # it to fire the centered HAJIME banner just like matte.
+    hajime_called:      bool = False
     stuff_victims:      tuple[str, ...] = ()    # STUFFED victims this tick
     score_awarded:      Optional[str] = None    # "WAZA_ARI" / "IPPON" awarded this tick
     score_scorer:       Optional[str] = None    # name of the scoring fighter
@@ -259,6 +264,9 @@ def capture_view_state(
 
     # HAJ-153 — extract event-driven visual cues from this tick's events.
     matte_reason: Optional[str] = None
+    # HAJ-160 — hajime banner cue. Any HAJIME_CALLED on this tick flips
+    # the flag; renderer paints the banner exactly like matte.
+    hajime_called: bool = False
     stuff_victims: list[str] = []
     score_awarded: Optional[str] = None
     score_scorer:  Optional[str] = None
@@ -270,6 +278,8 @@ def capture_view_state(
         data = ev.data or {}
         if et == "MATTE_CALLED":
             matte_reason = data.get("reason") or "matte"
+        elif et == "HAJIME_CALLED":
+            hajime_called = True
         elif et == "STUFFED":
             # The STUFFED event lives on the ATTACKER (whose throw was
             # stuffed). The attacker dot should flash, not the defender's.
@@ -323,6 +333,7 @@ def capture_view_state(
         event_descriptions=descs,
         kuzushi_victims=kuzushi_victims,
         matte_reason=matte_reason,
+        hajime_called=hajime_called,
         stuff_victims=tuple(stuff_victims),
         score_awarded=score_awarded,
         score_scorer=score_scorer,
@@ -407,6 +418,10 @@ COL_INSPECT     = (255, 255, 255)
 # HAJ-153 — viewer wire-up palette.
 COL_MATTE_BG    = (180,  40,  40)   # MATTE banner background
 COL_MATTE_TEXT  = (255, 240, 200)   # MATTE banner text
+# HAJ-160 — HAJIME banner colors. Symmetric with MATTE but green so
+# stop / restart are distinguishable at a glance.
+COL_HAJIME_BG   = ( 40, 140,  60)   # HAJIME banner background
+COL_HAJIME_TEXT = (240, 255, 220)   # HAJIME banner text
 COL_STUFF_FLASH = (255, 100, 100)   # stuff impact flash
 COL_SCORE_FLASH = (255, 230, 110)   # score award flash on scorer
 COL_COUNTER     = (255, 230, 110)   # counter chevron between fighters
@@ -423,6 +438,10 @@ COL_PILL_BORDER = ( 90,  98, 118)
 # carries the cue across roughly 1.8 ticks of wall-clock time.
 CUE_LIFETIME_FRAMES: int = 18
 MATTE_BANNER_FRAMES: int = 30   # ~1.7s at 18 FPS or ~0.5s at 60 FPS
+# HAJ-160 — HAJIME banner persists for the same wall-clock window as
+# the MATTE banner, so the matte → hajime cycle reads as a balanced
+# pair of stop / restart beats.
+HAJIME_BANNER_FRAMES: int = 30
 GRIP_SEAT_THRESHOLD: int = 3    # GRIP_ESTABLISH count that triggers F5 flash
 
 
@@ -530,6 +549,8 @@ class PygameMatchRenderer:
         # the audit doc convention.
         self._last_matte_tick: int = -10**9
         self._last_matte_reason: Optional[str] = None
+        # HAJ-160 — hajime banner decay marker. Mirrors _last_matte_tick.
+        self._last_hajime_tick: int = -10**9
         self._last_stuff_tick: dict[str, int] = {}
         self._last_score_tick: dict[str, int] = {}
         self._last_counter_tick: int = -10**9
@@ -847,6 +868,11 @@ class PygameMatchRenderer:
             elif e.event_type == "MATTE_CALLED":
                 self._last_matte_tick = tick
                 self._last_matte_reason = (e.data or {}).get("reason")
+            elif e.event_type == "HAJIME_CALLED":
+                # HAJ-160 — drive the hajime banner the same way as
+                # matte: stamp the firing tick, let the draw helper
+                # fade it out over HAJIME_BANNER_FRAMES.
+                self._last_hajime_tick = tick
             elif e.event_type == "STUFFED":
                 attacker = (e.data or {}).get("attacker")
                 if not attacker:
@@ -943,6 +969,7 @@ class PygameMatchRenderer:
             self._draw_counter_chevron(screen, view)
             self._draw_ne_waza_schematic(screen, view)
             self._draw_matte_banner(screen, view)
+            self._draw_hajime_banner(screen, view)
         self._draw_pause_indicator(screen, view)
         self._draw_sidebar(screen, view)
         self._draw_footer_hint(screen)
@@ -1333,6 +1360,59 @@ class PygameMatchRenderer:
             "OSAEKOMI_DECISION":     "osaekomi decision",
             "POST_SCORE_FOLLOW_UP_END": "post-score reset",
         }.get(reason or "", reason or "")
+
+    def _draw_hajime_banner(self, screen, view: ViewState) -> None:
+        """HAJ-160 — centered HAJIME banner symmetric with the matte
+        banner. Fires on the match-start hajime (t000) and on the
+        restart-hajime that follows every matte. Fades out over
+        HAJIME_BANNER_FRAMES, mirroring the matte banner's persistence
+        so the matte → restart cycle reads as balanced beats.
+
+        Color treatment is green to distinguish "go" from the matte
+        banner's red "stop." Same render position, same font, same
+        size — the eye reads stop / restart as a paired rhythm.
+        """
+        import pygame
+        # Live mode reads the decay marker; review mode reads the
+        # snapshot's hajime_called field directly so scrubbing back
+        # through the post-tick captures shows the banner exactly when
+        # the engine fired the hajime.
+        if self._review_mode:
+            if not view.hajime_called:
+                return
+            alpha = 1.0
+        else:
+            ticks_since = self._ticks_since_event(view, self._last_hajime_tick)
+            if ticks_since > 1:
+                return
+            elapsed = time.monotonic() - self._wall_t_last_step
+            period = 1.0 / max(self._tps, MIN_TPS)
+            tick_phase = max(0.0, min(1.0, elapsed / period))
+            alpha = max(0.0, 1.0 - tick_phase if ticks_since == 0 else 0.0)
+            if alpha <= 0.0:
+                return
+
+        T = self._transform
+        banner_w = T.panel_w - 240
+        banner_h = 70
+        banner_x = (T.panel_w - banner_w) // 2
+        banner_y = T.panel_h // 2 - banner_h // 2
+        banner = pygame.Surface((banner_w, banner_h), pygame.SRCALPHA)
+        bg_alpha = int(220 * alpha)
+        banner.fill((*COL_HAJIME_BG, bg_alpha))
+        title = self._font_big.render("HAJIME", True, COL_HAJIME_TEXT)
+        sub = self._font_small.render(
+            "begin", True, COL_HAJIME_TEXT,
+        )
+        banner.blit(
+            title, (banner_w // 2 - title.get_width() // 2, 12),
+        )
+        banner.blit(
+            sub, (banner_w // 2 - sub.get_width() // 2, 44),
+        )
+        if alpha < 1.0:
+            banner.set_alpha(int(255 * alpha))
+        screen.blit(banner, (banner_x, banner_y))
 
     def _draw_stuff_flashes(self, screen, view: ViewState) -> None:
         """Render a brief impact flash on a stuffed fighter's CoM dot.
