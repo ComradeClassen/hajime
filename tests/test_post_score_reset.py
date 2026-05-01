@@ -25,7 +25,8 @@ from enums import (
 )
 from grip_graph import GripEdge
 from match import (
-    Match, ENGAGEMENT_TICKS_FLOOR, POST_SCORE_RECOVERY_TICKS,
+    Match, ENGAGEMENT_TICKS_FLOOR, ENGAGEMENT_GRIP_SEAT_TICKS_MAX,
+    POST_SCORE_RECOVERY_TICKS,
 )
 from referee import build_suzuki
 from throws import ThrowID
@@ -89,19 +90,33 @@ def test_post_score_reset_breaks_edges_and_returns_to_distant() -> None:
 # ---------------------------------------------------------------------------
 def test_post_score_reset_pause_is_floor_plus_recovery() -> None:
     """After a post-score reset, no edges seat until ENGAGEMENT_TICKS_FLOOR
-    + POST_SCORE_RECOVERY_TICKS ticks of mutual reach have elapsed."""
+    + POST_SCORE_RECOVERY_TICKS ticks of mutual reach have elapsed.
+
+    HAJ-164 follow-up — the engagement-distance gate may delay first
+    grip seating by 1–2 extra ticks beyond the bare floor when the
+    closing-phase trajectory mix doesn't fully close the dyad. The
+    minimum-pause invariant (pre-floor ticks = no edges) still holds
+    exactly; we just relax the upper bound from "exactly floor+recovery"
+    to "no later than floor+recovery+max-gate-slack"."""
     _, _, m = _pair_match()
     m.begin()
     m._post_score_reset(tick=10, reason="waza-ari")
 
-    expected_pause = ENGAGEMENT_TICKS_FLOOR + POST_SCORE_RECOVERY_TICKS
-    # Step pause-1 ticks; no edges should have seated yet.
-    for _ in range(expected_pause - 1):
+    minimum_pause = ENGAGEMENT_TICKS_FLOOR + POST_SCORE_RECOVERY_TICKS
+    # Step minimum_pause-1 ticks; no edges should have seated yet (the
+    # tick-floor side of the gate hasn't elapsed).
+    for _ in range(minimum_pause - 1):
         m.step()
         assert m.grip_graph.edge_count() == 0
         assert m.position == Position.STANDING_DISTANT
-    # One more tick: edges seat, position transitions out of distant.
-    m.step()
+    # Beyond the floor, the distance gate may hold edges back for up to
+    # ENGAGEMENT_GRIP_SEAT_TICKS_MAX additional ticks before the safety
+    # bound forces seating. Edges must seat somewhere in that window.
+    seat_window = ENGAGEMENT_GRIP_SEAT_TICKS_MAX
+    for _ in range(seat_window):
+        m.step()
+        if m.grip_graph.edge_count() > 0:
+            break
     assert m.grip_graph.edge_count() > 0
     assert m.position != Position.STANDING_DISTANT
 

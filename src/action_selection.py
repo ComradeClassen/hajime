@@ -783,9 +783,18 @@ def _select_closing_step_action(
     # Distance-aware bias: when the dyad is wide, down-weight the
     # non-closing variants so spatial convergence keeps pace with the
     # tick-counter engagement gate. Scaled smoothly so trajectory
-    # variety survives — this just suppresses the pathological
-    # "both fighters pick lateral every tick" pattern that would let
-    # grips seat across an unclosed gap.
+    # variety survives at moderate distances — this just suppresses
+    # the pathological "both fighters pick lateral every tick" pattern
+    # that would let grips seat across an unclosed gap.
+    #
+    # HAJ-164 follow-up — strengthened ramp (0.6 → 0.9) so non-closing
+    # variants near-zero out at the full distant pose. Pre-fix at full
+    # distant the lateral / bait weights still cleared 5–8 % each, so
+    # two consecutive bait_retreats within the engagement window were
+    # not rare; combined with the new gap-gate on grip seating they
+    # could push first-seat ticks past the safety-max bound. Killing
+    # almost all non-closing weight at >2.5 m gap lets the 0.9 ramp
+    # carry the convergence guarantee.
     cu = _closing_unit(judoka, opponent)
     dist = cu[2] if cu is not None else ENGAGEMENT_DISTANCE_M
     if dist > ENGAGEMENT_DISTANCE_M:
@@ -793,7 +802,7 @@ def _select_closing_step_action(
         closing_pressure = max(0.0, min(1.0,
             (dist - ENGAGEMENT_DISTANCE_M) / 2.0,
         ))
-        non_closing_scale = 1.0 - 0.6 * closing_pressure
+        non_closing_scale = 1.0 - 0.9 * closing_pressure
         weights["LATERAL_APPROACH"] *= non_closing_scale
         weights["BAIT_RETREAT"]     *= non_closing_scale
 

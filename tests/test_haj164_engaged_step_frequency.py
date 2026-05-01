@@ -14,6 +14,8 @@
 # distribution per fighter style.
 
 from __future__ import annotations
+import contextlib
+import io
 import os
 import random
 import sys
@@ -28,11 +30,16 @@ from actions import (
 )
 from body_state import place_judoka
 from enums import (
-    BodyPart, GripDepth, GripMode, GripTarget, GripTypeV2, PositionalStyle,
+    BodyPart, GripDepth, GripMode, GripTarget, GripTypeV2, Position,
+    PositionalStyle,
 )
 from grip_graph import GripGraph, GripEdge
 from intent import Plan, PlanStep
 from throws import ThrowID
+from match import (
+    Match, ENGAGEMENT_GRIP_SEAT_GAP_M, ENGAGEMENT_GRIP_SEAT_TICKS_MAX,
+)
+from referee import build_suzuki
 from action_selection import (
     _maybe_emit_step, _is_engaged_high_stakes,
     ENGAGED_STEP_PROB_LOW_STAKES, ENGAGED_STEP_PROB_HIGH_STAKES,
@@ -265,6 +272,147 @@ def test_intent_mixes_visibly_differ_between_pressure_and_defensive() -> None:
     assert pressure_dom == TACTICAL_INTENT_PRESSURE
     assert defensive_dom == TACTICAL_INTENT_GIVE_GROUND
     assert pressure_dom != defensive_dom
+
+
+# ===========================================================================
+# Follow-up — grip-seating distance gate.
+#
+# HAJ-163's BAIT_RETREAT and LATERAL_APPROACH closing-phase variants
+# don't close the dyad axis. Pre-fix, the engagement resolver fired the
+# grip cascade after ENGAGEMENT_TICKS_FLOOR ticks of mutual REACH
+# regardless of actual gap, so two fighters could spend the closing
+# phase on lateral / reverse motion and seat grips with 2 m+ still
+# between them. The follow-up adds a CoM-gap gate so engagement means
+# what it says: hands within reach.
+# ===========================================================================
+def _first_grip_seat(seed: int) -> tuple[int, float]:
+    """Run a Tanaka vs Sato match at `seed` and return (tick, gap_at_seat)
+    for the first grip cascade. Helper for the gap-gate calibration."""
+    random.seed(seed)
+    t = main_module.build_tanaka()
+    s = main_module.build_sato()
+    m = Match(
+        fighter_a=t, fighter_b=s, referee=build_suzuki(),
+        max_ticks=240, seed=seed,
+    )
+    seen: list[tuple[int, float]] = []
+    real_stage = m._stage_grip_cascade
+
+    def wrap(tick: int, events: list) -> None:
+        if not seen:
+            ax, ay = t.state.body_state.com_position
+            bx, by = s.state.body_state.com_position
+            seen.append((tick, ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5))
+        return real_stage(tick, events)
+
+    m._stage_grip_cascade = wrap
+    with contextlib.redirect_stdout(io.StringIO()):
+        m.run()
+    assert seen, f"seed={seed} produced no grip cascade in 240 ticks"
+    return seen[0]
+
+
+def test_grip_seating_respects_engagement_distance_gate() -> None:
+    """The first grip cascade in any match must seat with the dyad
+    inside engagement reach (<= ENGAGEMENT_GRIP_SEAT_GAP_M, with a
+    small float tolerance). Pre-fix observation: seed 0 seated at
+    2.19 m; the gap gate brings every seed in this sweep under 1.2 m."""
+    for seed in range(15):
+        _, gap = _first_grip_seat(seed)
+        assert gap <= ENGAGEMENT_GRIP_SEAT_GAP_M + 0.05, (
+            f"seed={seed}: first grip seated at gap={gap:.2f} m, "
+            f"exceeds the engagement-distance gate "
+            f"({ENGAGEMENT_GRIP_SEAT_GAP_M:.2f} m)"
+        )
+
+
+def test_grip_seating_within_safety_max_ticks() -> None:
+    """The gap gate is bounded by ENGAGEMENT_GRIP_SEAT_TICKS_MAX so
+    pathological lateral-every-tick seeds don't livelock the closing
+    phase. Across the QA sweep, every match's first grip cascade must
+    fire by the safety bound."""
+    for seed in range(15):
+        tick, _ = _first_grip_seat(seed)
+        assert tick <= ENGAGEMENT_GRIP_SEAT_TICKS_MAX + 1, (
+            f"seed={seed}: first grip seated at t{tick:03d}, "
+            f"past the safety bound ({ENGAGEMENT_GRIP_SEAT_TICKS_MAX})"
+        )
+
+
+def test_distance_gate_holds_open_when_dyad_still_wide() -> None:
+    """Direct unit test of the engagement resolver: with both fighters
+    still 2 m apart and 3 ticks of mutual REACH already accumulated,
+    the resolver must NOT stage the grip cascade. The gate fires
+    instead and engagement_ticks accumulates for the next tick."""
+    random.seed(1)
+    t = main_module.build_tanaka()
+    s = main_module.build_sato()
+    place_judoka(t, com_position=(-1.0, 0.0), facing=(1.0, 0.0))
+    place_judoka(s, com_position=(+1.0, 0.0), facing=(-1.0, 0.0))
+    m = Match(
+        fighter_a=t, fighter_b=s, referee=build_suzuki(),
+        max_ticks=10, seed=1,
+    )
+    # Force STANDING_DISTANT and accumulate engagement ticks past the
+    # floor without seating grips by hand.
+    m.position = Position.STANDING_DISTANT
+    m.engagement_ticks = 3   # at the floor; gap > gate must hold
+    cascade_fired = [False]
+    real_stage = m._stage_grip_cascade
+
+    def wrap(tick, events):
+        cascade_fired[0] = True
+        return real_stage(tick, events)
+    m._stage_grip_cascade = wrap
+
+    from actions import reach
+    reach_actions = [reach(
+        "right_hand", GripTypeV2.LAPEL_HIGH, GripTarget.LEFT_LAPEL,
+    )]
+    events: list = []
+    m._resolve_engagement(reach_actions, reach_actions, tick=4, events=events)
+    assert cascade_fired[0] is False, (
+        "grip cascade should not fire when dyad gap is 2 m, even with "
+        "engagement_ticks past the tick floor"
+    )
+    # engagement_ticks must keep accumulating so the next tick re-checks
+    # the gate (instead of resetting to 0).
+    assert m.engagement_ticks == 4
+
+
+def test_distance_gate_lets_cascade_fire_when_close() -> None:
+    """When the dyad has closed inside the gate threshold, the resolver
+    stages the cascade as soon as the tick floor is met."""
+    random.seed(1)
+    t = main_module.build_tanaka()
+    s = main_module.build_sato()
+    place_judoka(t, com_position=(-0.5, 0.0), facing=(1.0, 0.0))
+    place_judoka(s, com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
+    m = Match(
+        fighter_a=t, fighter_b=s, referee=build_suzuki(),
+        max_ticks=10, seed=1,
+    )
+    m.position = Position.STANDING_DISTANT
+    m.engagement_ticks = 2   # one shy of the floor
+
+    cascade_fired = [False]
+    real_stage = m._stage_grip_cascade
+
+    def wrap(tick, events):
+        cascade_fired[0] = True
+        return real_stage(tick, events)
+    m._stage_grip_cascade = wrap
+
+    from actions import reach
+    reach_actions = [reach(
+        "right_hand", GripTypeV2.LAPEL_HIGH, GripTarget.LEFT_LAPEL,
+    )]
+    events: list = []
+    # tick 4: engagement_ticks goes to 3, gap=1.0 m → cascade fires
+    m._resolve_engagement(reach_actions, reach_actions, tick=4, events=events)
+    assert cascade_fired[0] is True, (
+        "grip cascade should fire when dyad gap is 1 m and tick floor met"
+    )
 
 
 # ===========================================================================

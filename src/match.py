@@ -121,6 +121,25 @@ ENGAGEMENT_TICKS_FLOOR: int = 3
 # completes and grips seat.
 STANDING_DISTANT_SEPARATION_M: float = 3.0
 
+# HAJ-164 follow-up — distance gate on grip seating. The pre-fix
+# engagement resolver fired the grip cascade after ENGAGEMENT_TICKS_FLOOR
+# ticks of mutual REACH regardless of actual CoM-to-CoM gap. With
+# HAJ-163's BAIT_RETREAT and LATERAL_APPROACH variants in the closing-
+# phase trajectory mix, two fighters could spend 3 ticks doing pure
+# lateral / reverse motion and seat grips with 2 m+ still between them
+# (visible in the seed-1 Tanaka vs Sato playthrough). Adding the gap
+# check below keeps the spec invariant — "engagement means within
+# arm's reach" — while letting the variant trajectories survive.
+ENGAGEMENT_GRIP_SEAT_GAP_M: float = 1.2
+# Safety upper bound on how many ticks the gap gate may delay grip
+# seating. The closing-phase weights bias toward STEP_IN/CIRCLE_CLOSING
+# at wide distances so this should rarely fire, but a hard ceiling
+# protects against pathological seeds where both fighters pick lateral
+# every tick. 8 ticks gives the closing-step machinery roughly 2.5×
+# the nominal closing window — enough slack for any reasonable
+# trajectory mix to traverse the 3 m starting gap before fallback.
+ENGAGEMENT_GRIP_SEAT_TICKS_MAX: int = 8
+
 # Part 2.6 passivity clocks (1 tick = 1 second in v0.1).
 KUMI_KATA_SHIDO_TICKS:        int = 30   # grip-to-attack threshold
 UNCONVENTIONAL_SHIDO_TICKS:   int = 5    # BELT/PISTOL/CROSS immediate-attack threshold
@@ -1841,6 +1860,20 @@ class Match:
         )
         if self.engagement_ticks < required:
             return
+
+        # HAJ-164 follow-up — distance gate. Tick floor alone isn't
+        # enough: HAJ-163's lateral / bait-retreat closing variants
+        # don't close the dyad axis, so 3 ticks of mutual REACH can
+        # still leave 2 m between fighters. Hold off the cascade
+        # until the CoM gap is within engagement reach. Hard ceiling
+        # at ENGAGEMENT_GRIP_SEAT_TICKS_MAX keeps the resolver from
+        # livelocking on a pathological lateral-every-tick seed.
+        if self.engagement_ticks < ENGAGEMENT_GRIP_SEAT_TICKS_MAX:
+            ax, ay = self.fighter_a.state.body_state.com_position
+            bx, by = self.fighter_b.state.body_state.com_position
+            gap = ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+            if gap > ENGAGEMENT_GRIP_SEAT_GAP_M:
+                return
 
         # HAJ-151 — closing phase has elapsed; stage the grip cascade.
         # Compute initiative for both fighters; the higher score reaches

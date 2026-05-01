@@ -22,7 +22,8 @@ from enums import (
 )
 from grip_graph import GripEdge
 from match import (
-    Match, ENGAGEMENT_TICKS_FLOOR, KUMI_KATA_SHIDO_TICKS,
+    Match, ENGAGEMENT_TICKS_FLOOR, ENGAGEMENT_GRIP_SEAT_TICKS_MAX,
+    KUMI_KATA_SHIDO_TICKS,
 )
 from referee import build_suzuki
 from throws import ThrowID
@@ -65,13 +66,16 @@ def test_match_holds_distant_for_at_least_one_tick_before_grip() -> None:
 
 
 def test_match_seats_first_edge_only_after_floor_ticks() -> None:
-    """Walk forward until the floor elapses and verify the engagement
-    transitions to GRIPPING. With v0.1 calibration (1 tick = 1 sec) and
-    floor = 3 ticks, this matches the HAJ-141 AC#3 target of first-grip
-    timestamp ≈ t=2 to t=4."""
+    """Walk forward until the floor elapses (plus the closing-distance
+    gate) and verify the engagement transitions to GRIPPING. With v0.1
+    calibration (1 tick = 1 sec), floor = 3 ticks, and HAJ-164's
+    distance-gated seating, first-grip timestamp typically lands in the
+    t=4 to t=6 window — bounded by ENGAGEMENT_GRIP_SEAT_TICKS_MAX."""
     _, _, m = _pair_match()
     m.begin()
-    for _ in range(ENGAGEMENT_TICKS_FLOOR):
+    for _ in range(ENGAGEMENT_GRIP_SEAT_TICKS_MAX + 1):
+        if m.grip_graph.edge_count() > 0:
+            break
         m.step()
     # Edges seated and position advanced out of STANDING_DISTANT.
     assert m.grip_graph.edge_count() > 0

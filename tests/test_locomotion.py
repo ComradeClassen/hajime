@@ -698,6 +698,11 @@ def test_pressure_match_produces_visible_displacement() -> None:
     # produced the pre-HAJ-157 displacement of ~0.14 m now sticks
     # Tanaka in extended defensive states with no PRESSURE locomotion.
     # seed=1 reproduces the pre-fix ~0.14 m signal under the new path.
+    # HAJ-164 follow-up — the engagement-distance gate delays first
+    # grip seating from ~t3 to ~t5, leaving fewer engaged ticks within
+    # a 30-tick window for PRESSURE displacement to express. Bumped
+    # max_ticks to 35 so the engaged-phase locomotion has the same
+    # tick budget the pre-fix test had.
     random.seed(1)
     t = main_module.build_tanaka()
     s = main_module.build_sato()
@@ -708,7 +713,7 @@ def test_pressure_match_produces_visible_displacement() -> None:
     place_judoka(s, com_position=(+0.5, 0.0), facing=(-1.0, 0.0))
     m = Match(
         fighter_a=t, fighter_b=s, referee=build_suzuki(),
-        max_ticks=30, seed=1,
+        max_ticks=35, seed=1,
     )
     # Pin the dyad to standing for the duration of the test.
     m.ne_waza_resolver.attempt_ground_commit = lambda *a, **kw: False
@@ -732,6 +737,7 @@ def test_pressure_match_produces_visible_displacement() -> None:
             m.run()
     finally:
         action_selection._maybe_emit_foot_attack = real_emit
+        action_selection._apply_plan_layer = real_plan
     # Tanaka should have moved by more than the grip-only baseline.
     # Pre-cluster baseline (no locomotion) was ~0.05 m; post-cluster
     # this test settled at ~0.14 m once HAJ-141/139/140/129/133/134/135/137
