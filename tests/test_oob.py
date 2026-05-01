@@ -172,12 +172,14 @@ def test_oob_attacker_commit_is_denied() -> None:
     THROW_ENTRY, no score, just a single THROW_DENIED_OOB event."""
     m = _new_match()
     _seat_deep_grips(m.grip_graph, m.fighter_a, m.fighter_b)
-    # Push attacker past boundary BEFORE commit.
-    m.fighter_a.state.body_state.com_position = (MAT_HALF_WIDTH + 0.2, 0.0)
 
     buf = io.StringIO()
     with redirect_stdout(buf):
         m.begin()
+        # HAJ-159 — begin() reseats the dyad at the wider STANDING_DISTANT
+        # pose; push the attacker past the boundary AFTER that so the
+        # OOB gate sees the test-supplied position.
+        m.fighter_a.state.body_state.com_position = (MAT_HALF_WIDTH + 0.2, 0.0)
         events = m._resolve_commit_throw(
             m.fighter_a, m.fighter_b, ThrowID.SEOI_NAGE, tick=3,
         )
@@ -215,11 +217,13 @@ def test_denied_commit_still_leaves_oob_matte_to_fire() -> None:
     referee call."""
     m = _new_match()
     _seat_deep_grips(m.grip_graph, m.fighter_a, m.fighter_b)
-    m.fighter_a.state.body_state.com_position = (MAT_HALF_WIDTH + 0.2, 0.0)
 
     buf = io.StringIO()
     with redirect_stdout(buf):
         m.begin()
+        # HAJ-159 — push past boundary AFTER begin() (which reseats the
+        # dyad at the wider STANDING_DISTANT pose).
+        m.fighter_a.state.body_state.com_position = (MAT_HALF_WIDTH + 0.2, 0.0)
         m._resolve_commit_throw(
             m.fighter_a, m.fighter_b, ThrowID.SEOI_NAGE, tick=3,
         )

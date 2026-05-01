@@ -19,6 +19,7 @@ from actions import (
     foot_sweep_setup, leg_attack_setup, disruptive_step,
     TACTICAL_INTENT_PRESSURE, TACTICAL_INTENT_GIVE_GROUND,
     TACTICAL_INTENT_CIRCLE, TACTICAL_INTENT_HOLD_CENTER,
+    TACTICAL_INTENT_CLOSING,
 )
 from enums import (
     GripTypeV2, GripDepth, GripTarget, GripMode, DominantSide, StanceMatchup,
@@ -156,12 +157,24 @@ def select_actions(
     No grip exists, no commit is reachable; the only legal output is the
     REACH pair that drives engagement. None preserves legacy behavior
     for tests that call select_actions directly without a Match context.
+
+    HAJ-159 — closing-phase output now also includes a STEP_IN action
+    toward the opponent (tactical_intent=closing) when the fighters are
+    still outside engagement distance, so the per-tick MOVE event surfaces
+    and the viewer sees CoMs converging instead of teleporting.
     """
     # HAJ-141 — closing-phase short-circuit. During STANDING_DISTANT the
     # only legal action is to reach for engagement; the commit / drive /
     # rung-2-bypass paths assume an established dyad and must not fire.
+    # HAJ-159 — append a STEP_IN toward the opponent when there's still
+    # spatial distance to cover, so MOVE events fire across the closing
+    # window and the rendered separation actually shrinks.
     if position == Position.STANDING_DISTANT:
-        return _reach_actions(judoka)
+        actions = _reach_actions(judoka)
+        closing = _closing_step_action(judoka, opponent)
+        if closing is not None:
+            actions = list(actions) + [closing]
+        return actions
 
     r = rng if rng is not None else random
     actions = _select_grip_actions(
@@ -550,6 +563,43 @@ def _reach_actions(judoka: "Judoka") -> list[Action]:
         # SLEEVE_LOW will need a Ring-2 coach instruction layer.
         reach("left_hand"  if is_right else "right_hand", GripTypeV2.SLEEVE_HIGH, sleeve_target),
     ]
+
+
+# HAJ-159 — closing-phase STEP_IN constants. STANDING_DISTANT pose seats
+# fighters ~3 m apart (CoM to CoM); engagement is treated as ~1 m; the
+# per-tick STEP_IN closes the gap. With both fighters stepping toward
+# each other, total per-tick closure ≈ CLOSING_STEP_MAGNITUDE_M, so a
+# 0.66 m base step + 3 closing-phase ticks covers the ~2 m of distance
+# without overshoot. Once the gap is at engagement distance the helper
+# returns None and only the REACH pair fires.
+ENGAGEMENT_DISTANCE_M:    float = 1.0
+CLOSING_STEP_MAGNITUDE_M: float = 0.66
+
+
+def _closing_step_action(
+    judoka: "Judoka", opponent: "Judoka",
+) -> Optional[Action]:
+    """HAJ-159 — STEP_IN toward the opponent during STANDING_DISTANT.
+
+    Returns a STEP action with tactical_intent=closing, sized so the
+    last step lands the dyad at engagement distance rather than past it.
+    Returns None when the fighters are already inside engagement
+    distance (the closing-phase REACH alone is enough; no point firing
+    a zero-magnitude step that still pays the cardio cost).
+    """
+    bs = judoka.state.body_state
+    cx, cy = bs.com_position
+    ox, oy = opponent.state.body_state.com_position
+    dx, dy = ox - cx, oy - cy
+    dist = (dx * dx + dy * dy) ** 0.5
+    gap  = dist - ENGAGEMENT_DISTANCE_M
+    if gap <= 0.0:
+        return None
+    base_mag = min(CLOSING_STEP_MAGNITUDE_M, gap)
+    return _step_action(
+        judoka, (dx, dy), base_mag,
+        tactical_intent=TACTICAL_INTENT_CLOSING,
+    )
 
 
 def _try_commit(

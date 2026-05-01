@@ -111,6 +111,16 @@ from defense_decision import (
 # before the first grip attempt" from the issue's real-match observation.
 ENGAGEMENT_TICKS_FLOOR: int = 3
 
+# HAJ-159 — STANDING_DISTANT seating distance. CoM-to-CoM at the start
+# of every closing phase (match start + every matte / post-score reset).
+# Roughly 2.5–3× the ~1 m engagement distance so the rendered separation
+# is unambiguously distinguishable from the engaged pose. Closing-phase
+# STEP_IN actions (action_selection._closing_step_action) cover the gap
+# over the next few ticks at CLOSING_STEP_MAGNITUDE_M per fighter per
+# tick, hitting engagement distance just as the reach-tick window
+# completes and grips seat.
+STANDING_DISTANT_SEPARATION_M: float = 3.0
+
 # Part 2.6 passivity clocks (1 tick = 1 second in v0.1).
 KUMI_KATA_SHIDO_TICKS:        int = 30   # grip-to-attack threshold
 UNCONVENTIONAL_SHIDO_TICKS:   int = 5    # BELT/PISTOL/CROSS immediate-attack threshold
@@ -1073,6 +1083,12 @@ class Match:
         self._print_header()
         if self._debug is not None:
             self._debug.print_banner()
+        # HAJ-159 — push the dyad to the wider STANDING_DISTANT pose so
+        # the rendered separation is visibly distant. Closing-phase
+        # STEP_IN actions over the next few ticks cover the gap into
+        # engagement distance — and emit MOVE events so the viewer
+        # interpolates the closing motion instead of teleporting.
+        self._seat_at_distant_pose()
         # Hajime — route through the event emitter so the Hajime call
         # participates in side-by-side rendering (HAJ-65 extension).
         hajime = self.referee.announce_hajime(tick=0)
@@ -4671,6 +4687,24 @@ class Match:
         )]
 
     # -----------------------------------------------------------------------
+    # HAJ-159 — STANDING_DISTANT seating helper
+    # -----------------------------------------------------------------------
+    def _seat_at_distant_pose(self) -> None:
+        """Place both fighters at STANDING_DISTANT_SEPARATION_M apart,
+        facing each other across the mat origin.
+
+        Called from `begin()` (match start) and `_reset_dyad_to_distant`
+        (every matte / post-score reset). The closing-phase STEP_IN
+        action in action_selection covers the gap into engagement
+        distance over the next few ticks; the wider seating is what
+        gives the closing motion something visible to traverse.
+        """
+        from body_state import place_judoka as _place
+        half = STANDING_DISTANT_SEPARATION_M / 2.0
+        _place(self.fighter_a, com_position=(-half, 0.0), facing=(1.0, 0.0))
+        _place(self.fighter_b, com_position=(+half, 0.0), facing=(-1.0, 0.0))
+
+    # -----------------------------------------------------------------------
     # POST-SCORE / POST-MATTE — shared dyad reset to STANDING_DISTANT
     # -----------------------------------------------------------------------
     def _reset_dyad_to_distant(self, tick: int, recovery_bonus: int = 0) -> None:
@@ -4710,14 +4744,15 @@ class Match:
         # HAJ-128 — also reset feet via place_judoka so a reset after a
         # throw / ne-waza chunk doesn't leave foot dots stranded where
         # the displacement happened.
-        from body_state import place_judoka as _place
-        for i, f in enumerate((self.fighter_a, self.fighter_b)):
+        # HAJ-159 — seat the dyad at STANDING_DISTANT_SEPARATION_M
+        # (~3 m), not the legacy ~1 m, so the rendered post-matte resume
+        # actually shows a gap. Closing-phase STEP_IN actions cover the
+        # distance over the recovery + reach-tick window.
+        for f in (self.fighter_a, self.fighter_b):
             f.state.body_state.trunk_sagittal = 0.0
             f.state.body_state.trunk_frontal  = 0.0
             f.state.body_state.com_velocity   = (0.0, 0.0)
-            com   = (-0.5, 0.0) if i == 0 else (0.5, 0.0)
-            facing = (1.0, 0.0) if i == 0 else (-1.0, 0.0)
-            _place(f, com_position=com, facing=facing)
+        self._seat_at_distant_pose()
 
     # -----------------------------------------------------------------------
     # HELPERS

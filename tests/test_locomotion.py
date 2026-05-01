@@ -590,10 +590,15 @@ def test_stance_leash_leaves_close_feet_alone() -> None:
 
 
 def test_handle_matte_resets_feet_to_under_com() -> None:
-    """After a Matte resets fighters to (-0.5, 0) / (+0.5, 0), feet
+    """After a Matte resets fighters to the STANDING_DISTANT pose, feet
     should also snap back instead of staying wherever they ended up
-    when Matte fired."""
-    from match import Match, STANCE_LEASH_M
+    when Matte fired.
+
+    HAJ-159 — the post-matte CoM is now at ±STANDING_DISTANT_SEPARATION_M/2
+    (the wider distant pose) rather than the legacy ±0.5; closing-phase
+    STEP_IN actions cover the gap into engagement over the next ticks.
+    """
+    from match import Match, STANCE_LEASH_M, STANDING_DISTANT_SEPARATION_M
     t, s = _pair()
     m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
     # Send Tanaka and his feet far from start.
@@ -603,13 +608,14 @@ def test_handle_matte_resets_feet_to_under_com() -> None:
 
     m._handle_matte(tick=10)
 
-    # CoM reset to (-0.5, 0).
-    assert t.state.body_state.com_position == (-0.5, 0.0)
-    # Feet are now within the leash of (-0.5, 0).
+    # CoM reset to the STANDING_DISTANT pose for fighter_a.
+    expected_cx = -STANDING_DISTANT_SEPARATION_M / 2.0
+    assert t.state.body_state.com_position == (expected_cx, 0.0)
+    # Feet are now within the leash of the new CoM.
     for foot in (t.state.body_state.foot_state_left,
                  t.state.body_state.foot_state_right):
         fx, fy = foot.position
-        d = ((fx - (-0.5)) ** 2 + fy ** 2) ** 0.5
+        d = ((fx - expected_cx) ** 2 + fy ** 2) ** 0.5
         assert d <= STANCE_LEASH_M + 1e-6
 
 

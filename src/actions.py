@@ -236,6 +236,12 @@ TACTICAL_INTENT_GIVE_GROUND  = "give_ground"     # retreat
 TACTICAL_INTENT_CIRCLE       = "circle"          # lateral angle-finding
 TACTICAL_INTENT_HOLD_CENTER  = "hold_center"     # anchor / re-center
 
+# HAJ-159 — closing-phase intent. Emitted while the dyad is in
+# STANDING_DISTANT and reaching for engagement; lets the viewer pill,
+# prose narrator, and HAJ-149 perception layer distinguish "stepping
+# into engagement range" from the in-engagement edge-relative steps.
+TACTICAL_INTENT_CLOSING      = "closing"         # close from STANDING_DISTANT into engagement
+
 # Strategic intents — additive, not edge-driven (per HAJ-156 review
 # comment). Composable with the tactical intents above; a step may be
 # `circle` tactically AND `gain_angle` strategically. v0.1 surfaces
@@ -253,6 +259,7 @@ TACTICAL_INTENTS = frozenset({
     TACTICAL_INTENT_GIVE_GROUND,
     TACTICAL_INTENT_CIRCLE,
     TACTICAL_INTENT_HOLD_CENTER,
+    TACTICAL_INTENT_CLOSING,
     TACTICAL_INTENT_GAIN_ANGLE,
     TACTICAL_INTENT_RUN_CLOCK,
     TACTICAL_INTENT_CATCH_MOMENT,
