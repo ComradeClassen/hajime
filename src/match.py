@@ -732,6 +732,7 @@ class Match:
         seed: Optional[int] = None,
         stream: str = "both",
         renderer: Optional["Renderer"] = None,
+        regulation_ticks: Optional[int] = None,
     ) -> None:
         if stream not in VALID_STREAMS:
             raise ValueError(
@@ -741,6 +742,13 @@ class Match:
         self.fighter_b = fighter_b
         self.referee   = referee
         self.max_ticks = max_ticks
+        # HAJ-93 — regulation length is normally the whole match window
+        # (legacy behaviour: max_ticks == regulation, no golden score room).
+        # Tests that exercise golden score pass a smaller regulation_ticks
+        # so the match clock has room to continue past the boundary.
+        self.regulation_ticks = (
+            regulation_ticks if regulation_ticks is not None else max_ticks
+        )
         self.seed      = seed
         self._debug = debug
         self._stream = stream
@@ -778,8 +786,18 @@ class Match:
         # Match flow
         self.match_over  = False
         self.winner:  Optional[Judoka] = None
-        self.win_method: str = ""      # "ippon", "two waza-ari", "decision", "hansoku-make", "draw"
+        # win_method strings (see _end_match): "ippon", "two waza-ari",
+        # "decision", "hansoku-make", "draw", "ippon (pin)",
+        # "ippon (submission)", and golden-score variants
+        # "waza-ari (golden score)", "ippon (golden score)".
+        self.win_method: str = ""
         self.ticks_run   = 0
+        # HAJ-93 — golden-score state. golden_score flips at the regulation
+        # boundary when waza-ari counts are tied; once true, any waza-ari /
+        # ippon scored ends the match (sudden death) and shidos continue
+        # to accumulate from regulation toward hansoku-make.
+        self.golden_score: bool = False
+        self.golden_score_start_tick: Optional[int] = None
 
         # Passivity tracking
         self._last_attack_tick: dict[str, int] = {
@@ -1454,6 +1472,16 @@ class Match:
                 events.append(matte_event)
                 self._handle_matte(tick)
 
+        # HAJ-93 — regulation-end gate. Once the match clock has run out
+        # the regulation period, transition to golden score (if waza-ari
+        # tied) or resolve by decision. Fires before narrator/print so
+        # GOLDEN_SCORE_START / MATCH_ENDED show up in this tick's stream.
+        # `golden_score` guards against re-firing every tick after entry.
+        if (not self.match_over
+                and not self.golden_score
+                and tick >= self.regulation_ticks):
+            self._check_regulation_end(tick, events)
+
         # HAJ-147 — run the mat-side narrator over this tick's events +
         # BPE slice. The narrator filter applies the five promotion rules
         # and returns MatchClockEntry records; we extend the per-match
@@ -1558,11 +1586,16 @@ class Match:
         for ev in ne_events:
             if ev.event_type == "SUBMISSION_VICTORY":
                 winner_name = ev.data.get("winner", "")
-                self.winner = (self.fighter_a
-                               if self.fighter_a.identity.name == winner_name
-                               else self.fighter_b)
-                self.win_method = "ippon (submission)"
-                self.match_over = True
+                winner = (self.fighter_a
+                          if self.fighter_a.identity.name == winner_name
+                          else self.fighter_b)
+                # HAJ-93 — submission ends the match in regulation or
+                # golden score; tag method so consumers can distinguish.
+                method = (
+                    "ippon (submission, golden score)" if self.golden_score
+                    else "ippon (submission)"
+                )
+                self._end_match(winner, method, tick, events)
                 return
             if ev.event_type == "ESCAPE_SUCCESS":
                 self.ne_waza_resolver.active_technique = None
@@ -4092,9 +4125,6 @@ class Match:
                 attacker.state.score["ippon"] = True
                 self._a_score = attacker.state.score.copy() if attacker is self.fighter_a else self._a_score
                 self._b_score = defender.state.score.copy() if defender is self.fighter_b else self._b_score
-                self.winner     = attacker
-                self.win_method = "ippon"
-                self.match_over = True
                 score_ev = self.referee.announce_score(
                     outcome="IPPON",
                     scorer_id=a_name,
@@ -4107,6 +4137,14 @@ class Match:
                 )
                 events.append(score_ev)
                 self._scoring_events.append(score_ev)
+                # HAJ-93 — route end through _end_match so the unified
+                # MATCH_ENDED event fires after the score line.
+                self._end_match(
+                    attacker,
+                    "ippon (golden score)" if self.golden_score else "ippon",
+                    tick,
+                    events,
+                )
 
             elif effective_award == "WAZA_ARI":
                 attacker.state.score["waza_ari"] += 1
@@ -4129,15 +4167,27 @@ class Match:
                     0.0,
                     defender.state.composure_current - COMPOSURE_DROP_WAZA_ARI
                 )
-                if wa_count >= 2:
-                    self.winner     = attacker
-                    self.win_method = "two waza-ari"
-                    self.match_over = True
+                # HAJ-93 — sudden death: any waza-ari in golden score
+                # ends the match for the scorer regardless of count.
+                if self.golden_score:
+                    events.append(Event(
+                        tick=tick,
+                        event_type="IPPON_AWARDED",
+                        description=(
+                            f"[ref: {self.referee.name}] Golden score — "
+                            f"waza-ari! {a_name} wins."
+                        ),
+                    ))
+                    self._end_match(
+                        attacker, "waza-ari (golden score)", tick, events,
+                    )
+                elif wa_count >= 2:
                     events.append(Event(
                         tick=tick,
                         event_type="IPPON_AWARDED",
                         description=f"[ref: {self.referee.name}] Two waza-ari — Ippon! {a_name} wins.",
                     ))
+                    self._end_match(attacker, "two waza-ari", tick, events)
                 else:
                     # HAJ-152 — single waza-ari opens the post-score
                     # follow-up window. Pre-fix this dispatched directly
@@ -4509,9 +4559,6 @@ class Match:
 
         if award == "IPPON":
             holder.state.score["ippon"] = True
-            self.winner     = holder
-            self.win_method = "ippon (pin)"
-            self.match_over = True
             score_ev = self.referee.announce_score(
                 outcome="IPPON",
                 scorer_id=holder_id,
@@ -4521,6 +4568,13 @@ class Match:
             )
             events.append(score_ev)
             self._scoring_events.append(score_ev)
+            # HAJ-93 — pin ippon ends the match in regulation or golden
+            # score; tag the method so consumers can distinguish.
+            method = (
+                "ippon (pin, golden score)" if self.golden_score
+                else "ippon (pin)"
+            )
+            self._end_match(holder, method, tick, events)
         elif award == "WAZA_ARI":
             holder.state.score["waza_ari"] += 1
             wa_count = holder.state.score["waza_ari"]
@@ -4534,15 +4588,26 @@ class Match:
             )
             events.append(score_ev)
             self._scoring_events.append(score_ev)
-            if wa_count >= 2:
-                self.winner     = holder
-                self.win_method = "two waza-ari"
-                self.match_over = True
+            # HAJ-93 — sudden death in golden score; otherwise the usual
+            # two-waza-ari rule.
+            if self.golden_score:
+                events.append(Event(
+                    tick=tick,
+                    event_type="IPPON_AWARDED",
+                    description=(
+                        f"[score] Golden score — waza-ari, {holder_id} wins."
+                    ),
+                ))
+                self._end_match(
+                    holder, "waza-ari (golden score)", tick, events,
+                )
+            elif wa_count >= 2:
                 events.append(Event(
                     tick=tick,
                     event_type="IPPON_AWARDED",
                     description=f"[score] Two waza-ari — {holder_id} wins.",
                 ))
+                self._end_match(holder, "two waza-ari", tick, events)
             # Composure hit
             held.state.composure_current = max(
                 0.0, held.state.composure_current - COMPOSURE_DROP_WAZA_ARI
@@ -4803,10 +4868,9 @@ class Match:
                 ),
             ))
             if fighter.state.shidos >= 3:
-                self.winner     = (self.fighter_b if fighter is self.fighter_a
-                                   else self.fighter_a)
-                self.win_method = "hansoku-make"
-                self.match_over = True
+                opponent = (self.fighter_b if fighter is self.fighter_a
+                            else self.fighter_a)
+                self._end_match(opponent, "hansoku-make", tick, events)
 
     def _update_edge_zone_counters_and_shido(
         self, tick: int, events: list[Event],
@@ -4884,10 +4948,9 @@ class Match:
         retreater.state.time_in_edge_zone = 0
         retreater.state.edge_zone_entry_tick = -1
         if retreater.state.shidos >= 3:
-            self.winner     = (self.fighter_b if retreater is self.fighter_a
-                               else self.fighter_a)
-            self.win_method = "hansoku-make"
-            self.match_over = True
+            opponent = (self.fighter_b if retreater is self.fighter_a
+                        else self.fighter_a)
+            self._end_match(opponent, "hansoku-make", tick, events)
 
     def _update_passivity(self, tick: int, events: list[Event]) -> None:
         # "Active" = fighter attempted a throw within the last 30 ticks
@@ -4908,10 +4971,9 @@ class Match:
                     ),
                 ))
                 if fighter.state.shidos >= 3:
-                    self.winner     = (self.fighter_b if fighter is self.fighter_a
-                                       else self.fighter_a)
-                    self.win_method = "hansoku-make"
-                    self.match_over = True
+                    opponent = (self.fighter_b if fighter is self.fighter_a
+                                else self.fighter_a)
+                    self._end_match(opponent, "hansoku-make", tick, events)
 
     # -----------------------------------------------------------------------
     # OUTPUT
@@ -4982,6 +5044,93 @@ class Match:
             print(f"  Seed: {self.seed}  (replay: --seed {self.seed})")
         print("=" * 65)
         print()
+
+    # -----------------------------------------------------------------------
+    # HAJ-93 — match-end + golden score
+    # -----------------------------------------------------------------------
+    def _end_match(
+        self,
+        winner: Optional[Judoka],
+        method: str,
+        tick: int,
+        events: list[Event],
+    ) -> None:
+        """Centralized match-end helper.
+
+        Sets winner / win_method / match_over and emits a single
+        MATCH_ENDED Event with a uniform payload (winner, method, tick,
+        golden_score, score state). Every code path that ends the match
+        (throw IPPON, two waza-ari, golden-score waza-ari, pin scores,
+        third shido / hansoku-make, ne-waza submission, regulation-end
+        decision) routes through here so downstream consumers get a
+        consistent end-of-match signal.
+        """
+        # First-writer-wins: if some other path already ended the match
+        # this tick, don't overwrite or double-emit.
+        if self.match_over:
+            return
+        self.winner = winner
+        self.win_method = method
+        self.match_over = True
+        a, b = self.fighter_a, self.fighter_b
+        if winner is not None:
+            desc = (
+                f"[ref: {self.referee.name}] Match ends — "
+                f"{winner.identity.name} wins by {method}."
+            )
+        else:
+            desc = f"[ref: {self.referee.name}] Match ends — draw."
+        events.append(Event(
+            tick=tick,
+            event_type="MATCH_ENDED",
+            description=desc,
+            data={
+                "winner":       winner.identity.name if winner else None,
+                "method":       method,
+                "tick":         tick,
+                "golden_score": self.golden_score,
+                "a_waza_ari":   a.state.score["waza_ari"],
+                "b_waza_ari":   b.state.score["waza_ari"],
+                "a_shidos":     a.state.shidos,
+                "b_shidos":     b.state.shidos,
+            },
+        ))
+
+    def _check_regulation_end(self, tick: int, events: list[Event]) -> None:
+        """HAJ-93 — at the regulation boundary, route the match into
+        golden score (if waza-ari counts are tied) or resolve by decision
+        (if unequal). Called once from `_post_tick` when
+        `tick >= regulation_ticks` and the match is still live.
+
+        Tie includes 0-0: per IJF rules, a scoreless regulation enters
+        golden score, not a draw. Decision uses waza-ari counts only;
+        ippon at this point would already have ended the match earlier.
+        """
+        if self.match_over or self.golden_score:
+            return
+        a, b = self.fighter_a, self.fighter_b
+        a_wa = a.state.score["waza_ari"]
+        b_wa = b.state.score["waza_ari"]
+        if a_wa == b_wa:
+            self.golden_score = True
+            self.golden_score_start_tick = tick
+            events.append(Event(
+                tick=tick,
+                event_type="GOLDEN_SCORE_START",
+                description=(
+                    f"[ref: {self.referee.name}] Regulation ends — "
+                    f"scores level {a_wa}-{b_wa}. Golden score begins; "
+                    f"first score or third shido decides it."
+                ),
+                data={
+                    "a_waza_ari": a_wa,
+                    "b_waza_ari": b_wa,
+                    "tick":       tick,
+                },
+            ))
+            return
+        winner = a if a_wa > b_wa else b
+        self._end_match(winner, "decision", tick, events)
 
     def _resolve_match(self) -> None:
         # Resolve a draw / decision into self.winner / self.win_method first
