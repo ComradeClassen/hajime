@@ -20,6 +20,8 @@ from actions import (
     TACTICAL_INTENT_PRESSURE, TACTICAL_INTENT_GIVE_GROUND,
     TACTICAL_INTENT_CIRCLE, TACTICAL_INTENT_HOLD_CENTER,
     TACTICAL_INTENT_CLOSING,
+    TACTICAL_INTENT_CIRCLE_CLOSING, TACTICAL_INTENT_LATERAL_APPROACH,
+    TACTICAL_INTENT_BAIT_RETREAT,
 )
 from enums import (
     GripTypeV2, GripDepth, GripTarget, GripMode, DominantSide, StanceMatchup,
@@ -162,16 +164,25 @@ def select_actions(
     toward the opponent (tactical_intent=closing) when the fighters are
     still outside engagement distance, so the per-tick MOVE event surfaces
     and the viewer sees CoMs converging instead of teleporting.
+
+    HAJ-163 — STEP_IN is no longer the only closing action. The
+    closing-phase selector picks among STEP_IN, CIRCLE_CLOSING,
+    LATERAL_APPROACH, BAIT_RETREAT based on fighter attributes
+    (aggressive / technical facets, fight_iq, positional_style) so
+    the closing trajectory varies match-to-match instead of always
+    being a head-on car crash.
     """
     # HAJ-141 — closing-phase short-circuit. During STANDING_DISTANT the
     # only legal action is to reach for engagement; the commit / drive /
     # rung-2-bypass paths assume an established dyad and must not fire.
-    # HAJ-159 — append a STEP_IN toward the opponent when there's still
-    # spatial distance to cover, so MOVE events fire across the closing
-    # window and the rendered separation actually shrinks.
+    # HAJ-163 — pick a closing-phase trajectory variant via the
+    # attribute-driven selector. REACH still fires every tick so the
+    # engagement_ticks counter advances even when the chosen step is
+    # a pure-lateral or bait-retreat.
     if position == Position.STANDING_DISTANT:
         actions = _reach_actions(judoka)
-        closing = _closing_step_action(judoka, opponent)
+        r = rng if rng is not None else random
+        closing = _select_closing_step_action(judoka, opponent, r)
         if closing is not None:
             actions = list(actions) + [closing]
         return actions
@@ -600,6 +611,217 @@ def _closing_step_action(
         judoka, (dx, dy), base_mag,
         tactical_intent=TACTICAL_INTENT_CLOSING,
     )
+
+
+# HAJ-163 — closing-phase trajectory siblings to STEP_IN. Each takes
+# the dyad-axis vector (judoka → opponent) and produces a STEP whose
+# direction blends closing and lateral components in a different mix:
+#
+#   CIRCLE_CLOSING    : 60% closing + 40% lateral — diagonal arc
+#   LATERAL_APPROACH  : 0% closing + 100% lateral — pure side-step
+#   BAIT_RETREAT      : negative closing — small step away from opponent
+#
+# The lateral side (left or right of the closing vector) is randomized
+# so consecutive matches with the same fighter pair don't reproduce
+# identical closing trajectories.
+
+CIRCLE_CLOSING_FORWARD_FRAC: float = 0.6   # closing component weight
+CIRCLE_CLOSING_LATERAL_FRAC: float = 0.4   # lateral component weight
+LATERAL_APPROACH_MAGNITUDE_M: float = 0.55  # foot-meters per pure-lateral step
+BAIT_RETREAT_MAGNITUDE_M:    float = 0.30  # foot-meters per backward step
+BAIT_RETREAT_MIN_GAP_M:      float = 1.5   # only fire when there's room to retreat
+
+
+def _lateral_unit(
+    closing_unit: tuple[float, float], rng: random.Random,
+) -> tuple[float, float]:
+    """Pick a unit vector perpendicular to the closing direction.
+    Side (left vs right) is random so consecutive matches don't
+    reproduce identical trajectories."""
+    cx, cy = closing_unit
+    # Two perpendiculars: (-cy, cx) is the +90° rotation; (cy, -cx) is -90°.
+    if rng.random() < 0.5:
+        return (-cy, cx)
+    return (cy, -cx)
+
+
+def _closing_unit(
+    judoka: "Judoka", opponent: "Judoka",
+) -> Optional[tuple[float, float, float]]:
+    """Return (unit_x, unit_y, dist) for the judoka → opponent vector,
+    or None if the two CoMs coincide."""
+    bs = judoka.state.body_state
+    cx, cy = bs.com_position
+    ox, oy = opponent.state.body_state.com_position
+    dx, dy = ox - cx, oy - cy
+    dist = (dx * dx + dy * dy) ** 0.5
+    if dist <= 0.0:
+        return None
+    return (dx / dist, dy / dist, dist)
+
+
+def _circle_closing_step_action(
+    judoka: "Judoka", opponent: "Judoka", rng: random.Random,
+) -> Optional[Action]:
+    """HAJ-163 — diagonal close. Step vector blends closing and lateral
+    components so the fighter arcs into engagement instead of charging
+    straight in. Returns None inside engagement distance (same gating
+    as STEP_IN — once close enough, the diagonal arc no longer makes
+    spatial sense)."""
+    cu = _closing_unit(judoka, opponent)
+    if cu is None:
+        return None
+    ux, uy, dist = cu
+    gap = dist - ENGAGEMENT_DISTANCE_M
+    if gap <= 0.0:
+        return None
+    lx, ly = _lateral_unit((ux, uy), rng)
+    blend_x = CIRCLE_CLOSING_FORWARD_FRAC * ux + CIRCLE_CLOSING_LATERAL_FRAC * lx
+    blend_y = CIRCLE_CLOSING_FORWARD_FRAC * uy + CIRCLE_CLOSING_LATERAL_FRAC * ly
+    base_mag = min(CLOSING_STEP_MAGNITUDE_M, gap)
+    return _step_action(
+        judoka, (blend_x, blend_y), base_mag,
+        tactical_intent=TACTICAL_INTENT_CIRCLE_CLOSING,
+    )
+
+
+def _lateral_approach_step_action(
+    judoka: "Judoka", opponent: "Judoka", rng: random.Random,
+) -> Optional[Action]:
+    """HAJ-163 — pure lateral step. Finds a better angle without
+    reducing the dyad-axis distance. Closing happens on subsequent
+    ticks (or via the opponent's STEP_IN); engagement still fires
+    after the reach-tick counter completes."""
+    cu = _closing_unit(judoka, opponent)
+    if cu is None:
+        return None
+    ux, uy, _dist = cu
+    lx, ly = _lateral_unit((ux, uy), rng)
+    return _step_action(
+        judoka, (lx, ly), LATERAL_APPROACH_MAGNITUDE_M,
+        tactical_intent=TACTICAL_INTENT_LATERAL_APPROACH,
+    )
+
+
+def _bait_retreat_step_action(
+    judoka: "Judoka", opponent: "Judoka",
+) -> Optional[Action]:
+    """HAJ-163 — small backward step. Used by counter-fighters to draw
+    the opponent into a committed approach. Caps at small magnitude
+    (smaller than STEP_IN) and only fires when there's room to retreat
+    without crowding the boundary."""
+    cu = _closing_unit(judoka, opponent)
+    if cu is None:
+        return None
+    ux, uy, dist = cu
+    if dist < BAIT_RETREAT_MIN_GAP_M:
+        # Already at or near engagement — no point retreating.
+        return None
+    return _step_action(
+        judoka, (-ux, -uy), BAIT_RETREAT_MAGNITUDE_M,
+        tactical_intent=TACTICAL_INTENT_BAIT_RETREAT,
+    )
+
+
+# Closing-phase selector weights. Base weights are baseline preference
+# for each variant; per-fighter modulators add on top. The total is
+# normalized at random-pick time, so absolute values don't matter —
+# only the ratios do.
+_CLOSING_SELECTOR_BASE_WEIGHTS: dict[str, float] = {
+    "STEP_IN":          0.40,
+    "CIRCLE_CLOSING":   0.20,
+    "LATERAL_APPROACH": 0.10,
+    "BAIT_RETREAT":     0.05,
+}
+
+
+def _select_closing_step_action(
+    judoka: "Judoka", opponent: "Judoka", rng: random.Random,
+) -> Optional[Action]:
+    """HAJ-163 — pick one closing-phase step variant for this fighter
+    on this tick.
+
+    Weighting is attribute-driven:
+      - aggressive facet → STEP_IN (head-on) and CIRCLE_CLOSING (arc).
+      - technical facet → CIRCLE_CLOSING (find the angle, then close).
+      - high fight_iq → LATERAL_APPROACH and BAIT_RETREAT (read the
+        opponent, set up a counter or angle).
+      - positional_style:
+          PRESSURE       → strong STEP_IN bias (drive forward)
+          DEFENSIVE_EDGE → BAIT_RETREAT and LATERAL bias (counter setup)
+          HOLD_CENTER    → CIRCLE_CLOSING bias (work the angles)
+
+    Falls back to STEP_IN when the chosen variant returns None
+    (typically because the helper's distance gate fires) so the
+    closing phase always emits *some* MOVE event when there's gap to
+    cover.
+    """
+    facets    = judoka.identity.personality_facets
+    aggressive = float(facets.get("aggressive", 5))
+    technical  = float(facets.get("technical", 5))
+    iq         = float(judoka.capability.fight_iq)
+    style      = judoka.identity.positional_style
+
+    weights = dict(_CLOSING_SELECTOR_BASE_WEIGHTS)
+    weights["STEP_IN"]          += 0.06 * aggressive
+    weights["CIRCLE_CLOSING"]   += 0.04 * aggressive + 0.06 * technical
+    weights["LATERAL_APPROACH"] += 0.05 * iq
+    weights["BAIT_RETREAT"]     += 0.04 * iq
+
+    if style == PositionalStyle.PRESSURE:
+        weights["STEP_IN"] += 0.50
+    elif style == PositionalStyle.DEFENSIVE_EDGE:
+        weights["BAIT_RETREAT"]     += 0.30
+        weights["LATERAL_APPROACH"] += 0.20
+    elif style == PositionalStyle.HOLD_CENTER:
+        weights["CIRCLE_CLOSING"] += 0.20
+
+    # Distance-aware bias: when the dyad is wide, down-weight the
+    # non-closing variants so spatial convergence keeps pace with the
+    # tick-counter engagement gate. Scaled smoothly so trajectory
+    # variety survives — this just suppresses the pathological
+    # "both fighters pick lateral every tick" pattern that would let
+    # grips seat across an unclosed gap.
+    cu = _closing_unit(judoka, opponent)
+    dist = cu[2] if cu is not None else ENGAGEMENT_DISTANCE_M
+    if dist > ENGAGEMENT_DISTANCE_M:
+        # 0 at engagement, 1.0 at the full distant pose (~3 m).
+        closing_pressure = max(0.0, min(1.0,
+            (dist - ENGAGEMENT_DISTANCE_M) / 2.0,
+        ))
+        non_closing_scale = 1.0 - 0.6 * closing_pressure
+        weights["LATERAL_APPROACH"] *= non_closing_scale
+        weights["BAIT_RETREAT"]     *= non_closing_scale
+
+    total = sum(weights.values())
+    if total <= 0.0:
+        return _closing_step_action(judoka, opponent)
+    pick = rng.random() * total
+    cumulative = 0.0
+    chosen = "STEP_IN"
+    for kind, w in weights.items():
+        cumulative += w
+        if pick <= cumulative:
+            chosen = kind
+            break
+
+    if chosen == "STEP_IN":
+        action = _closing_step_action(judoka, opponent)
+    elif chosen == "CIRCLE_CLOSING":
+        action = _circle_closing_step_action(judoka, opponent, rng)
+    elif chosen == "LATERAL_APPROACH":
+        action = _lateral_approach_step_action(judoka, opponent, rng)
+    elif chosen == "BAIT_RETREAT":
+        action = _bait_retreat_step_action(judoka, opponent)
+    else:
+        action = _closing_step_action(judoka, opponent)
+
+    # Fallback to STEP_IN when the chosen variant declined (typically
+    # because of its own distance gate). Keeps the MOVE-events-during-
+    # closing invariant intact.
+    if action is None:
+        action = _closing_step_action(judoka, opponent)
+    return action
 
 
 def _try_commit(

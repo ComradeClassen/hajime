@@ -242,6 +242,17 @@ TACTICAL_INTENT_HOLD_CENTER  = "hold_center"     # anchor / re-center
 # into engagement range" from the in-engagement edge-relative steps.
 TACTICAL_INTENT_CLOSING      = "closing"         # close from STANDING_DISTANT into engagement
 
+# HAJ-163 — closing-phase trajectory siblings. STEP_IN (head-on) is
+# the default; these three add lateral / diagonal / baiting variance
+# so the closing phase reads like real judo instead of a head-on
+# car crash. All four can fire while the dyad is in STANDING_DISTANT;
+# the selector in action_selection picks among them based on
+# fighter attributes (aggressive / technical facets, fight_iq,
+# positional_style).
+TACTICAL_INTENT_CIRCLE_CLOSING   = "circle_closing"    # diagonal close (closing + lateral)
+TACTICAL_INTENT_LATERAL_APPROACH = "lateral_approach"  # pure lateral, no closing
+TACTICAL_INTENT_BAIT_RETREAT     = "bait_retreat"      # small backward step
+
 # Strategic intents — additive, not edge-driven (per HAJ-156 review
 # comment). Composable with the tactical intents above; a step may be
 # `circle` tactically AND `gain_angle` strategically. v0.1 surfaces
@@ -260,6 +271,9 @@ TACTICAL_INTENTS = frozenset({
     TACTICAL_INTENT_CIRCLE,
     TACTICAL_INTENT_HOLD_CENTER,
     TACTICAL_INTENT_CLOSING,
+    TACTICAL_INTENT_CIRCLE_CLOSING,
+    TACTICAL_INTENT_LATERAL_APPROACH,
+    TACTICAL_INTENT_BAIT_RETREAT,
     TACTICAL_INTENT_GAIN_ANGLE,
     TACTICAL_INTENT_RUN_CLOCK,
     TACTICAL_INTENT_CATCH_MOMENT,

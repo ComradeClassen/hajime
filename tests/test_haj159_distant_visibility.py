@@ -115,14 +115,23 @@ def test_distant_separation_is_meaningfully_wider_than_engagement() -> None:
 # ===========================================================================
 # AC#1 — Closing-phase MOVE events from match start
 # ===========================================================================
+_CLOSING_PHASE_INTENTS = frozenset({
+    "closing", "circle_closing", "lateral_approach", "bait_retreat",
+})
+
+
 def test_match_start_emits_move_per_fighter_during_closing_phase() -> None:
+    """HAJ-163 — the chosen closing-phase variant may be STEP_IN
+    (closing), CIRCLE_CLOSING, LATERAL_APPROACH, or BAIT_RETREAT.
+    The invariant is that each fighter emits at least one MOVE with
+    one of those intents during the window."""
     t, s, m = _build_match()
     events = _run_collecting(m, ticks=4)
     moves = [e for e in events if e.event_type == "MOVE"]
     assert moves, "expected MOVE events during the closing phase"
     fighters_with_move = {
         e.data.get("fighter") for e in moves
-        if e.data.get("tactical_intent") == TACTICAL_INTENT_CLOSING
+        if e.data.get("tactical_intent") in _CLOSING_PHASE_INTENTS
     }
     assert t.identity.name in fighters_with_move
     assert s.identity.name in fighters_with_move
@@ -130,15 +139,16 @@ def test_match_start_emits_move_per_fighter_during_closing_phase() -> None:
 
 def test_closing_move_event_carries_intent_and_position_delta() -> None:
     """The MOVE event payload follows HAJ-156's contract: tactical_intent
-    set, com_before/com_after present so the viewer can interpolate."""
+    set, com_before/com_after present so the viewer can interpolate.
+    HAJ-163 — accepts any closing-phase intent variant."""
     t, s, m = _build_match()
     events = _run_collecting(m, ticks=2)
     closing = [
         e for e in events
         if e.event_type == "MOVE"
-        and e.data.get("tactical_intent") == TACTICAL_INTENT_CLOSING
+        and e.data.get("tactical_intent") in _CLOSING_PHASE_INTENTS
     ]
-    assert closing, "expected at least one closing MOVE event"
+    assert closing, "expected at least one closing-phase MOVE event"
     e = closing[0]
     assert "com_before" in e.data
     assert "com_after" in e.data
@@ -149,23 +159,30 @@ def test_closing_move_event_carries_intent_and_position_delta() -> None:
 
 
 # ===========================================================================
-# AC#3 — Visible motion: gap monotonically shrinks across closing phase
+# AC#3 — Visible motion: gap shrinks toward engagement across closing phase
 # ===========================================================================
-def test_closing_phase_gap_monotonically_shrinks_to_engagement() -> None:
-    t, s, m = _build_match()
+def test_closing_phase_gap_shrinks_toward_engagement() -> None:
+    """HAJ-163 — strict per-tick monotonicity no longer holds because
+    BAIT_RETREAT can briefly increase the gap. The invariant we still
+    need is "starts wide, ends at or near engagement distance" so the
+    viewer paints a visible convergence over the window."""
+    t, s, m = _build_match(seed=4)
     m.begin()
-    gaps: list[float] = [_gap(t, s)]
-    for _ in range(5):
+    gap_initial = _gap(t, s)
+    final_gaps: list[float] = []
+    for _ in range(8):
         if m.is_done():
             break
         m.step()
-        gaps.append(_gap(t, s))
-    # Tick 0 (post-begin) should be the wide pose; subsequent ticks
-    # should not increase the gap during the closing phase.
-    assert gaps[0] == max(gaps), f"gap should start widest, got {gaps}"
-    # The gap should reach engagement distance (within the closing-phase
-    # CoM-to-CoM tolerance) by the end of the window.
-    assert min(gaps) <= ENGAGEMENT_DISTANCE_M + 1e-6
+        final_gaps.append(_gap(t, s))
+    # Initial gap is the wide pose.
+    assert gap_initial > ENGAGEMENT_DISTANCE_M
+    # And by the end of the window the gap reached engagement
+    # distance — net convergence happened.
+    assert min(final_gaps) <= ENGAGEMENT_DISTANCE_M + 1e-6, (
+        f"gap never converged to engagement distance; "
+        f"initial={gap_initial}, gaps={final_gaps}"
+    )
 
 
 # ===========================================================================

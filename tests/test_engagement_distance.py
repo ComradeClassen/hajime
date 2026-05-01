@@ -195,9 +195,16 @@ def test_commit_throw_denied_during_standing_distant() -> None:
     assert t.identity.name not in m._throws_in_progress
 
 
-def test_select_actions_returns_only_reach_during_standing_distant() -> None:
-    """Action selection short-circuits to REACH actions when position is
-    distant; no commits, no force drives, no rung-2 paths."""
+def test_select_actions_returns_reach_and_optional_step_during_standing_distant() -> None:
+    """Action selection short-circuits to REACH (always present) plus an
+    optional closing-phase STEP variant during STANDING_DISTANT; no
+    commits, no force drives, no rung-2 paths.
+
+    HAJ-159 added the STEP_IN closing step; HAJ-163 generalized it to
+    any of {STEP_IN, CIRCLE_CLOSING, LATERAL_APPROACH, BAIT_RETREAT}.
+    The invariant the test still guards is "nothing but REACH and STEP
+    is allowed during the closing phase."
+    """
     from action_selection import select_actions
     from actions import ActionKind
 
@@ -206,8 +213,15 @@ def test_select_actions_returns_only_reach_during_standing_distant() -> None:
         t, s, m.grip_graph, kumi_kata_clock=0,
         position=Position.STANDING_DISTANT,
     )
-    assert all(a.kind == ActionKind.REACH for a in actions)
+    # REACH always fires so the engagement_ticks counter advances.
     assert any(a.kind == ActionKind.REACH for a in actions)
+    # No commits / drives / counters allowed in closing phase — only
+    # REACH and STEP.
+    allowed = {ActionKind.REACH, ActionKind.STEP}
+    assert all(a.kind in allowed for a in actions), (
+        f"unexpected action kinds in closing phase: "
+        f"{[a.kind for a in actions]}"
+    )
 
 
 if __name__ == "__main__":
