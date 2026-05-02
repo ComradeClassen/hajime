@@ -243,14 +243,22 @@ def test_pull_without_commit_beat_fires_on_pull_bpe() -> None:
     assert t.identity.name in line and s.identity.name in line
 
 
-def test_pull_without_commit_beat_fires_on_reach_bpe() -> None:
+def test_reach_bpe_does_not_fire_pull_without_commit_beat() -> None:
+    """HAJ-165 follow-up — REACH BPEs are 'extending the hand toward
+    a target' and fire before any grip exists. The 'hauls on the
+    lapel' prose template assumes a live edge; emitting it for REACH
+    produces false copy (the ticket-2026-05-02 t001 reading: 'Renard
+    hauls on the lapel' before either fighter has contact). REACH
+    must not drive this template — only PULL (live edge required)."""
     t, s, m = _new_match()
     narrator = MatSideNarrator()
     _prime_baseline(narrator, m)
     bpes = decompose_reach(t, "right_hand", "left_lapel", tick=10)
     entries = narrator.consume_tick(10, [], bpes, m)
     pull = [e for e in entries if e.source == "pull_no_commit"]
-    assert pull
+    assert pull == [], (
+        "REACH BPEs must not produce pull_no_commit prose"
+    )
 
 
 def test_pull_beat_suppressed_when_actor_is_mid_commit() -> None:

@@ -613,20 +613,28 @@ class MatSideNarrator:
     def _detect_pull_without_commit(
         self, tick: int, bpes: list[BodyPartEvent], match: "Match",
     ) -> list[MatchClockEntry]:
-        """HAJ-165 — render a connective beat when a PULL / REACH BPE
-        fires this tick without the actor being mid-commit. The
-        suppression gate at the call site already handles THROW_ENTRY
-        ticks; this detector additionally checks _throws_in_progress
-        so a multi-tick attempt that started earlier doesn't get
-        described as 'no commit' just because THROW_ENTRY isn't on
-        this tick. Rate-limited through _rate_check."""
+        """HAJ-165 — render a connective beat when a PULL BPE fires
+        this tick without the actor being mid-commit. The suppression
+        gate at the call site already handles THROW_ENTRY ticks; this
+        detector additionally checks _throws_in_progress so a multi-
+        tick attempt that started earlier doesn't get described as
+        'no commit' just because THROW_ENTRY isn't on this tick.
+        Rate-limited through _rate_check.
+        REACH BPEs are excluded — REACH is "extending the hand toward
+        a grip target," fired before any edge exists. The "hauls on
+        the lapel" / "tugs at the sleeve" prose family describes
+        force through a live grip, so emitting it for REACH produces
+        false copy ('Renard hauls on the lapel' before contact, with
+        no lapel grip seated). Only PULL (which requires an existing
+        edge) drives this template.
+        """
         out: list[MatchClockEntry] = []
         seen_actors: set[str] = set()
         in_progress = set(getattr(match, "_throws_in_progress", {}).keys())
         for b in bpes:
             if b.tick != tick:
                 continue
-            if b.source not in ("PULL", "REACH"):
+            if b.source != "PULL":
                 continue
             actor = b.actor
             if actor in seen_actors or actor in in_progress:
