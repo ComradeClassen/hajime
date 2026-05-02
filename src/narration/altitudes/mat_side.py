@@ -44,6 +44,119 @@ class MatchClockEntry:
     actors: tuple[str, ...] = ()
 
 
+# ---------------------------------------------------------------------------
+# HAJ-167 — windowed-pull narration substrate.
+#
+# The narrator keeps a fixed-size ring of recent TickFrames so promotion
+# rules can read across ticks (delta detection without per-detector state
+# fields, gap surfacing without firing blind on the trigger tick).
+# Snapshots are immutable per-tick — we don't deep-copy the live Match.
+# Design notes: design-notes/narration-decouple-v1.md.
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class MatchSnapshot:
+    """Minimum match-level state a rule might need to read against the
+    past. Built once per tick from the live Match; immutable from then
+    on. Optional fields default to None so legacy stub-match call sites
+    (e.g. desperation-prose unit-test stubs) work without a full match
+    instance."""
+    tick:                  int
+    position:              object  # Position enum
+    sub_loop_state:        object  # SubLoopState enum
+    a_name:                Optional[str] = None
+    b_name:                Optional[str] = None
+    a_region:              Optional[object] = None
+    b_region:              Optional[object] = None
+    a_posture:             Optional[object] = None
+    b_posture:             Optional[object] = None
+    a_com:                 Optional[tuple] = None
+    b_com:                 Optional[tuple] = None
+    grip_count_a:          int = 0
+    grip_count_b:          int = 0
+    in_progress_attackers: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class TickFrame:
+    """One tick's worth of engine state the narrator can read against.
+    `events` and `bpes` are stored as tuples (immutable) so a rule
+    iterating the window can't mutate a prior frame."""
+    tick:     int
+    events:   tuple
+    bpes:     tuple
+    snapshot: MatchSnapshot
+
+
+def _build_match_snapshot(tick: int, match: "Match") -> MatchSnapshot:
+    """Build a MatchSnapshot from a live Match. Defensive against
+    stub-match callers that don't carry the full attribute surface."""
+    fighter_a = getattr(match, "fighter_a", None)
+    fighter_b = getattr(match, "fighter_b", None)
+    if fighter_a is None or fighter_b is None:
+        return MatchSnapshot(
+            tick=tick,
+            position=getattr(match, "position", None),
+            sub_loop_state=getattr(match, "sub_loop_state", None),
+        )
+    try:
+        from match import region_of
+    except ImportError:
+        region_of = None
+    try:
+        from body_state import derive_posture
+    except ImportError:
+        derive_posture = None
+    a_bs = fighter_a.state.body_state
+    b_bs = fighter_b.state.body_state
+    a_region = region_of(fighter_a) if region_of is not None else None
+    b_region = region_of(fighter_b) if region_of is not None else None
+    a_posture = (
+        derive_posture(a_bs.trunk_sagittal, a_bs.trunk_frontal)
+        if derive_posture is not None else None
+    )
+    b_posture = (
+        derive_posture(b_bs.trunk_sagittal, b_bs.trunk_frontal)
+        if derive_posture is not None else None
+    )
+    grip_graph = getattr(match, "grip_graph", None)
+    if grip_graph is not None:
+        a_owned = len(grip_graph.edges_owned_by(fighter_a.identity.name))
+        b_owned = len(grip_graph.edges_owned_by(fighter_b.identity.name))
+    else:
+        a_owned = b_owned = 0
+    in_progress = frozenset(
+        getattr(match, "_throws_in_progress", {}).keys()
+    )
+    return MatchSnapshot(
+        tick=tick,
+        position=getattr(match, "position", None),
+        sub_loop_state=getattr(match, "sub_loop_state", None),
+        a_name=fighter_a.identity.name,
+        b_name=fighter_b.identity.name,
+        a_region=a_region,
+        b_region=b_region,
+        a_posture=a_posture,
+        b_posture=b_posture,
+        a_com=tuple(a_bs.com_position),
+        b_com=tuple(b_bs.com_position),
+        grip_count_a=a_owned,
+        grip_count_b=b_owned,
+        in_progress_attackers=in_progress,
+    )
+
+
+# Width of the trailing tick window. 8 ticks covers throw resolution
+# chains (4-tick spread) plus the 3-tick deferred pull-without-commit
+# rule with a one-tick margin.
+_NARRATION_WINDOW_SIZE: int = 8
+
+# How long the deferred pull-without-commit rule waits before firing.
+# 3 ticks is long enough that a real pull-then-commit chain resolves
+# inside the gap; short enough that the prose lands while the moment
+# is still fresh.
+_DEFERRED_PULL_K_TICKS: int = 3
+
+
 # Always-promote engine events — their bare description is already
 # coach-voice prose, so the clock log echoes them rather than re-authoring.
 _ALWAYS_PROMOTE_EVENT_TYPES: frozenset[str] = frozenset({
@@ -336,34 +449,130 @@ class MatSideNarrator:
         self._last_sample_tick: int = -1_000
         self._last_promoted_tick: int = -1
         self._last_actor_source_tick: dict[tuple[str, str], int] = {}
-        # HAJ-165 — per-fighter posture tracking. A change between ticks
-        # (excluding kuzushi-driven BROKEN entries) drives the posture
-        # beat. Initialized to None so the first tick the narrator runs
-        # establishes the baseline without firing prose.
-        self._last_posture: dict[str, object] = {}
-        # HAJ-142 — per-fighter mat region tracking. Region changes
-        # produce a connective prose beat ("Sato walks into the warning
-        # area"). Initialized lazily so the first tick the narrator
-        # runs establishes the baseline without firing prose.
-        self._last_region: dict[str, object] = {}
+        # HAJ-167 — windowed-pull narration. The narrator keeps a fixed-
+        # size ring of recent TickFrames so rules can read across ticks
+        # (posture/region delta detection, deferred pull-without-commit
+        # gap surfacing). Pre-decouple the legacy per-detector state
+        # fields lived on the instance directly; post-decouple they're
+        # reads against `self._window[-2]` (the previous frame).
+        self._window: list[TickFrame] = []
+        # Pull BPEs the deferred pull-without-commit rule has already
+        # rendered prose for. The rule defers firing by K ticks; this
+        # tracker prevents the same pull from firing twice as the
+        # window slides.
+        self._fired_pull_bpe_keys: set[tuple[int, str]] = set()
 
     def consume_tick(
         self, tick: int, events: list, bpes: list[BodyPartEvent],
         match: "Match",
     ) -> list[MatchClockEntry]:
+        """HAJ-167 — windowed-pull entry point. The narrator captures
+        the current frame, slides the window, and runs the explicit
+        rule pipeline over the window. Each rule reads from the window
+        (current frame and/or prior frames); rules 1-4 emit a state-
+        change suppress flag that downstream movement / sample rules
+        respect so the slot isn't double-authored.
+
+        Pre-decouple this function inlined the rule logic and kept
+        per-detector state on the narrator (`_last_posture`,
+        `_last_region`, etc.). Post-decouple delta detection reads
+        `self._window[-2]` and gap surfacing reads the trailing slice;
+        the per-detector state fields are gone.
+        """
+        # Capture this tick's frame. Snapshot is built before any rule
+        # runs so all rules see the same view.
+        snapshot = _build_match_snapshot(tick, match)
+        frame = TickFrame(
+            tick=tick,
+            events=tuple(events),
+            bpes=tuple(bpes),
+            snapshot=snapshot,
+        )
+        self._window.append(frame)
+        if len(self._window) > _NARRATION_WINDOW_SIZE:
+            self._window = self._window[-_NARRATION_WINDOW_SIZE:]
+
         out: list[MatchClockEntry] = []
 
-        # Rule 5 — phase transition always promotes (run first so the
-        # transition line precedes whatever else happened on this tick).
+        # Pipeline rule 1 — phase transition (highest-priority slot
+        # owner; runs first so the transition line precedes whatever
+        # else this tick brought).
+        out.extend(self._rule_phase_transition(tick, match))
+
+        # Pipeline rule 2 — always-promote engine events (echoes the
+        # event description verbatim).
+        out.extend(self._rule_always_promote(tick, events))
+
+        # Pipeline rule 3 — contradictions (self-cancel / intent
+        # outcome mismatch).
+        out.extend(self._detect_self_cancel(tick, bpes))
+        out.extend(self._detect_intent_outcome_mismatch(tick, bpes))
+
+        # Pipeline rule 4 — non-default modifier promotion.
+        out.extend(self._promote_modifier_extremes(tick, bpes))
+
+        # Pipeline rule 5 — head-steer (collar grip). HEAD_AS_OUTPUT
+        # BPE substrate; reads live grip graph for collar sub-type.
+        out.extend(self._detect_head_steer(tick, bpes, match))
+
+        # Pipeline rule 6 — posture-change beat. Reads window[-2] for
+        # the previous frame's posture (no per-detector state needed
+        # post-decouple).
+        out.extend(self._rule_posture_change(tick, events))
+
+        # Suppression flag — when this tick already carries a state-
+        # change engine event (commit / land / score / matte / etc.),
+        # the lower-priority movement / region / sample rules defer.
+        # The window's trailing pull-without-commit rule is exempt
+        # (it's a deferred rule and may legitimately fire on the
+        # state-change tick reading older frames).
+        suppress_movement = any(
+            ev.event_type in _MOVEMENT_SUPPRESS_EVENT_TYPES
+            for ev in events
+        )
+
+        if not suppress_movement:
+            # Pipeline rule 7 — region transition.
+            out.extend(self._rule_region_transition(tick))
+            # Pipeline rule 8 — circling.
+            out.extend(self._detect_circling(tick, events, match))
+
+        # Pipeline rule 9 — deferred pull-without-commit (windowed).
+        # The new HAJ-167 rule. Fires K ticks AFTER a PULL BPE if no
+        # commit followed. Pre-decouple this fired blind on the PULL
+        # tick and could mis-narrate when a commit was actually
+        # inbound; post-decouple it reads the trailing window slice
+        # and only fires when the gap is real. Allowed to run even on
+        # state-change ticks because it references older frames whose
+        # context is known stable.
+        out.extend(self._rule_deferred_pull_without_commit(tick))
+
+        # Pipeline rule 10 — sample fill. Last-resort prose when
+        # nothing else fired; rate-limited per phase.
+        if not out and (tick - self._last_sample_tick) >= _STABLE_SAMPLE_INTERVAL:
+            sample = self._sample_phase(tick, match, bpes)
+            if sample is not None:
+                out.append(sample)
+                self._last_sample_tick = tick
+
+        if out:
+            self._last_promoted_tick = tick
+        return out
+
+    # -----------------------------------------------------------------
+    # HAJ-167 — promotion-rule pipeline (windowed pull).
+    # Each `_rule_*` reads from the captured window via
+    # `self._window[-1]` (current frame) and / or `self._window[-2]`
+    # (previous frame for delta detection) instead of bookkeeping
+    # state on the narrator instance.
+    # -----------------------------------------------------------------
+    def _rule_phase_transition(
+        self, tick: int, match: "Match",
+    ) -> list[MatchClockEntry]:
+        out: list[MatchClockEntry] = []
         phase = self._phase_label(match)
         if self._last_phase is not None and phase != self._last_phase:
             transition = (self._last_phase, phase)
-            # HAJ-162 — outcome-bound prose for the (closing → grip_war)
-            # transition. Reads grip state at the transition tick so the
-            # line is honest about which fighters actually seated grips
-            # this tick. HAJ-151 / HAJ-161 / HAJ-162 triage stretched the
-            # leader→follower lag; on the staging tick only the leader
-            # has grips, so "both fighters lock" was false-by-one-fighter.
             if transition == ("closing", "grip_war"):
                 prose = _grip_seating_prose(match)
             else:
@@ -375,8 +584,12 @@ class MatSideNarrator:
                 tick=tick, prose=prose, source="phase",
             ))
         self._last_phase = phase
+        return out
 
-        # Rule 1 — always-promote events.
+    def _rule_always_promote(
+        self, tick: int, events: list,
+    ) -> list[MatchClockEntry]:
+        out: list[MatchClockEntry] = []
         for ev in events:
             et = ev.event_type
             if et in _ALWAYS_PROMOTE_EVENT_TYPES:
@@ -384,21 +597,11 @@ class MatSideNarrator:
                     tick=tick, prose=ev.description,
                     source=self._source_for(et),
                 ))
-            # HAJ-144 acceptance #13 — desperation overlay + failed_dimension
-            # surface as body-part prose, not enum names. The engine emits
-            # OFFENSIVE_DESPERATION_ENTER / DEFENSIVE_DESPERATION_ENTER with
-            # a numeric breakdown in description; we re-author them into
-            # coach prose that names the body-part feel.
             elif et in (
                 "OFFENSIVE_DESPERATION_ENTER",
                 "DEFENSIVE_DESPERATION_ENTER",
             ):
-                actor = ev.data.get("type", "")
-                # The engine description carries the actor name first;
-                # extract a coach-voice rewrite that drops the breakdown
-                # numerics and keeps the structural cue.
                 desc = ev.description
-                # Heuristic: pull "{name} enters …" out of the legacy line.
                 name = ""
                 if "[state] " in desc:
                     rest = desc.split("[state] ", 1)[1]
@@ -418,64 +621,160 @@ class MatSideNarrator:
                     source="desperation",
                     actors=(name,) if name else (),
                 ))
-
-        # Rule 3 — contradiction detection.
-        out.extend(self._detect_self_cancel(tick, bpes))
-        out.extend(self._detect_intent_outcome_mismatch(tick, bpes))
-
-        # Rule 2 — non-default-modifier promotion.
-        out.extend(self._promote_modifier_extremes(tick, bpes))
-
-        # HAJ-166 — collar-grip head-steering. Reads HEAD_AS_OUTPUT BPEs
-        # and renders an outcome-bound line citing the specific collar
-        # sub-type (back vs side) and whether the head actually moved
-        # past the grip-strength threshold. Lapel-grip steering is
-        # filtered at the substrate (HAJ-161 is_collar() gate) so no
-        # HEAD_AS_OUTPUT BPE fires for lapel — the detector naturally
-        # respects that.
-        out.extend(self._detect_head_steer(tick, bpes, match))
-
-        # HAJ-165 — movement prose. Three connective-beat families that
-        # fill the dead air between grip events and throw commits.
-        # Posture beats fire on state change (always promote, no rate
-        # limit); circling and pull-without-commit beats are sample-
-        # rate-limited. All three suppress on ticks that already carry
-        # a state-change event (commit / land / kuzushi / matte / score)
-        # so they don't double-author the slot.
-        suppress_movement = any(
-            ev.event_type in _MOVEMENT_SUPPRESS_EVENT_TYPES
-            for ev in events
-        )
-        # Posture state-change is independent of the suppress gate
-        # (UPRIGHT ↔ SLIGHTLY_BENT is the same kind of state-change beat
-        # the issue calls out); it just declines to fire on KUZUSHI_INDUCED
-        # ticks where the engine already authors the BROKEN line.
-        out.extend(self._detect_posture_change(tick, events, match))
-        # HAJ-142 — region transitions. A fighter walking into WARNING
-        # or working back to CENTER is a clean spatial beat the viewer
-        # benefits from. Suppressed alongside other movement prose on
-        # state-change ticks (commits, scores, etc.) so it doesn't
-        # double-author with engine prose.
-        if not suppress_movement:
-            out.extend(self._detect_region_transition(tick, match))
-            out.extend(self._detect_circling(tick, events, match))
-            out.extend(self._detect_pull_without_commit(tick, bpes, match))
-        else:
-            # Even when suppressed for prose, advance the region
-            # baseline so the next un-suppressed tick has a current
-            # comparison point and doesn't fire stale transitions.
-            self._refresh_region_baseline(match)
-
-        # Rule 4 — sample.
-        if not out and (tick - self._last_sample_tick) >= _STABLE_SAMPLE_INTERVAL:
-            sample = self._sample_phase(tick, match, bpes)
-            if sample is not None:
-                out.append(sample)
-                self._last_sample_tick = tick
-
-        if out:
-            self._last_promoted_tick = tick
         return out
+
+    def _rule_posture_change(
+        self, tick: int, events: list,
+    ) -> list[MatchClockEntry]:
+        """HAJ-167 — windowed posture-change rule. Reads window[-2] for
+        the previous frame's per-fighter posture; no per-detector
+        state field on the narrator. Suppresses on KUZUSHI_INDUCED
+        ticks (engine prose owns that line)."""
+        if any(ev.event_type == "KUZUSHI_INDUCED" for ev in events):
+            return []
+        if len(self._window) < 2:
+            return []
+        prev = self._window[-2].snapshot
+        cur = self._window[-1].snapshot
+        if cur.a_name is None or prev.a_name is None:
+            return []
+        out: list[MatchClockEntry] = []
+        for name, prev_p, cur_p in (
+            (cur.a_name, prev.a_posture, cur.a_posture),
+            (cur.b_name, prev.b_posture, cur.b_posture),
+        ):
+            if prev_p is None or cur_p is None:
+                continue
+            prose = _posture_change_prose(name, prev_p, cur_p)
+            if prose is None:
+                continue
+            out.append(MatchClockEntry(
+                tick=tick, prose=prose,
+                source="posture", actors=(name,),
+            ))
+        return out
+
+    def _rule_region_transition(
+        self, tick: int,
+    ) -> list[MatchClockEntry]:
+        """HAJ-167 — windowed region-transition rule. Reads window[-2]
+        for the previous frame's per-fighter region; no per-detector
+        state field on the narrator."""
+        if len(self._window) < 2:
+            return []
+        prev = self._window[-2].snapshot
+        cur = self._window[-1].snapshot
+        if cur.a_name is None or prev.a_name is None:
+            return []
+        out: list[MatchClockEntry] = []
+        for name, prev_r, cur_r in (
+            (cur.a_name, prev.a_region, cur.a_region),
+            (cur.b_name, prev.b_region, cur.b_region),
+        ):
+            if prev_r is None or cur_r is None:
+                continue
+            prose = _region_transition_prose(name, prev_r, cur_r)
+            if prose is None:
+                continue
+            out.append(MatchClockEntry(
+                tick=tick, prose=prose,
+                source="region", actors=(name,),
+            ))
+        return out
+
+    def _rule_deferred_pull_without_commit(
+        self, tick: int,
+    ) -> list[MatchClockEntry]:
+        """HAJ-167 — the architectural improvement.
+
+        Pre-decouple, pull-without-commit fired on the PULL tick — but
+        the narrator didn't know whether a commit was about to follow.
+        On real pull-then-commit chains the prose still fired, claiming
+        the opponent 'rides it out' even when a throw landed two ticks
+        later. The line was honest most of the time but blind.
+
+        Post-decouple: a PULL BPE in window[t - K] fires prose at tick t
+        only if no THROW_ENTRY for the same actor landed in
+        window[t - K + 1 .. t]. The K-tick wait is the gap: if a commit
+        actually followed, this rule sees it and stays silent. If no
+        commit followed, the gap is real and the prose lands honestly,
+        K ticks late.
+        """
+        if len(self._window) < _DEFERRED_PULL_K_TICKS + 1:
+            return []
+        # Locate the trigger frame (window slice ends at the current
+        # frame; the trigger is K ticks back).
+        trigger_idx = -1 - _DEFERRED_PULL_K_TICKS
+        if abs(trigger_idx) > len(self._window):
+            return []
+        trigger = self._window[trigger_idx]
+        # Followup window: ticks AFTER the trigger up to and including
+        # the current tick.
+        followup_frames = self._window[trigger_idx + 1:]
+        in_progress = trigger.snapshot.in_progress_attackers
+        out: list[MatchClockEntry] = []
+        seen_actors: set[str] = set()
+        for b in trigger.bpes:
+            if b.source != "PULL":
+                continue
+            actor = b.actor
+            if actor in seen_actors:
+                continue
+            # Skip if actor was mid-commit at the trigger tick.
+            if actor in in_progress:
+                continue
+            # Did a commit fire for this actor in the K-tick follow-up
+            # window? COMMIT-source BPEs accompany THROW_ENTRY events
+            # one-to-one and carry the attacker name on .actor; any
+            # such BPE in the followup means the pull was a setup, so
+            # the gap-prose stays silent.
+            committed = False
+            for ff in followup_frames:
+                for fb in ff.bpes:
+                    if fb.source == "COMMIT" and fb.actor == actor:
+                        committed = True
+                        break
+                if committed:
+                    break
+            if committed:
+                continue
+            # Dedupe — don't fire twice for the same trigger BPE as
+            # the window slides.
+            key = (trigger.tick, actor)
+            if key in self._fired_pull_bpe_keys:
+                continue
+            # Rate-limit per actor (per the legacy 6-tick window).
+            if not self._rate_check(actor, "pull_no_commit", tick):
+                continue
+            opponent = self._opponent_of(actor, None)
+            if opponent is None:
+                opponent = self._opponent_from_snapshot(actor, trigger.snapshot)
+            if opponent is None:
+                continue
+            target = b.target.name if b.target is not None else None
+            seen_actors.add(actor)
+            self._fired_pull_bpe_keys.add(key)
+            out.append(MatchClockEntry(
+                tick=tick,
+                prose=_pull_without_commit_prose(actor, opponent, target),
+                source="pull_no_commit",
+                actors=(actor,),
+            ))
+        # Cap memory growth — drop fired keys older than the window.
+        oldest_tick = self._window[0].tick
+        self._fired_pull_bpe_keys = {
+            k for k in self._fired_pull_bpe_keys if k[0] >= oldest_tick
+        }
+        return out
+
+    def _opponent_from_snapshot(
+        self, actor: str, snap: MatchSnapshot,
+    ) -> Optional[str]:
+        if actor == snap.a_name:
+            return snap.b_name
+        if actor == snap.b_name:
+            return snap.a_name
+        return None
 
     def _detect_self_cancel(
         self, tick: int, bpes: list[BodyPartEvent],

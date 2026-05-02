@@ -230,17 +230,76 @@ def test_posture_beat_does_not_fire_for_broken_entry_without_kuzushi() -> None:
 # ===========================================================================
 # AC#3 — pull-without-commit beats fire when no commit is in flight
 # ===========================================================================
-def test_pull_without_commit_beat_fires_on_pull_bpe() -> None:
+def test_pull_without_commit_beat_fires_after_deferred_window() -> None:
+    """HAJ-167 — pull-without-commit is now a deferred / windowed rule.
+    Pre-decouple the line fired on the PULL tick itself; post-decouple
+    it fires K ticks later only if no commit followed in between, so
+    the prose is honest about the actual gap rather than narrating
+    the future blind."""
     t, s, m = _new_match()
     edge = _seat_lapel_edge(m.grip_graph, t, s)
     narrator = MatSideNarrator()
     _prime_baseline(narrator, m)
     bpes = decompose_pull(t, edge, direction=(1.0, 0.0), magnitude=0.3, tick=10)
-    entries = narrator.consume_tick(10, [], bpes, m)
-    pull = [e for e in entries if e.source == "pull_no_commit"]
-    assert pull, "expected a pull_no_commit beat from a PULL BPE"
+    # PULL tick — rule does not yet fire (waiting for the gap window).
+    entries_pull = narrator.consume_tick(10, [], bpes, m)
+    assert not [e for e in entries_pull if e.source == "pull_no_commit"]
+    # Walk the K-tick gap with no commit. By tick 13 (PULL tick + K=3)
+    # the deferred rule fires from the last consume_tick call.
+    entries_t11 = narrator.consume_tick(11, [], [], m)
+    entries_t12 = narrator.consume_tick(12, [], [], m)
+    entries_t13 = narrator.consume_tick(13, [], [], m)
+    assert not [e for e in entries_t11 if e.source == "pull_no_commit"]
+    assert not [e for e in entries_t12 if e.source == "pull_no_commit"]
+    pull = [e for e in entries_t13 if e.source == "pull_no_commit"]
+    assert pull, (
+        "expected pull_no_commit prose to land at PULL tick + K"
+    )
     line = pull[0].prose
     assert t.identity.name in line and s.identity.name in line
+
+
+def test_pull_without_commit_suppressed_when_commit_follows() -> None:
+    """HAJ-167 gap surfacing — when a THROW_ENTRY for the same actor
+    lands in the K-tick window after a PULL, the rule sees the commit
+    and stays silent. Pre-decouple the line fired blindly on the PULL
+    tick and could mis-narrate this case."""
+    t, s, m = _new_match()
+    edge = _seat_lapel_edge(m.grip_graph, t, s)
+    narrator = MatSideNarrator()
+    _prime_baseline(narrator, m)
+    pull_bpes = decompose_pull(
+        t, edge, direction=(1.0, 0.0), magnitude=0.3, tick=10,
+    )
+    narrator.consume_tick(10, [], pull_bpes, m)
+    # Tick 11 — a commit for tori lands. The COMMIT-source BPE in the
+    # followup window suppresses the deferred rule.
+    from body_part_decompose import decompose_commit
+    from worked_throws import worked_template_for as _t
+    from throws import ThrowID
+    template = _t(ThrowID.UCHI_MATA)
+    if template is None:
+        # Defensive — the test relies on a worked-throw template
+        # being present; if the registry shifts, just exercise the
+        # event-type path with a stub COMMIT BPE.
+        from body_part_events import (
+            BodyPartEvent, BodyPartHigh, BodyPartVerb, Side,
+        )
+        commit_bpes = [BodyPartEvent(
+            tick=11, actor=t.identity.name,
+            part=BodyPartHigh.HANDS, side=Side.RIGHT,
+            verb=BodyPartVerb.PULL, source="COMMIT",
+        )]
+    else:
+        commit_bpes = decompose_commit(t, s, template, tick=11)
+    narrator.consume_tick(11, [], commit_bpes, m)
+    # Walk through the rest of the K-tick window — rule should NOT
+    # fire because the commit is in the followup.
+    fired: list = []
+    for n in range(12, 16):
+        fired.extend(narrator.consume_tick(n, [], [], m))
+    pull_lines = [e for e in fired if e.source == "pull_no_commit"]
+    assert pull_lines == []
 
 
 def test_reach_bpe_does_not_fire_pull_without_commit_beat() -> None:
