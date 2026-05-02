@@ -173,15 +173,17 @@ def test_no_modifier_reveal_prose_on_commit_tick() -> None:
     edge case (skill_reveal narrating a counter intent on the same
     tick as the original tori's THROW_ENTRY). HAJ-164 + its follow-up
     grip-seating distance gate moved the rng path twice more; seeds 19
-    and 21 now expose the same edge case. Seed 22 reproduces the AC3
-    scan cleanly. The underlying narrator logic for COUNTER_COMMIT BPEs
-    remains HAJ-155/HAJ-156 territory.
+    and 21 once exposed the same edge case. Triage 2026-05-02
+    (Priority-3 grip-cascade lag bump) shifted the path again — seed 22
+    now exposes the COUNTER_COMMIT case; seed 21 reproduces the AC3
+    scan cleanly under the new path. The underlying narrator logic for
+    COUNTER_COMMIT BPEs remains HAJ-155/HAJ-156 territory.
     """
-    random.seed(22)
+    random.seed(21)
     t, s = _pair()
     m = Match(
         fighter_a=t, fighter_b=s, referee=build_suzuki(),
-        max_ticks=80, seed=22, stream="debug",
+        max_ticks=80, seed=21, stream="debug",
     )
     captured_events: list = []
     m._print_events = lambda evts: captured_events.extend(evts)

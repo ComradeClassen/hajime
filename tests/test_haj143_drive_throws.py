@@ -244,36 +244,70 @@ def test_drive_throw_extends_resolution_and_walks_uke_com() -> None:
     )
 
 
-def test_drive_throw_per_tick_displacement_is_drive_distance_over_n() -> None:
-    """Drive vector divided across exec_ticks beats. After one drive step
-    of an exec_ticks=2 / drive_distance=1.0 m throw, uke has moved
-    drive_distance / exec_ticks = 0.5 m along the drive axis."""
+def test_drive_does_not_apply_per_tick_during_window() -> None:
+    """Post P1 regression fix: COM displacement no longer applies per-tick
+    during the in-flight drive window. _apply_drive_step ticks the
+    consumed counter and emits prose, but uke's CoM stays put until the
+    resolution tick (where _resolve_kake applies the full drive_vector
+    *only* on a successful outcome). Pre-fix this teleported uke 0.5+ m
+    per tick and walked failed throws across the contest area."""
     t, s, m = _elite_match(seed=3)
     real_sig = match_module.actual_signature_match
     match_module.actual_signature_match = lambda *a, **kw: 1.0
-    pre_uke_x = s.state.body_state.com_position[0]
     try:
         T = 5
         m._resolve_commit_throw(t, s, ThrowID.KO_UCHI_GARI, tick=T)
         tip = m._throws_in_progress[t.identity.name]
         assert tip.execution_ticks == 2
-        # Walk to T+2: TS+KC fires (N=1 schedule {0: [RK,KA], 1: [TS],
-        # 2: [KC]}); the KC tick triggers drive step #1.
         m._advance_throws_in_progress(tick=T + 1)
-        # Snapshot uke x before KC so the drive contribution is isolated.
+        # Snapshot uke x just before KC.
         pre_kc_x = s.state.body_state.com_position[0]
         m._advance_throws_in_progress(tick=T + 2)
         post_kc_x = s.state.body_state.com_position[0]
-        # On the KC tick the per-tick displacement of drive_distance / N
-        # = 0.5 m lands on uke. Other systems may also nudge CoM, so
-        # check that the displacement is *at least* the drive share.
-        assert post_kc_x - pre_kc_x >= 0.5 - 1e-6, (
-            f"per-tick drive step under-applied: "
-            f"pre_kc_x={pre_kc_x:.3f}, post_kc_x={post_kc_x:.3f}"
-        )
+        # The drive system contributes zero on the KC tick — it's all
+        # deferred to resolution. Other engine systems may still nudge
+        # CoM, but the drive component itself doesn't apply yet.
+        # Confirm the in-progress accounting still ticks the counter and
+        # the prose has fired.
         assert tip.drive_ticks_consumed >= 1
+        assert tip.drive_prose_emitted is True
+        # The displacement budget for the drive (1.0 m on ko-uchi) has
+        # not landed on uke during the in-flight window.
+        assert post_kc_x - pre_kc_x < 1.0
     finally:
         match_module.actual_signature_match = real_sig
+
+
+def test_drive_displacement_lands_only_on_successful_outcome() -> None:
+    """The Priority-1 regression fix: a *failed* drive throw applies zero
+    drive displacement. Pre-fix a failed o-uchi-gari teleported uke 2 m
+    forward — visible in the playthrough as GRIPPING-state fighters
+    drifting 3 m apart."""
+    t, s, m = _elite_match(seed=4)
+    real = match_module.resolve_throw
+    real_sig = match_module.actual_signature_match
+    # Force the throw to fail outright. Uke must NOT be displaced.
+    match_module.resolve_throw = lambda *a, **kw: ("FAILED", -3.0)
+    match_module.actual_signature_match = lambda *a, **kw: 1.0
+    pre_uke = s.state.body_state.com_position
+    try:
+        T = 5
+        m._resolve_commit_throw(t, s, ThrowID.O_UCHI_GARI, tick=T)
+        for offset in range(1, 5):
+            m._advance_throws_in_progress(tick=T + offset)
+        m._resolve_consequences(tick=T + 5, events=[])
+    finally:
+        match_module.resolve_throw = real
+        match_module.actual_signature_match = real_sig
+    # Drive contribution is zero on FAILED. Other engine systems may
+    # nudge uke a small amount during the window; the assertion is that
+    # the o-uchi 2 m drive vector did NOT land.
+    final_x, final_y = s.state.body_state.com_position
+    drift = ((final_x - pre_uke[0]) ** 2 + (final_y - pre_uke[1]) ** 2) ** 0.5
+    assert drift < 1.0, (
+        f"failed drive throw displaced uke by {drift:.2f} m — drive must "
+        f"only apply on landed outcomes"
+    )
 
 
 # ===========================================================================
@@ -299,11 +333,13 @@ def test_drive_into_oob_resolves_score_before_oob_matte() -> None:
     try:
         T = 5
         collected.extend(m._resolve_commit_throw(t, s, ThrowID.O_UCHI_GARI, tick=T))
-        # Walk the full window. The drive should carry uke past the
-        # boundary somewhere in T+2..T+4.
+        # Walk the full window. Post P1-fix the drive doesn't displace
+        # uke per-tick — the full drive_vector lands at resolution. The
+        # in-flight grace must still hold across the wait so OOB Matte
+        # can't fire even if other engine systems edge uke close to the
+        # line.
         for offset in range(1, 5):
             collected.extend(m._advance_throws_in_progress(tick=T + offset))
-            # While the throw is in progress, OOB Matte must not fire.
             state = m._build_match_state(tick=T + offset)
             assert state.any_throw_in_flight is True, (
                 f"in-flight grace lost on tick T+{offset}"
@@ -312,18 +348,22 @@ def test_drive_into_oob_resolves_score_before_oob_matte() -> None:
             assert reason != MatteReason.OUT_OF_BOUNDS, (
                 f"OOB Matte fired at T+{offset} despite throw in flight"
             )
-        # The drive really did carry uke across the line.
-        assert is_out_of_bounds(s), (
-            f"expected uke OOB after drive; com={s.state.body_state.com_position}"
-        )
-        # Resolution on T+5 — score awarded before any OOB Matte path
-        # gets a chance.
+        # Resolution on T+5: the WAZA_ARI lands AND the 2-m drive is
+        # applied to uke as a one-shot displacement, walking uke past
+        # the +x boundary. The score event lives on T+5 alongside the
+        # drive landing.
         m._resolve_consequences(tick=T + 5, events=collected)
         score = next(
             e for e in collected
             if e.event_type in ("WAZA_ARI_AWARDED", "IPPON_AWARDED")
         )
         assert score.tick == T + 5
+        # The drive really did carry uke across the line — applied on
+        # the resolution tick *after* the score was awarded.
+        assert is_out_of_bounds(s), (
+            f"expected uke OOB after resolution-tick drive landing; "
+            f"com={s.state.body_state.com_position}"
+        )
         # Tip is cleared post-resolution; OOB Matte is now eligible.
         assert t.identity.name not in m._throws_in_progress
         post_state = m._build_match_state(tick=T + 6)
@@ -360,10 +400,12 @@ def test_drive_vector_zero_for_colocated_fighters_falls_back_to_facing() -> None
         match_module.actual_signature_match = real_sig
 
 
-def test_drive_step_capped_at_execution_ticks() -> None:
+def test_drive_step_consumed_counter_capped_at_execution_ticks() -> None:
     """_apply_drive_step is idempotent past execution_ticks — repeated
-    calls don't produce additional displacement once drive_ticks_consumed
-    reaches execution_ticks."""
+    calls don't bump the consumed counter beyond exec_ticks. Post P1
+    fix this is a pure bookkeeping check (no per-tick displacement);
+    ensures the prose-emitted guard and counter-cap logic stay in sync.
+    """
     t, s, m = _elite_match(seed=6)
     real_sig = match_module.actual_signature_match
     match_module.actual_signature_match = lambda *a, **kw: 1.0
@@ -371,21 +413,16 @@ def test_drive_step_capped_at_execution_ticks() -> None:
         m._resolve_commit_throw(t, s, ThrowID.KO_UCHI_GARI, tick=5)
         tip = m._throws_in_progress[t.identity.name]
         # KO_UCHI_GARI: exec_ticks=2.
-        # Force-consume the cap, then call _apply_drive_step extra times.
         snapshot = s.state.body_state.com_position
         m._apply_drive_step(tip, s, "Ko-uchi-gari", tick=10)
         m._apply_drive_step(tip, s, "Ko-uchi-gari", tick=10)
-        # Two calls — drive_ticks_consumed should be exactly 2 (capped).
         assert tip.drive_ticks_consumed == 2
-        post = s.state.body_state.com_position
-        # A third call must not move uke any further.
+        # A third call doesn't bump the counter past exec_ticks.
         m._apply_drive_step(tip, s, "Ko-uchi-gari", tick=10)
         assert tip.drive_ticks_consumed == 2
-        assert s.state.body_state.com_position == post
-        # Total displacement = drive_distance (1.0 m) along the dyad axis.
-        dx = post[0] - snapshot[0]
-        dy = post[1] - snapshot[1]
-        assert abs((dx ** 2 + dy ** 2) ** 0.5 - 1.0) < 1e-6
+        # Drive-step itself never moves uke now — that's deferred to
+        # _resolve_kake on a successful resolution.
+        assert s.state.body_state.com_position == snapshot
     finally:
         match_module.actual_signature_match = real_sig
 

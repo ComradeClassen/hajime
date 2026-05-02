@@ -251,7 +251,15 @@ def test_select_actions_distant_branch_includes_closing_step() -> None:
 
 def test_closing_step_capped_at_engagement_distance() -> None:
     """Inside engagement distance the helper returns None — no
-    zero-magnitude step that would still pay cardio."""
+    zero-magnitude *closing* step that would still pay cardio.
+
+    HAJ-163 added lateral / circling closing-trajectory variants that can
+    still emit STEP actions when the dyad is at engagement distance
+    (those steps don't close, they re-orient). The original assertion
+    blanket-checked "no STEP" which became sensitive to RNG-state leak
+    from prior tests that pulled lateral variants through. The narrower
+    assertion is on the closing-step helper itself.
+    """
     t, s = _pair_at_default()
     # Already inside engagement distance.
     place_judoka(t, com_position=(-0.4, 0.0), facing=(1.0, 0.0))
@@ -261,8 +269,16 @@ def test_closing_step_capped_at_engagement_distance() -> None:
     acts = select_actions(
         t, s, g, kumi_kata_clock=0, position=Position.STANDING_DISTANT,
     )
-    # Only the REACH pair — no STEP this tick.
-    assert all(a.kind != ActionKind.STEP for a in acts)
+    # No CLOSING step this tick — lateral / circling variants are
+    # still allowed because they don't close the gap.
+    closing_steps = [
+        a for a in acts
+        if a.kind == ActionKind.STEP
+        and a.tactical_intent in (TACTICAL_INTENT_CLOSING, "closing")
+    ]
+    assert not closing_steps, (
+        f"unexpected closing STEP at engagement distance: {closing_steps}"
+    )
 
 
 def test_closing_step_does_not_overshoot_engagement_distance() -> None:

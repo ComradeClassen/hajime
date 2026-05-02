@@ -245,6 +245,22 @@ MAT_HALF_WIDTH: float = 4.0
 EDGE_ZONE_M: float = 0.75   # within this many meters of any boundary → "edge zone"
 SAFE_ZONE_M: float = 1.5    # outside this many meters of every boundary → counter resets
 
+# HAJ-160 / triage 2026-05-02 — number of ticks the simulator pauses
+# between a Matte call and the symmetric Hajime restart. The matte
+# banner sits on screen for the duration; the hajime banner fires when
+# the pause expires. 3 ticks lets the matte beat breathe (and is the
+# slot where coach instructions will land in a future altitude reader)
+# before the dyad restarts.
+MATTE_TO_HAJIME_PAUSE_TICKS: int = 3
+
+# HAJ-151 / triage 2026-05-02 (Priority 3) — number of ticks between the
+# leader seating their grips and the follower's response resolving. The
+# original 1-tick lag (= 1 s of game time at default settings) was too
+# tight for the viewer to read as a sequenced cascade — the follower's
+# grips landed almost on top of the leader's. 2 ticks gives the leader
+# a visible beat of "ahead" before the follower cascade fires.
+GRIP_CASCADE_LAG_TICKS: int = 2
+
 
 def is_out_of_bounds(judoka: Judoka) -> bool:
     """HAJ-127 — True when the fighter's CoM is outside the contest area.
@@ -1851,8 +1867,14 @@ class Match:
         # consumes _grip_cascade and may seat the follower's grips
         # (MATCH/PURSUE_OWN), only some of them (CONTEST), none (DEFENSIVE),
         # or transition both fighters back to STANDING_DISTANT (DISENGAGE).
+        # Triage 2026-05-02 (Priority 3) — wait GRIP_CASCADE_LAG_TICKS
+        # before the follower's response so the leader is visibly "ahead"
+        # in the viewer instead of the cascade collapsing onto a single
+        # tick.
         if self._grip_cascade is not None:
-            self._resolve_grip_cascade(tick, events)
+            stage_tick = self._grip_cascade.get("stage_tick", tick)
+            if tick - stage_tick >= GRIP_CASCADE_LAG_TICKS:
+                self._resolve_grip_cascade(tick, events)
             return
 
         if self.grip_graph.edge_count() > 0:
@@ -3122,25 +3144,23 @@ class Match:
         throw_name: str,
         tick: int,
     ) -> list[Event]:
-        """HAJ-143 — apply one tick of drive displacement and emit the
-        in-progress prose hook the first time a drive step fires.
+        """HAJ-143 — emit the in-progress drive prose hook the first time a
+        drive step fires.
 
-        Per ticket open question 4: prose lands once per drive throw
-        (not once per tick) so an o-uchi rendering doesn't spam
-        "Sato drives… Sato drives…".
+        Per the Priority-1 regression fix from the t-007 / t-042 playthrough:
+        COM displacement is no longer applied per-tick. A failed or stuffed
+        drive throw shouldn't walk uke 2 m across the mat. The full
+        `drive_vector` lands as a one-shot displacement at the resolution
+        tick *only when the throw lands* (IPPON / WAZA_ARI), inside
+        `_resolve_kake`. This function still ticks `drive_ticks_consumed`
+        so the in-progress window tracks correctly and emits the prose
+        once per drive throw (open question 4).
         """
         events: list[Event] = []
         if tip.execution_ticks <= 1:
             return events
         if tip.drive_ticks_consumed >= tip.execution_ticks:
             return events
-        per_tick = (
-            tip.drive_vector[0] / tip.execution_ticks,
-            tip.drive_vector[1] / tip.execution_ticks,
-        )
-        bs = defender.state.body_state
-        cx, cy = bs.com_position
-        bs.com_position = (cx + per_tick[0], cy + per_tick[1])
         tip.drive_ticks_consumed += 1
         if not tip.drive_prose_emitted:
             events.append(Event(
@@ -3196,6 +3216,8 @@ class Match:
     def _resolve_kake(
         self, attacker: Judoka, defender: Judoka, throw_id: ThrowID,
         actual: float, tick: int,
+        *,
+        drive_vector: tuple[float, float] = (0.0, 0.0),
     ) -> list[Event]:
         """Execute the KAKE_COMMIT resolution: resolve_throw + apply result.
         Factored out of _resolve_commit_throw so both N==1 and multi-tick
@@ -3204,6 +3226,12 @@ class Match:
         Part 4.2.1 — eq is recomputed from the *kake-time* signature match so
         a multi-tick attempt that degrades between commit and kake reflects
         the worse execution in force transfer and landing severity.
+
+        HAJ-143 — `drive_vector` carries the multi-tick throw's mat-frame
+        displacement. Applied to uke as a one-shot only when the outcome
+        lands (IPPON / WAZA_ARI). Failed/stuffed throws apply zero drive
+        — uke didn't get walked across the mat because the throw didn't
+        deliver. Default zero preserves snap-throw behavior.
         """
         matchup = self._compute_stance_matchup()
         window_q = max(0.0, actual - 0.5) * 2.0   # 0.5→0.0, 1.0→1.0
@@ -3215,6 +3243,12 @@ class Match:
             window_quality=window_q, is_forced=is_forced,
             execution_quality=eq,
         )
+        if outcome in ("IPPON", "WAZA_ARI") and (
+            drive_vector[0] != 0.0 or drive_vector[1] != 0.0
+        ):
+            bs = defender.state.body_state
+            cx, cy = bs.com_position
+            bs.com_position = (cx + drive_vector[0], cy + drive_vector[1])
         return list(self._apply_throw_result(
             attacker, defender, throw_id, outcome, net, window_q, tick,
             is_forced=is_forced, execution_quality=eq,
@@ -3584,23 +3618,15 @@ class Match:
             attacker = self._fighter_by_name(c.payload["attacker_name"])
             defender = self._fighter_by_name(c.payload["defender_name"])
             throw_id = c.payload["throw_id"]
-            # HAJ-143 — apply any remaining drive steps before popping the
-            # tip so the *full* drive_distance lands as displacement before
-            # the score resolves. _advance_throws_in_progress walked the
-            # earlier drive ticks; this handler closes out the tail.
+            # HAJ-143 — pass the tip's drive_vector through to _resolve_kake
+            # so the multi-tick drive landing is conditional on outcome.
+            # The drive only walks uke across the mat on a successful
+            # throw (IPPON / WAZA_ARI); failed / stuffed throws apply zero
+            # drive — pre-fix this teleported uke 2-3 m even when the
+            # throw failed, leaking GRIPPING-state fighters across half
+            # the contest area.
             tip = self._throws_in_progress.get(c.payload["attacker_name"])
-            if tip is not None and defender is not None and tip.execution_ticks > 1:
-                throw_name = THROW_REGISTRY[tip.throw_id].name
-                while tip.drive_ticks_consumed < tip.execution_ticks:
-                    drive_events = self._apply_drive_step(
-                        tip, defender, throw_name, tick,
-                    )
-                    if not drive_events and tip.drive_ticks_consumed < tip.execution_ticks:
-                        # Defensive: _apply_drive_step caps at execution_ticks
-                        # but if it ever no-ops without progress, break out so
-                        # the consequence handler doesn't loop forever.
-                        break
-                    events.extend(drive_events)
+            drive_vector = tip.drive_vector if tip is not None else (0.0, 0.0)
             # Drop the in-progress entry now so _resolve_kake's downstream
             # paths (e.g. ne-waza dispatch on STUFFED) see a clean slate
             # for this attacker.
@@ -3616,6 +3642,7 @@ class Match:
             )
             kake_events = self._resolve_kake(
                 attacker, defender, throw_id, kake_actual, tick,
+                drive_vector=drive_vector,
             )
             for ev in kake_events:
                 ev.data.setdefault("from_consequence_queue", True)
@@ -4879,10 +4906,15 @@ class Match:
             if c.kind != "POST_SCORE_FOLLOW_UP_MATTE"
         ]
         self._reset_dyad_to_distant(tick, recovery_bonus=0)
-        # HAJ-160 — queue the restart-hajime announcement for the next
-        # tick so the viewer's hajime banner fires at every restart, not
-        # only at match start.
-        self._pending_hajime_tick = tick + 1
+        # HAJ-160 — queue the restart-hajime announcement so the viewer's
+        # hajime banner fires at every restart, not only at match start.
+        # Triage 2026-05-02 (Priority 2 fix from playthrough): the gap
+        # between matte and hajime was 1 tick (≈1 s of game time) which
+        # left no breathing room — the matte banner never sat on screen
+        # before hajime overwrote it. Stretching to 3 ticks gives the
+        # matte banner a real beat where coach instructions could land
+        # later, and a clean hajime restart after.
+        self._pending_hajime_tick = tick + MATTE_TO_HAJIME_PAUSE_TICKS
 
     def _post_score_reset(self, tick: int, reason: str) -> list[Event]:
         """HAJ-139 — reset the dyad to STANDING_DISTANT after a non-match-

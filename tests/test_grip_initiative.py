@@ -283,8 +283,12 @@ def _drive_match_to_first_engagement(seed: int):
     m.begin()
     while m.position == Position.STANDING_DISTANT and m.ticks_run < 20:
         m.step()
-    # One more tick after first cascade — cascade resolves on tick+1.
-    m.step()
+    # Step until the cascade resolves. Triage 2026-05-02 stretched the
+    # leader→follower lag from 1 to GRIP_CASCADE_LAG_TICKS (2), so
+    # `_grip_cascade` may stay set across multiple ticks before the
+    # follower's response fires.
+    while m._grip_cascade is not None and m.ticks_run < 25:
+        m.step()
     return t, s, m, captured
 
 
@@ -361,7 +365,9 @@ def test_disengage_transitions_to_standing_distant() -> None:
     import match as match_module
     match_module.select_response = lambda *a, **kw: forced
     try:
-        m.step()  # cascade resolves with DISENGAGE
+        # Step until the cascade resolves (Priority-3 lag = 2 ticks).
+        while m._grip_cascade is not None and m.ticks_run < 20:
+            m.step()
     finally:
         match_module.select_response = real_select
     assert m.position == Position.STANDING_DISTANT
@@ -391,7 +397,8 @@ def test_disengage_drains_cardio() -> None:
     real = match_module.select_response
     match_module.select_response = lambda *a, **kw: forced
     try:
-        m.step()
+        while m._grip_cascade is not None and m.ticks_run < 20:
+            m.step()
     finally:
         match_module.select_response = real
     assert follower.state.cardio_current < pre_cardio

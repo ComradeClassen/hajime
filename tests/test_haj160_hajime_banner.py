@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from body_state import place_judoka
-from match import Match
+from match import Match, MATTE_TO_HAJIME_PAUSE_TICKS
 from match_viewer import (
     ViewState, capture_view_state,
     COL_HAJIME_BG, COL_HAJIME_TEXT, COL_MATTE_BG, COL_MATTE_TEXT,
@@ -67,28 +67,33 @@ def test_match_start_emits_hajime_called_event() -> None:
 # AC#1 — post-matte restart hajime
 # ===========================================================================
 def test_handle_matte_queues_pending_hajime_for_next_tick() -> None:
+    """Triage 2026-05-02 (Priority 2) — the matte→hajime gap is
+    MATTE_TO_HAJIME_PAUSE_TICKS, not 1. The matte banner needs the wider
+    window to actually breathe on screen."""
     t, s, m = _build_match()
     m.begin()
     m._handle_matte(tick=10)
-    assert m._pending_hajime_tick == 11
+    assert m._pending_hajime_tick == 10 + MATTE_TO_HAJIME_PAUSE_TICKS
 
 
-def test_post_matte_hajime_fires_one_tick_after_matte() -> None:
-    """The hajime announcement lands on the tick AFTER the matte, so the
-    viewer's matte and hajime banners don't overlap on the same frame."""
+def test_post_matte_hajime_fires_after_pause_window() -> None:
+    """The hajime announcement lands MATTE_TO_HAJIME_PAUSE_TICKS after
+    the matte so the matte banner actually sits on screen as a beat
+    instead of being overwritten by hajime on the next frame."""
     t, s, m = _build_match()
     captured: list = []
     m._print_events = lambda evs: captured.extend(evs)
     m.begin()
     captured.clear()  # ignore the t000 hajime
-    # Force a matte at tick 10 and step forward.
+    # Force a matte at tick 10 and step forward through the pause.
     m._handle_matte(tick=10)
-    for next_tick in range(11, 13):
+    expected_hajime_tick = 10 + MATTE_TO_HAJIME_PAUSE_TICKS
+    for next_tick in range(11, expected_hajime_tick + 2):
         m.ticks_run = next_tick - 1
         m.step()
     hajimes = [e for e in captured if e.event_type == "HAJIME_CALLED"]
     assert len(hajimes) == 1
-    assert hajimes[0].tick == 11
+    assert hajimes[0].tick == expected_hajime_tick
     assert m._pending_hajime_tick is None
 
 
@@ -97,12 +102,14 @@ def test_pending_hajime_resets_after_emission() -> None:
     t, s, m = _build_match()
     m.begin()
     m._handle_matte(tick=10)
-    assert m._pending_hajime_tick == 11
-    m.ticks_run = 10
-    m.step()  # tick 11 — hajime fires
+    assert m._pending_hajime_tick == 10 + MATTE_TO_HAJIME_PAUSE_TICKS
+    # Step through the pause until hajime fires.
+    for next_tick in range(11, 11 + MATTE_TO_HAJIME_PAUSE_TICKS + 1):
+        m.ticks_run = next_tick - 1
+        m.step()
     assert m._pending_hajime_tick is None
     m._handle_matte(tick=20)
-    assert m._pending_hajime_tick == 21
+    assert m._pending_hajime_tick == 20 + MATTE_TO_HAJIME_PAUSE_TICKS
 
 
 # ===========================================================================

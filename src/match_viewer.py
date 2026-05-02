@@ -442,6 +442,13 @@ MATTE_BANNER_FRAMES: int = 30   # ~1.7s at 18 FPS or ~0.5s at 60 FPS
 # the MATTE banner, so the matte → hajime cycle reads as a balanced
 # pair of stop / restart beats.
 HAJIME_BANNER_FRAMES: int = 30
+# Triage 2026-05-02 (Priority 2) — number of ticks the banner stays on
+# screen after firing. The matte banner needs to cover the full
+# MATTE_TO_HAJIME_PAUSE_TICKS gap (match.py = 3 ticks) so the stop beat
+# doesn't blink off before the hajime banner takes over. The hajime
+# banner gets a 2-tick visible flash so the restart reads cleanly.
+MATTE_BANNER_TICKS:  int = 3
+HAJIME_BANNER_TICKS: int = 2
 GRIP_SEAT_THRESHOLD: int = 3    # GRIP_ESTABLISH count that triggers F5 flash
 
 
@@ -1314,7 +1321,7 @@ class PygameMatchRenderer:
             alpha = 1.0
         else:
             ticks_since = self._ticks_since_event(view, self._last_matte_tick)
-            if ticks_since > 1:
+            if ticks_since >= MATTE_BANNER_TICKS:
                 return
             reason = self._last_matte_reason
             if not reason:
@@ -1322,8 +1329,13 @@ class PygameMatchRenderer:
             elapsed = time.monotonic() - self._wall_t_last_step
             period = 1.0 / max(self._tps, MIN_TPS)
             tick_phase = max(0.0, min(1.0, elapsed / period))
-            # Fade from 1.0 at the firing tick to 0 at the next tick.
-            alpha = max(0.0, 1.0 - tick_phase if ticks_since == 0 else 0.0)
+            # Hold full alpha for the early ticks of the pause, then fade
+            # out across the final tick so hajime can overwrite cleanly.
+            ticks_remaining = MATTE_BANNER_TICKS - 1 - ticks_since
+            if ticks_remaining > 0:
+                alpha = 1.0
+            else:
+                alpha = max(0.0, 1.0 - tick_phase)
             if alpha <= 0.0:
                 return
 
@@ -1383,12 +1395,16 @@ class PygameMatchRenderer:
             alpha = 1.0
         else:
             ticks_since = self._ticks_since_event(view, self._last_hajime_tick)
-            if ticks_since > 1:
+            if ticks_since >= HAJIME_BANNER_TICKS:
                 return
             elapsed = time.monotonic() - self._wall_t_last_step
             period = 1.0 / max(self._tps, MIN_TPS)
             tick_phase = max(0.0, min(1.0, elapsed / period))
-            alpha = max(0.0, 1.0 - tick_phase if ticks_since == 0 else 0.0)
+            ticks_remaining = HAJIME_BANNER_TICKS - 1 - ticks_since
+            if ticks_remaining > 0:
+                alpha = 1.0
+            else:
+                alpha = max(0.0, 1.0 - tick_phase)
             if alpha <= 0.0:
                 return
 
