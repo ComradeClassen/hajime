@@ -57,6 +57,12 @@ _ALWAYS_PROMOTE_EVENT_TYPES: frozenset[str] = frozenset({
 _STABLE_SAMPLE_INTERVAL: int = 7
 
 
+# HAJ-162 — the (closing, grip_war) entry is dynamic (resolved by
+# `_grip_seating_prose` against engine state) so the line is honest
+# about whether one or both fighters actually seated grips on the
+# transition tick. The static fallback below is used only when no
+# match object is available (e.g., legacy unit-test paths that exercise
+# the transition table directly).
 _PHASE_TRANSITION_PROSE: dict[tuple[str, str], str] = {
     ("closing", "grip_war"):  "Both fighters lock onto their grips.",
     ("grip_war", "engaged"):  "They close — chest to chest, hands fighting hot.",
@@ -76,6 +82,51 @@ _PHASE_TRANSITION_PROSE: dict[tuple[str, str], str] = {
     ("grip_war", "match_over"): "And that's the match.",
     ("engaged", "match_over"):  "And that's the match.",
 }
+
+
+# ---------------------------------------------------------------------------
+# HAJ-162 — outcome-bound prose for grip seating
+# ---------------------------------------------------------------------------
+def _grip_seating_prose(match: "Match") -> str:
+    """Resolve the (closing → grip_war) phase-transition line against
+    engine state at the transition tick.
+
+    Pre-HAJ-162: the static "Both fighters lock onto their grips" fired
+    every time the position transitioned to GRIPPING. After HAJ-151
+    grip-initiative variance and HAJ-162 triage stretched the
+    leader→follower lag to GRIP_CASCADE_LAG_TICKS=2, only the leader's
+    grips have seated on the transition tick — claiming "both" was
+    false by one fighter.
+
+    Post-fix: read each fighter's own-grip-edge count and compose:
+      - Both gripped → "Both fighters lock onto their grips." (canonical)
+      - One gripped  → "{leader} secures the first grip — {follower}
+                        reaches but finds nothing."
+      - Neither      → fallback to the canonical line (defensive; should
+                        not happen because the engine sets GRIPPING
+                        position only after at least one grip seats).
+    """
+    a_name = match.fighter_a.identity.name
+    b_name = match.fighter_b.identity.name
+    a_owned = match.grip_graph.edges_owned_by(a_name)
+    b_owned = match.grip_graph.edges_owned_by(b_name)
+    a_has = bool(a_owned)
+    b_has = bool(b_owned)
+    if a_has and b_has:
+        return "Both fighters lock onto their grips."
+    if a_has and not b_has:
+        return (
+            f"{a_name} secures the first grip — "
+            f"{b_name} reaches but finds nothing."
+        )
+    if b_has and not a_has:
+        return (
+            f"{b_name} secures the first grip — "
+            f"{a_name} reaches but finds nothing."
+        )
+    # Defensive fallback — shouldn't hit unless the engine transitioned
+    # to GRIPPING with no edges in the graph (test-only configuration).
+    return "Both fighters lock onto their grips."
 
 
 class MatSideNarrator:
@@ -103,13 +154,22 @@ class MatSideNarrator:
         # transition line precedes whatever else happened on this tick).
         phase = self._phase_label(match)
         if self._last_phase is not None and phase != self._last_phase:
-            out.append(MatchClockEntry(
-                tick=tick,
-                prose=_PHASE_TRANSITION_PROSE.get(
-                    (self._last_phase, phase),
+            transition = (self._last_phase, phase)
+            # HAJ-162 — outcome-bound prose for the (closing → grip_war)
+            # transition. Reads grip state at the transition tick so the
+            # line is honest about which fighters actually seated grips
+            # this tick. HAJ-151 / HAJ-161 / HAJ-162 triage stretched the
+            # leader→follower lag; on the staging tick only the leader
+            # has grips, so "both fighters lock" was false-by-one-fighter.
+            if transition == ("closing", "grip_war"):
+                prose = _grip_seating_prose(match)
+            else:
+                prose = _PHASE_TRANSITION_PROSE.get(
+                    transition,
                     f"phase shifts: {self._last_phase} → {phase}.",
-                ),
-                source="phase",
+                )
+            out.append(MatchClockEntry(
+                tick=tick, prose=prose, source="phase",
             ))
         self._last_phase = phase
 
