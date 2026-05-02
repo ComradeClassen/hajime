@@ -298,9 +298,11 @@ def test_simultaneous_stuffs_dedupe_to_single_newaza_door() -> None:
     try:
         T = 5
         # Both fighters commit elite N=1 throws on the same tick;
-        # both stuffs land on T+3 from the consequence queue.
-        m._resolve_commit_throw(t, s, ThrowID.O_UCHI_GARI, tick=T)
-        m._resolve_commit_throw(s, t, ThrowID.O_UCHI_GARI, tick=T)
+        # both stuffs land on T+3 from the consequence queue. Uchi-mata
+        # is a snap throw (HAJ-143 execution_ticks=1), so the resolution
+        # tick is unchanged from the pre-HAJ-143 baseline.
+        m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=T)
+        m._resolve_commit_throw(s, t, ThrowID.UCHI_MATA, tick=T)
         # Walk the schedule (offsets 1, 2) and let RESOLVE_KAKE_N1 fire
         # both stuffs on T+3.
         m._advance_throws_in_progress(tick=T + 1)
@@ -336,7 +338,9 @@ def test_single_stuff_still_queues_exactly_one_newaza_door() -> None:
     match_module.resolve_throw = lambda *a, **kw: ("STUFFED", -2.0)
     try:
         T = 5
-        m._resolve_commit_throw(t, s, ThrowID.O_UCHI_GARI, tick=T)
+        # Uchi-mata is a snap throw (HAJ-143 execution_ticks=1), so the
+        # T+3 resolution tick is the pre-HAJ-143 baseline.
+        m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=T)
         m._advance_throws_in_progress(tick=T + 1)
         m._advance_throws_in_progress(tick=T + 2)
         outcomes: list = []

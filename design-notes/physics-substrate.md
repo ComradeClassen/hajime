@@ -719,6 +719,32 @@ The four chosen for v0.1:
 
 Together these exercise every mechanic defined in Parts 1–4.
 
+### 5.0 Execution duration and drive (HAJ-143)
+
+Every worked-throw template carries two execution-duration attributes alongside the four-dimension signature. These attributes describe how a throw *resolves through time* once committed, complementing the skill-compression factor N (Part 6.1) which describes how the kuzushi → tsukuri → kake chain compresses by belt rank.
+
+| Attribute         | Type                | Definition                                                                                                                                                                                                                                                                                          |
+| --                | --                  | --                                                                                                                                                                                                                                                                                                  |
+| `execution_ticks` | int (1..4)          | Number of ticks the throw consumes from KAKE_COMMIT to resolution. `1` is a snap throw (uchi-mata, seoi-nage at full speed): commit and resolution share a single resolution beat. `2..4` is a drive throw: tori holds kuzushi while walking uke off-balance for the additional ticks before score. |
+| `drive_distance`  | float, meters       | Total mat-frame COM displacement applied to *uke* across the execution window. `0.0` for snap throws; `~1–3 m` for drive throws. The per-tick displacement applied by the engine is `drive_distance / execution_ticks`.                                                                             |
+
+The two attributes compose with the existing skill-compression factor N. Total ticks from intent to score for an N=2 drive throw with `execution_ticks=3` is roughly N + (execution_ticks − 1) ticks plus the HAJ-148 outcome-deferral tick. Snap throws (`execution_ticks=1`) keep the existing single-tick resolution behaviour.
+
+The drive vector is computed once at commit using the dyad orientation (attacker → defender unit vector × `drive_distance`); it is *not* recomputed per tick in v0.1. Mid-drive defender rotation cannot redirect the throw — that's an open question for v0.2 (filed alongside mid-drive counters).
+
+**Seed values (calibration starting points, not commitments).**
+
+| Throw class                                      | `execution_ticks` | `drive_distance` |
+| --                                               | --                | --               |
+| Snap (uchi-mata, seoi-nage, harai-goshi, tai-otoshi, o-soto-gari, de-ashi-harai, o-goshi, o-guruma) | 1                 | 0.0 m            |
+| Drive (o-uchi-gari, ko-uchi-gari, ko-soto-gari)  | 2–3               | 1.0–2.5 m        |
+| Ride / sacrifice (tomoe-nage, ura-nage)          | 2                 | 1.0–1.5 m        |
+| Makikomi family                                  | 3                 | 2.0–3.0 m        |
+
+These are calibration starting points, not commitments. The Session 5 second-match observation (t=20:30, three-step drive across ~3 m for an o-uchi-gari ippon) is the anchoring data point for the drive-class range. Engine implementation: `_ThrowInProgress` carries `execution_ticks` and `drive_vector`; `_advance_throws_in_progress` applies per-tick displacement during the post-KC drive window; OOB grace (HAJ-127) suppresses Matte for the entire window so a drive that crosses the line resolves first, then OOB Matte fires post-resolution.
+
+**Implications for the prose layer.** Drive throws emit a single in-progress `THROW_DRIVE` event between commit and resolution (open question 4 — once-per-throw to avoid spam). Snap throws emit no in-progress prose. The resolution event is unchanged across both classes.
+
 ---
 
 ### 5.1 Uchi-mata (内股, inner thigh throw)
@@ -1011,15 +1037,15 @@ The following throws inherit the template structure but are not written in v0.1.
 
 - **Tai-otoshi (body drop)** — Lever, shin fulcrum, pure rotational throw with no lift. Couple-like force action but Lever geometry. Highest shoulder-impact velocity in the literature (Soldin 2022). HAJ-59: the shin-block geometry is incompatible with hip loading — `hip_engagement_penalty.engaged_floor ≈ 0.05`, which collapses the body-parts dimension when tori's trunk sagittal exceeds ~40°. The throw still fires; it lands as a stumble with tori entangled with uke afterward, narrated at the LOW quality band as "Tanaka loaded the hip — Tai-otoshi doesn't want the hip — the throw landed crooked."
 
-- **Ko-uchi-gari (minor inner reap)** — Couple, most timing-sensitive ashi-waza, possibly gets the timing_window variant like de-ashi-harai. Research extremely thin.
+- **Ko-uchi-gari (minor inner reap)** — Couple, most timing-sensitive ashi-waza, possibly gets the timing_window variant like de-ashi-harai. Research extremely thin. Drive class per §5.0 — `execution_ticks=2`, `drive_distance=1.0 m` — the foot-sweep finishes with a one-tick rideout while the attacker walks uke off-balance.
 
-- **O-uchi-gari (major inner reap)** — Couple, backward kuzushi, standard force-couple pattern. Rich pedagogical literature, thin kinetics.
+- **O-uchi-gari (major inner reap)** — Couple, backward kuzushi, standard force-couple pattern. Rich pedagogical literature, thin kinetics. Canonical drive throw per §5.0 — `execution_ticks=3`, `drive_distance=2.0 m` — calibrated against the Session 5 second-match observation (t=20:30 ippon resolved as a three-step drive across ~3 m of mat).
 
 - **Harai-goshi, competitive form** — Couple (Imamura 2007 confirms competitive form is Couple-class). Classical form as separate Lever entry.
 
 - **Harai-goshi, classical form** — Lever, hip fulcrum, traditional hip-throw kinetics.
 
-- **Tomoe-nage (circle / sacrifice throw)** — Lever with inverted commitment structure. Tori sacrifices own balance as part of kuzushi. Foot-on-belt fulcrum. Zero biomechanics literature; parameters inferred from Kashiwazaki coaching and first-principles.
+- **Tomoe-nage (circle / sacrifice throw)** — Lever with inverted commitment structure. Tori sacrifices own balance as part of kuzushi. Foot-on-belt fulcrum. Zero biomechanics literature; parameters inferred from Kashiwazaki coaching and first-principles. Ride/sacrifice class per §5.0 — `execution_ticks=2`, `drive_distance=1.2 m` — models the rotational carry from the foot-on-belt lift through the air-time arc.
 
 - **O-guruma (major wheel)** — Lever, extended-leg fulcrum at hip-line. Maximum moment arm among Lever throws. No empirical studies.
 

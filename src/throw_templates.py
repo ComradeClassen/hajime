@@ -361,6 +361,17 @@ class CoupleThrow:
     failure_outcome:           FailureSpec
     # Weight override — rarely used; most Couple throws accept the defaults.
     weights: Optional[SignatureWeights] = None
+    # HAJ-143 — throw-execution duration.
+    # `execution_ticks` is the number of ticks the throw consumes from
+    # KAKE_COMMIT to resolution. 1 = snap throw (resolves on the same
+    # beat as commit, today's behavior). 2–4 = drive throw, where the
+    # attacker holds kuzushi while walking uke off-balance for the
+    # additional ticks before the score resolves.
+    # `drive_distance` is the total mat-frame meters of COM displacement
+    # applied to uke across the execution window. 0.0 for snap throws.
+    # See physics-substrate Part 5 for seed-value calibration.
+    execution_ticks:           int   = 1
+    drive_distance:            float = 0.0
 
     classification: ThrowClassification = field(
         default=ThrowClassification.COUPLE, init=False,
@@ -387,6 +398,9 @@ class LeverThrow:
     counter_vulnerability:     float     # 0–1; weight for redirection counter.
     failure_outcome:           FailureSpec
     weights: Optional[SignatureWeights] = None
+    # HAJ-143 — throw-execution duration. See CoupleThrow for spec.
+    execution_ticks:           int   = 1
+    drive_distance:            float = 0.0
 
     # Part 4.4 — force application modulator. True means the throw physically
     # requires tori's dominant hand on a qualifying grip (the lift/rotation

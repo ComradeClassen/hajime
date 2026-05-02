@@ -429,9 +429,13 @@ TAI_OTOSHI: LeverThrow = LeverThrow(
 # KO-UCHI-GARI (小内刈) — Couple, timing-sensitive ashi-waza
 # Spec 5.5: "most timing-sensitive ashi-waza, possibly gets the timing_window
 # variant like de-ashi-harai." Modeled with a timing window on uke's rear foot.
+# HAJ-143 — drive-class ashi-waza: ko-uchi held into a 1-tick rideout while
+# the attacker walks uke off-balance.
 # ---------------------------------------------------------------------------
 KO_UCHI_GARI: CoupleThrow = CoupleThrow(
     name="Ko-uchi-gari",
+    execution_ticks=2,
+    drive_distance=1.0,
     kuzushi_requirement=KuzushiRequirement(
         direction=(-0.7, 0.3),                   # back and slightly lateral
         tolerance_rad=math.radians(35),
@@ -482,9 +486,14 @@ KO_UCHI_GARI: CoupleThrow = CoupleThrow(
 
 # ---------------------------------------------------------------------------
 # O-UCHI-GARI (大内刈) — Couple, backward kuzushi, standard force-couple
+# HAJ-143 — canonical drive throw. Session 5 second-match observation
+# (t=20:30) measured an o-uchi ippon as a three-step drive across ~3 m of
+# mat — the substrate-target seed values for the multi-tick execution path.
 # ---------------------------------------------------------------------------
 O_UCHI_GARI: CoupleThrow = CoupleThrow(
     name="O-uchi-gari",
+    execution_ticks=3,
+    drive_distance=2.0,
     kuzushi_requirement=KuzushiRequirement(
         direction=(-1.0, -0.2),                  # backward and slightly left
         tolerance_rad=math.radians(30),
@@ -642,9 +651,14 @@ HARAI_GOSHI_CLASSICAL: LeverThrow = LeverThrow(
 # Spec 5.5: tori sacrifices own balance as part of kuzushi; foot-on-belt
 # fulcrum. Commit threshold slightly lower than other Lever forms because
 # tori is already giving up standing position.
+# HAJ-143 — ride/sacrifice class: a 1-tick ride after the foot-on-belt
+# lift before the rotation completes. drive_distance models the rotational
+# carry (the air-time arc), not a horizontal walk.
 # ---------------------------------------------------------------------------
 TOMOE_NAGE: LeverThrow = LeverThrow(
     name="Tomoe-nage",
+    execution_ticks=2,
+    drive_distance=1.2,
     kuzushi_requirement=KuzushiRequirement(
         direction=(1.0, 0.0),                    # straight forward — uke must be coming in
         tolerance_rad=math.radians(25),
@@ -784,3 +798,32 @@ def worked_template_for(throw_id: ThrowID) -> ThrowTemplate | None:
     on the legacy ThrowDef path.
     """
     return WORKED_THROWS.get(throw_id)
+
+
+# ---------------------------------------------------------------------------
+# HAJ-143 — execution duration lookups
+# ---------------------------------------------------------------------------
+def execution_ticks_for(throw_id: ThrowID) -> int:
+    """Number of ticks the throw consumes from KAKE_COMMIT to resolution.
+
+    1 = snap (today's behavior). 2–4 = drive throw, where the attacker
+    holds kuzushi and walks uke off-balance for additional ticks before
+    the score resolves. Throws not on the worked-throw path default to
+    snap so the legacy ThrowDef pipeline keeps its existing 1-tick
+    resolution.
+    """
+    template = WORKED_THROWS.get(throw_id)
+    if template is None:
+        return 1
+    return getattr(template, "execution_ticks", 1)
+
+
+def drive_distance_for(throw_id: ThrowID) -> float:
+    """Total mat-frame meters of COM displacement applied to uke across
+    the throw's execution window. 0.0 for snap throws. The per-tick
+    displacement applied in the engine is `drive_distance / execution_ticks`.
+    """
+    template = WORKED_THROWS.get(throw_id)
+    if template is None:
+        return 0.0
+    return getattr(template, "drive_distance", 0.0)

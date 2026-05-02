@@ -533,6 +533,19 @@ class _ThrowInProgress:
     # fresh eq from the updated signature match when resolving.
     commit_execution_quality: float = 0.0
     last_sub_event: Optional[SubEvent] = None      # most recent emitted — drives Part 6.2 window region
+    # HAJ-143 — multi-tick throw-execution window. `execution_ticks` is
+    # the throw template's drive duration (1 = snap). `drive_vector` is
+    # the total mat-frame displacement applied to uke across the window,
+    # baked at commit so a defender rotation can't redirect mid-drive
+    # (v0.1 — open question 3 on the ticket). `drive_ticks_consumed`
+    # tracks how many drive ticks have already applied displacement, so
+    # the per-tick application doesn't fire twice on the same beat.
+    # `drive_prose_emitted` is a one-shot guard so an o-uchi drive line
+    # doesn't spam ("Sato drives… Sato drives…"); ticket open question 4.
+    execution_ticks:        int                    = 1
+    drive_vector:           tuple[float, float]    = (0.0, 0.0)
+    drive_ticks_consumed:   int                    = 0
+    drive_prose_emitted:    bool                   = False
 
     def offset(self, current_tick: int) -> int:
         return current_tick - self.start_tick
@@ -2764,6 +2777,35 @@ class Match:
         schedule = sub_event_schedule(n)
         throw_name = THROW_REGISTRY[throw_id].name
 
+        # HAJ-143 — bake the throw-execution window. Snap throws stay at
+        # exec_ticks=1 / drive=(0,0); drive throws (o-uchi-gari, ko-uchi-gari,
+        # tomoe-nage, etc.) get a non-zero drive vector pointing from
+        # attacker toward defender so the per-tick displacement walks uke
+        # along the line of force. Computed once at commit (open question
+        # 3 — defender rotation can't redirect the drive in v0.1).
+        from worked_throws import (
+            execution_ticks_for as _exec_ticks_for,
+            drive_distance_for as _drive_dist_for,
+        )
+        exec_ticks = _exec_ticks_for(throw_id)
+        drive_dist = _drive_dist_for(throw_id)
+        drive_vec: tuple[float, float] = (0.0, 0.0)
+        if exec_ticks > 1 and drive_dist > 0.0:
+            ax, ay = attacker.state.body_state.com_position
+            dx, dy = defender.state.body_state.com_position
+            ddx, ddy = dx - ax, dy - ay
+            norm = (ddx * ddx + ddy * ddy) ** 0.5
+            if norm > 1e-6:
+                drive_vec = (
+                    ddx / norm * drive_dist,
+                    ddy / norm * drive_dist,
+                )
+            else:
+                # Co-located fighters (degenerate test setup): fall back to
+                # attacker's facing so the drive still has a direction.
+                fx, fy = attacker.state.body_state.facing
+                drive_vec = (fx * drive_dist, fy * drive_dist)
+
         # Passivity / attack-registration fires at commit start regardless of N.
         self._last_attack_tick[attacker.identity.name] = tick
         self.grip_graph.register_attack(attacker.identity.name)
@@ -2919,9 +2961,16 @@ class Match:
                 schedule=schedule,
                 commit_actual=actual,
                 commit_execution_quality=eq,
+                execution_ticks=exec_ticks,
+                drive_vector=drive_vec,
             )
+            # HAJ-143 — drive throws push the resolution out by
+            # (exec_ticks - 1) ticks beyond the HAJ-157 T+3 baseline.
+            # Snap throws (exec_ticks=1) keep T+3; the per-tick drive
+            # displacement during the wait is applied by
+            # _advance_throws_in_progress.
             self._consequence_queue.append(_Consequence(
-                due_tick=tick + 3,
+                due_tick=tick + 3 + (exec_ticks - 1),
                 kind="RESOLVE_KAKE_N1",
                 payload={
                     "attacker_name": attacker.identity.name,
@@ -2942,6 +2991,8 @@ class Match:
             schedule=schedule,
             commit_actual=actual,
             commit_execution_quality=eq,
+            execution_ticks=exec_ticks,
+            drive_vector=drive_vec,
         )
         return events
 
@@ -2996,6 +3047,31 @@ class Match:
                     # T+3 via the RESOLVE_KAKE_N1 consequence queued at
                     # commit time. The tip stays in _throws_in_progress
                     # until the consequence fires; that handler pops it.
+                    # HAJ-143 — drive throws extend the wait further; the
+                    # consequence due_tick was already pushed out at commit.
+                    events.extend(self._apply_drive_step(
+                        tip, defender, throw_name, tick,
+                    ))
+                    continue
+                # HAJ-143 — N>1 drive throws defer resolution by
+                # (execution_ticks - 1) ticks beyond KC, applying per-tick
+                # COM displacement to uke during the wait. Snap throws
+                # (execution_ticks=1) keep the inline _resolve_kake path.
+                if tip.execution_ticks > 1:
+                    # Apply the first drive step on the KC tick itself so
+                    # the displacement is visible from beat one.
+                    events.extend(self._apply_drive_step(
+                        tip, defender, throw_name, tick,
+                    ))
+                    self._consequence_queue.append(_Consequence(
+                        due_tick=tick + (tip.execution_ticks - 1),
+                        kind="RESOLVE_DRIVE_THROW",
+                        payload={
+                            "attacker_name": attacker_name,
+                            "defender_name": tip.defender_name,
+                            "throw_id":      tip.throw_id,
+                        },
+                    ))
                     continue
                 # Recompute signature at KAKE time — the match state has
                 # changed over the attempt. resolve_throw uses the window
@@ -3008,7 +3084,83 @@ class Match:
                     attacker, defender, tip.throw_id, kake_actual, tick,
                 ))
                 self._throws_in_progress.pop(attacker_name, None)
+                continue
 
+            # HAJ-143 — post-KC drive ticks for both N=1 and N>1 paths.
+            # The KC sub-event has already fired on a prior tick, the tip
+            # is still in progress (resolution consequence pending), and
+            # this is one of the (execution_ticks - 1) drive ticks. Apply
+            # per-tick displacement and let the consequence resolve later.
+            if tip.execution_ticks > 1 and self._is_in_drive_window(tip, tick):
+                events.extend(self._apply_drive_step(
+                    tip, defender, throw_name, tick,
+                ))
+
+        return events
+
+    def _is_in_drive_window(
+        self, tip: "_ThrowInProgress", tick: int,
+    ) -> bool:
+        """HAJ-143 — True when `tick` falls inside the post-KC drive window.
+
+        The window opens on the KAKE_COMMIT tick and stays open for
+        `execution_ticks - 1` more ticks. KC fires at offset
+        `compression_n - 1` for N>1 throws (or offset 2 for N=1 per the
+        HAJ-157 spread layout). The drive window therefore runs from
+        that offset through to KC + (execution_ticks - 1).
+        """
+        if tip.execution_ticks <= 1:
+            return False
+        kc_offset = max(tip.compression_n - 1, 2 if tip.compression_n == 1 else 0)
+        offset = tip.offset(tick)
+        return kc_offset <= offset < kc_offset + tip.execution_ticks
+
+    def _apply_drive_step(
+        self,
+        tip: "_ThrowInProgress",
+        defender: Judoka,
+        throw_name: str,
+        tick: int,
+    ) -> list[Event]:
+        """HAJ-143 — apply one tick of drive displacement and emit the
+        in-progress prose hook the first time a drive step fires.
+
+        Per ticket open question 4: prose lands once per drive throw
+        (not once per tick) so an o-uchi rendering doesn't spam
+        "Sato drives… Sato drives…".
+        """
+        events: list[Event] = []
+        if tip.execution_ticks <= 1:
+            return events
+        if tip.drive_ticks_consumed >= tip.execution_ticks:
+            return events
+        per_tick = (
+            tip.drive_vector[0] / tip.execution_ticks,
+            tip.drive_vector[1] / tip.execution_ticks,
+        )
+        bs = defender.state.body_state
+        cx, cy = bs.com_position
+        bs.com_position = (cx + per_tick[0], cy + per_tick[1])
+        tip.drive_ticks_consumed += 1
+        if not tip.drive_prose_emitted:
+            events.append(Event(
+                tick=tick,
+                event_type="THROW_DRIVE",
+                description=(
+                    f"[throw] {tip.attacker_name} drives "
+                    f"{tip.defender_name} on {throw_name}."
+                ),
+                data={
+                    "attacker": tip.attacker_name,
+                    "defender": tip.defender_name,
+                    "throw_id": tip.throw_id.name,
+                    "execution_ticks": tip.execution_ticks,
+                    "drive_distance": (
+                        tip.drive_vector[0] ** 2 + tip.drive_vector[1] ** 2
+                    ) ** 0.5,
+                },
+            ))
+            tip.drive_prose_emitted = True
         return events
 
     def _emit_sub_events(
@@ -3428,10 +3580,27 @@ class Match:
                 ev.data.setdefault("from_consequence_queue", True)
             events.extend(commit_events)
             return
-        if c.kind == "RESOLVE_KAKE_N1":
+        if c.kind == "RESOLVE_KAKE_N1" or c.kind == "RESOLVE_DRIVE_THROW":
             attacker = self._fighter_by_name(c.payload["attacker_name"])
             defender = self._fighter_by_name(c.payload["defender_name"])
             throw_id = c.payload["throw_id"]
+            # HAJ-143 — apply any remaining drive steps before popping the
+            # tip so the *full* drive_distance lands as displacement before
+            # the score resolves. _advance_throws_in_progress walked the
+            # earlier drive ticks; this handler closes out the tail.
+            tip = self._throws_in_progress.get(c.payload["attacker_name"])
+            if tip is not None and defender is not None and tip.execution_ticks > 1:
+                throw_name = THROW_REGISTRY[tip.throw_id].name
+                while tip.drive_ticks_consumed < tip.execution_ticks:
+                    drive_events = self._apply_drive_step(
+                        tip, defender, throw_name, tick,
+                    )
+                    if not drive_events and tip.drive_ticks_consumed < tip.execution_ticks:
+                        # Defensive: _apply_drive_step caps at execution_ticks
+                        # but if it ever no-ops without progress, break out so
+                        # the consequence handler doesn't loop forever.
+                        break
+                    events.extend(drive_events)
             # Drop the in-progress entry now so _resolve_kake's downstream
             # paths (e.g. ne-waza dispatch on STUFFED) see a clean slate
             # for this attacker.
