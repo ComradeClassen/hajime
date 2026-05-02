@@ -199,6 +199,100 @@ def _head_steer_prose(match: "Match", victim_name: str) -> Optional[str]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# HAJ-165 — movement prose (circling / posture / pull-without-commit)
+#
+# Three connective-beat families that fill the dead air between grip events
+# and throw commits. Each follows the HAJ-162 dynamic-resolver pattern:
+# read engine state at emission time, render only what's actually true.
+# ---------------------------------------------------------------------------
+
+# Suppress movement prose on ticks that already carry a state-change event
+# — those have their own prose lines (always-promote / phase / contradiction)
+# and movement beats would just duplicate the slot. THROW_ENTRY is included
+# because a commit-tick is precisely when movement prose should defer.
+_MOVEMENT_SUPPRESS_EVENT_TYPES: frozenset[str] = frozenset({
+    "THROW_ENTRY", "THROW_LANDING", "STUFFED", "FAILED",
+    "SCORE_AWARDED", "IPPON_AWARDED", "COUNTER_COMMIT",
+    "MATTE", "NEWAZA_TRANSITION",
+    "KUZUSHI_INDUCED",
+    "GRIP_ESTABLISH",
+})
+
+
+# Per-tactical-intent prose. Keys are the tactical_intent string carried
+# on the MOVE event; the resolver picks the line for the actor / opponent
+# pair. Intents not listed return None (no movement prose for that step).
+def _circling_prose(
+    tactical_intent: Optional[str], actor: str, opponent: str,
+) -> Optional[str]:
+    if tactical_intent is None:
+        return None
+    if tactical_intent in ("circle", "circle_closing"):
+        return f"{actor} circles, looking for an angle on {opponent}."
+    if tactical_intent == "lateral_approach":
+        return f"{actor} steps wide, working {opponent} into space."
+    if tactical_intent == "bait_retreat":
+        return f"{actor} steps back, baiting {opponent} forward."
+    if tactical_intent in ("closing", "step_in"):
+        return f"{actor} closes ground on {opponent}."
+    if tactical_intent == "pressure":
+        return f"{actor} drives forward, pressing {opponent}."
+    if tactical_intent == "give_ground":
+        return f"{actor} gives ground, ceding the center."
+    if tactical_intent == "gain_angle":
+        return f"{actor} works for an angle on {opponent}."
+    return None
+
+
+def _posture_change_prose(
+    name: str, old_posture, new_posture,
+) -> Optional[str]:
+    """Render a one-line beat for a posture transition that didn't go
+    through kuzushi. Transitions INTO BROKEN are kuzushi events and own
+    their own prose; transitions OUT of BROKEN are recoveries; the
+    UPRIGHT ↔ SLIGHTLY_BENT pair is the "settling in / straightening
+    up" beat the ticket calls for."""
+    from enums import Posture
+    if old_posture is new_posture:
+        return None
+    # BROKEN entry is a kuzushi event — engine emits KUZUSHI_INDUCED on
+    # the same tick and that's the prose line. Don't double-author.
+    if new_posture is Posture.BROKEN:
+        return None
+    if old_posture is Posture.BROKEN:
+        return f"{name} recovers posture, base re-set."
+    if (old_posture is Posture.UPRIGHT
+            and new_posture is Posture.SLIGHTLY_BENT):
+        return f"{name} bends in, weight rolling onto the front foot."
+    if (old_posture is Posture.SLIGHTLY_BENT
+            and new_posture is Posture.UPRIGHT):
+        return f"{name} straightens up, posture restored."
+    return None
+
+
+def _pull_without_commit_prose(
+    actor: str, opponent: str, target: Optional[str],
+) -> str:
+    """Outcome-bound line for a PULL / REACH BPE that didn't reach the
+    commit threshold. The grip referent (sleeve / lapel / collar)
+    sharpens the prose; uke 'rides it out' reads the absence of a
+    follow-up commit honestly."""
+    if target == "SLEEVE":
+        return f"{actor} tugs at the sleeve — {opponent} rides it out."
+    if target == "LAPEL":
+        return (
+            f"{actor} hauls on the lapel, but {opponent} stays "
+            f"square."
+        )
+    if target == "COLLAR":
+        return (
+            f"{actor} hooks the collar and tries to break "
+            f"{opponent}'s posture — no give."
+        )
+    return f"{actor} pulls in but {opponent} absorbs the load."
+
+
 class MatSideNarrator:
     """Per-match instance held by Match. Filters BPE + Event streams each
     tick and emits MatchClockEntry records. Stateful — tracks last-promoted
@@ -213,6 +307,11 @@ class MatSideNarrator:
         self._last_sample_tick: int = -1_000
         self._last_promoted_tick: int = -1
         self._last_actor_source_tick: dict[tuple[str, str], int] = {}
+        # HAJ-165 — per-fighter posture tracking. A change between ticks
+        # (excluding kuzushi-driven BROKEN entries) drives the posture
+        # beat. Initialized to None so the first tick the narrator runs
+        # establishes the baseline without firing prose.
+        self._last_posture: dict[str, object] = {}
 
     def consume_tick(
         self, tick: int, events: list, bpes: list[BodyPartEvent],
@@ -301,6 +400,26 @@ class MatSideNarrator:
         # HEAD_AS_OUTPUT BPE fires for lapel — the detector naturally
         # respects that.
         out.extend(self._detect_head_steer(tick, bpes, match))
+
+        # HAJ-165 — movement prose. Three connective-beat families that
+        # fill the dead air between grip events and throw commits.
+        # Posture beats fire on state change (always promote, no rate
+        # limit); circling and pull-without-commit beats are sample-
+        # rate-limited. All three suppress on ticks that already carry
+        # a state-change event (commit / land / kuzushi / matte / score)
+        # so they don't double-author the slot.
+        suppress_movement = any(
+            ev.event_type in _MOVEMENT_SUPPRESS_EVENT_TYPES
+            for ev in events
+        )
+        # Posture state-change is independent of the suppress gate
+        # (UPRIGHT ↔ SLIGHTLY_BENT is the same kind of state-change beat
+        # the issue calls out); it just declines to fire on KUZUSHI_INDUCED
+        # ticks where the engine already authors the BROKEN line.
+        out.extend(self._detect_posture_change(tick, events, match))
+        if not suppress_movement:
+            out.extend(self._detect_circling(tick, events, match))
+            out.extend(self._detect_pull_without_commit(tick, bpes, match))
 
         # Rule 4 — sample.
         if not out and (tick - self._last_sample_tick) >= _STABLE_SAMPLE_INTERVAL:
@@ -405,6 +524,140 @@ class MatSideNarrator:
                 actors=(b.actor,),
             ))
         return out
+
+    def _detect_circling(
+        self, tick: int, events: list, match: "Match",
+    ) -> list[MatchClockEntry]:
+        """HAJ-165 — read MOVE engine events with a tactical_intent
+        label and render at most one circling beat per actor per tick,
+        rate-limited through _rate_check (default 6-tick window). The
+        prose cites the actual locomotion intent so the line matches
+        the geometry. Only fires while the dyad is mid-fight (gripping
+        / engaged / standing-distant) — ne-waza has its own substrate."""
+        from enums import SubLoopState, Position
+        if match.sub_loop_state == SubLoopState.NE_WAZA:
+            return []
+        if match.position not in (
+            Position.GRIPPING, Position.ENGAGED, Position.STANDING_DISTANT,
+        ):
+            return []
+        out: list[MatchClockEntry] = []
+        seen_actors: set[str] = set()
+        for ev in events:
+            if ev.event_type != "MOVE":
+                continue
+            actor = ev.data.get("fighter")
+            if not actor or actor in seen_actors:
+                continue
+            opponent = self._opponent_of(actor, match)
+            if opponent is None:
+                continue
+            tactical = ev.data.get("tactical_intent")
+            prose = _circling_prose(tactical, actor, opponent)
+            if prose is None:
+                continue
+            if not self._rate_check(actor, "circling", tick):
+                continue
+            seen_actors.add(actor)
+            out.append(MatchClockEntry(
+                tick=tick, prose=prose,
+                source="circling",
+                actors=(actor,),
+            ))
+        return out
+
+    def _detect_posture_change(
+        self, tick: int, events: list, match: "Match",
+    ) -> list[MatchClockEntry]:
+        """HAJ-165 — fire a single line per fighter whose discrete
+        posture (UPRIGHT / SLIGHTLY_BENT / BROKEN) changed since the
+        last tick. Transitions INTO BROKEN are owned by KUZUSHI_INDUCED
+        prose; transitions OUT of BROKEN are recoveries. Always
+        promotes on state change (no rate limit) per AC#4."""
+        from body_state import derive_posture
+        # Defensive — legacy unit-test stubs don't always carry fighter
+        # references. Skip silently in that case so the existing test
+        # surface (e.g. desperation-prose stub matches) isn't broken.
+        fighter_a = getattr(match, "fighter_a", None)
+        fighter_b = getattr(match, "fighter_b", None)
+        if fighter_a is None or fighter_b is None:
+            return []
+        # KUZUSHI_INDUCED ticks belong to the engine's kuzushi prose; a
+        # posture beat would just paraphrase the same beat.
+        if any(ev.event_type == "KUZUSHI_INDUCED" for ev in events):
+            for fighter in (fighter_a, fighter_b):
+                bs = fighter.state.body_state
+                self._last_posture[fighter.identity.name] = derive_posture(
+                    bs.trunk_sagittal, bs.trunk_frontal,
+                )
+            return []
+        out: list[MatchClockEntry] = []
+        for fighter in (fighter_a, fighter_b):
+            name = fighter.identity.name
+            bs = fighter.state.body_state
+            current = derive_posture(bs.trunk_sagittal, bs.trunk_frontal)
+            previous = self._last_posture.get(name)
+            self._last_posture[name] = current
+            if previous is None:
+                continue  # baseline tick; no prose
+            prose = _posture_change_prose(name, previous, current)
+            if prose is None:
+                continue
+            out.append(MatchClockEntry(
+                tick=tick, prose=prose,
+                source="posture",
+                actors=(name,),
+            ))
+        return out
+
+    def _detect_pull_without_commit(
+        self, tick: int, bpes: list[BodyPartEvent], match: "Match",
+    ) -> list[MatchClockEntry]:
+        """HAJ-165 — render a connective beat when a PULL / REACH BPE
+        fires this tick without the actor being mid-commit. The
+        suppression gate at the call site already handles THROW_ENTRY
+        ticks; this detector additionally checks _throws_in_progress
+        so a multi-tick attempt that started earlier doesn't get
+        described as 'no commit' just because THROW_ENTRY isn't on
+        this tick. Rate-limited through _rate_check."""
+        out: list[MatchClockEntry] = []
+        seen_actors: set[str] = set()
+        in_progress = set(getattr(match, "_throws_in_progress", {}).keys())
+        for b in bpes:
+            if b.tick != tick:
+                continue
+            if b.source not in ("PULL", "REACH"):
+                continue
+            actor = b.actor
+            if actor in seen_actors or actor in in_progress:
+                continue
+            opponent = self._opponent_of(actor, match)
+            if opponent is None:
+                continue
+            if not self._rate_check(actor, "pull_no_commit", tick):
+                continue
+            target = b.target.name if b.target is not None else None
+            seen_actors.add(actor)
+            out.append(MatchClockEntry(
+                tick=tick,
+                prose=_pull_without_commit_prose(actor, opponent, target),
+                source="pull_no_commit",
+                actors=(actor,),
+            ))
+        return out
+
+    def _opponent_of(self, actor: str, match: "Match") -> Optional[str]:
+        fighter_a = getattr(match, "fighter_a", None)
+        fighter_b = getattr(match, "fighter_b", None)
+        if fighter_a is None or fighter_b is None:
+            return None
+        a = fighter_a.identity.name
+        b = fighter_b.identity.name
+        if actor == a:
+            return b
+        if actor == b:
+            return a
+        return None
 
     def _rate_check(self, actor: str, source: str, tick: int) -> bool:
         key = (actor, source)
