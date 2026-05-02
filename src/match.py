@@ -2017,6 +2017,89 @@ class Match:
             "clock_pressure_role_follower": follower_role,
         }
 
+    def _emit_grip_init_recompute(
+        self, survivor: Judoka, attacker: Judoka,
+        tick: int, events: list[Event],
+    ) -> None:
+        """HAJ-158 — recompute grip initiative after a FAILED / STUFFED
+        throw resolution. Same scoring machinery as the opening cascade
+        (`_stage_grip_cascade`); does NOT seat grips or stage a follower
+        response — the grip graph is whatever the failure left it as,
+        and this is a re-roll of who-would-reach-first if a grip-fight
+        phase started now.
+        The fresh score reads current fatigue / composure (so the post-
+        failure composure dip on tori expresses on this initiative roll)
+        and the familiarity counter, which is bumped by +1 for the
+        survivor before sampling — uke scouted tori's preference by
+        surviving the attack (HAJ-158 open question 2).
+        """
+        # Survivor of the failed attack scouted the attacker's preference;
+        # bump familiarity before sampling so the recomputed score
+        # reflects the freshly-incremented count.
+        survivor_name = survivor.identity.name
+        self._grip_familiarity[survivor_name] = (
+            self._grip_familiarity.get(survivor_name, 0) + 1
+        )
+        rng_a = random.Random(
+            f"haj158:recompute:{self.fighter_a.identity.name}:"
+            f"{self.seed}:{tick}"
+        )
+        rng_b = random.Random(
+            f"haj158:recompute:{self.fighter_b.identity.name}:"
+            f"{self.seed}:{tick}"
+        )
+        matchup = self._compute_stance_matchup()
+        a_role, b_role = clock_pressure_roles(
+            self.fighter_a, self.fighter_b,
+            current_tick=tick, max_ticks=self.max_ticks,
+            a_score=self._a_score, b_score=self._b_score,
+        )
+        a_fam = self._grip_familiarity.get(self.fighter_a.identity.name, 0)
+        b_fam = self._grip_familiarity.get(self.fighter_b.identity.name, 0)
+        a_init = sample_initiative(
+            self.fighter_a, self.fighter_b,
+            stance_matchup=matchup,
+            clock_pressure_role=a_role,
+            familiarity_delta=a_fam - b_fam,
+            rng=rng_a,
+        )
+        b_init = sample_initiative(
+            self.fighter_b, self.fighter_a,
+            stance_matchup=matchup,
+            clock_pressure_role=b_role,
+            familiarity_delta=b_fam - a_fam,
+            rng=rng_b,
+        )
+        if a_init >= b_init:
+            leader, follower = self.fighter_a, self.fighter_b
+            leader_init, follower_init = a_init, b_init
+            leader_role, follower_role = a_role, b_role
+        else:
+            leader, follower = self.fighter_b, self.fighter_a
+            leader_init, follower_init = b_init, a_init
+            leader_role, follower_role = b_role, a_role
+        events.append(Event(
+            tick=tick, event_type="GRIP_INITIATIVE",
+            description=(
+                f"[grip_init] {leader.identity.name} ({leader_init:+.2f}) "
+                f"reaches first vs {follower.identity.name} "
+                f"({follower_init:+.2f})"
+            ),
+            data={
+                "leader": leader.identity.name,
+                "follower": follower.identity.name,
+                "leader_init": leader_init,
+                "follower_init": follower_init,
+                "stance_matchup": matchup.name,
+                "clock_pressure_role_leader": leader_role,
+                "clock_pressure_role_follower": follower_role,
+                "from_recompute": True,
+                "survivor": survivor_name,
+                "failed_attacker": attacker.identity.name,
+                "prose_silent": True,
+            },
+        ))
+
     def _seat_grips_for(
         self, attacker: Judoka, defender: Judoka, tick: int,
     ) -> list[GripEdge]:
@@ -3668,6 +3751,20 @@ class Match:
             for ev in matte_events:
                 ev.data.setdefault("from_consequence_queue", True)
             events.extend(matte_events)
+        elif c.kind == "GRIP_INIT_RECOMPUTE":
+            survivor = self._fighter_by_name(c.payload["survivor_name"])
+            failed_attacker = self._fighter_by_name(
+                c.payload["failed_attacker_name"]
+            )
+            if survivor is None or failed_attacker is None:
+                return
+            recompute_events: list[Event] = []
+            self._emit_grip_init_recompute(
+                survivor, failed_attacker, tick, recompute_events,
+            )
+            for ev in recompute_events:
+                ev.data.setdefault("from_consequence_queue", True)
+            events.extend(recompute_events)
 
     # -----------------------------------------------------------------------
     # HAJ-152 — POST-SCORE FOLLOW-UP WINDOW
@@ -4567,6 +4664,25 @@ class Match:
         # IPPON / WAZA_ARI / no-score landings where the snapshot wasn't
         # consumed.
         self._commit_motivation.pop(a_name, None)
+
+        # HAJ-158 — every FAILED / STUFFED resolution opens a fresh
+        # grip-fight beat: tori has expended energy, telegraphed a
+        # preference, and lost a tick of tempo; uke survived an attack.
+        # HAJ-151's spec calls for an initiative recompute on every
+        # post-failure / post-stuff re-engagement, but the engagement
+        # path only fires when grips break (edge_count==0). Schedule
+        # the recompute here as a consequence on tick+1 (HAJ-148 N+1
+        # contract); the handler emits a fresh [grip_init] event with
+        # current state so the composure dip from failure expresses.
+        if outcome in ("FAILED", "STUFFED") and not self.match_over:
+            self._consequence_queue.append(_Consequence(
+                due_tick=tick + 1,
+                kind="GRIP_INIT_RECOMPUTE",
+                payload={
+                    "survivor_name": d_name,
+                    "failed_attacker_name": a_name,
+                },
+            ))
 
         return events
 
