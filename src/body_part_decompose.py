@@ -680,6 +680,15 @@ def compute_head_state(
             continue
         if edge.current_intent != "STEER":
             continue
+        # HAJ-161 — head-as-output is mechanically *only* a collar-grip
+        # output. A LAPEL_HIGH steers the torso, not the head; the
+        # pre-fix path emitted "Renard's head is steered" off a lapel
+        # grip, which was mechanically dishonest. Only COLLAR_BACK and
+        # COLLAR_SIDE drive the HEAD body-part state. Other STEER-intent
+        # edges still steer their own targets (torso, sleeve) — they
+        # just don't aggregate into the head event.
+        if not edge.grip_type_v2.is_collar():
+            continue
         steerers.append(edge)
         if edge.steer_direction:
             for d_name in edge.steer_direction:
@@ -743,11 +752,14 @@ def _set_edge_intent(
 
 
 def _grip_axis_for(edge: "GripEdge") -> str:
-    """SkillVector axis driving execution quality of work on this edge."""
+    """SkillVector axis driving execution quality of work on this edge.
+    HAJ-161 — both COLLAR sub-types share the lapel-grip skill axis (no
+    separate "collar_grip" axis in v0.1; the SkillVector wraps both in
+    one upper-torso-pull dimension)."""
     name = edge.grip_type_v2.name.upper()
     if "SLEEVE" in name:
         return "sleeve_grip"
-    if "LAPEL" in name or name in ("COLLAR",):
+    if "LAPEL" in name or "COLLAR" in name:
         return "lapel_grip"
     return "lapel_grip"
 

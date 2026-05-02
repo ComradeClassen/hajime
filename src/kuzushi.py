@@ -269,7 +269,11 @@ def _direction_bias_radians(grip_type: "_GripTypeV2") -> float:
         GripTypeV2.SLEEVE_LOW:  math.radians(10.0),
         GripTypeV2.LAPEL_LOW:   0.0,
         GripTypeV2.LAPEL_HIGH:  0.0,
-        GripTypeV2.COLLAR:      0.0,
+        # HAJ-161 — both collar sub-types deliver kuzushi straight down
+        # the pull line (no wrist-rotation bias). The head-steering
+        # contribution lives in the head-as-output computation, not here.
+        GripTypeV2.COLLAR_BACK: 0.0,
+        GripTypeV2.COLLAR_SIDE: 0.0,
         GripTypeV2.BELT:        0.0,
         GripTypeV2.PISTOL:      math.radians(10.0),
         GripTypeV2.CROSS:       0.0,  # handled below — needs sign flip, not rotation

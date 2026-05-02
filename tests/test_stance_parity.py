@@ -80,9 +80,21 @@ def test_lapel_high_favors_matched_stance() -> None:
     )
 
 
-def test_collar_strongly_favors_matched_stance() -> None:
-    sp = FORCE_ENVELOPES[GripTypeV2.COLLAR].stance_parity
+def test_collar_back_strongly_favors_matched_stance() -> None:
+    """HAJ-161 — COLLAR_BACK (the canonical nape grip) is the most
+    stance-dependent grip in the vocabulary."""
+    sp = FORCE_ENVELOPES[GripTypeV2.COLLAR_BACK].stance_parity
     assert sp.matched > sp.mirrored
+
+
+def test_collar_side_favors_matched_stance() -> None:
+    """HAJ-161 — COLLAR_SIDE inherits the matched-stance bias but the
+    gap is narrower than COLLAR_BACK because the trapezius-line grip
+    is less seam-dependent."""
+    sp = FORCE_ENVELOPES[GripTypeV2.COLLAR_SIDE].stance_parity
+    assert sp.matched > sp.mirrored
+    back = FORCE_ENVELOPES[GripTypeV2.COLLAR_BACK].stance_parity
+    assert (sp.matched - sp.mirrored) < (back.matched - back.mirrored)
 
 
 def test_pistol_favors_mirrored_stance() -> None:

@@ -183,6 +183,10 @@ class GripTarget(Enum):
     LEFT_SLEEVE   = "left_sleeve"
     RIGHT_SLEEVE  = "right_sleeve"
     BACK_COLLAR   = "back_collar"
+    # HAJ-161 — side-collar target for the COLLAR_SIDE sub-type. Sits at
+    # the trapezius / shoulder-line; gripped by reaching across or
+    # alongside uke's neck rather than over the shoulder.
+    SIDE_COLLAR   = "side_collar"
     LEFT_BACK_GI  = "left_back_gi"
     RIGHT_BACK_GI = "right_back_gi"
     BELT          = "belt"
@@ -282,14 +286,28 @@ class GripTypeV2(Enum):
     # rotation control and a longer pull-around moment arm; the elbow/tricep
     # (HIGH) gives leverage to lift uke's shoulder line for hikite-driven
     # forward throws. Most throws prefer HIGH; Tai-otoshi prefers LOW.
-    SLEEVE_LOW  = auto()  # Cuff — wrist rotation, long moment arm, easier to slip.
-    SLEEVE_HIGH = auto()  # Elbow/tricep — strong lift, shorter moment arm, harder to strip.
-    LAPEL_LOW   = auto()  # Eri-tori lower — mid-chest, standard working grip.
-    LAPEL_HIGH  = auto()  # Eri-tori upper — collarbone; strong lift (tsurite).
-    COLLAR      = auto()  # Oku-eri — deep behind neck; max rotation authority.
-    BELT        = auto()  # Obi-tori — wraps back to grip belt; max CoM lift.
-    PISTOL      = auto()  # Sode-tori — sleeve-cuff clamp; defensive, strip-resistant.
-    CROSS       = auto()  # Katate-ai-gumi — "wrong" hand across; breaks geometry.
+    SLEEVE_LOW   = auto()  # Cuff — wrist rotation, long moment arm, easier to slip.
+    SLEEVE_HIGH  = auto()  # Elbow/tricep — strong lift, shorter moment arm, harder to strip.
+    LAPEL_LOW    = auto()  # Eri-tori lower — mid-chest, standard working grip.
+    LAPEL_HIGH   = auto()  # Eri-tori upper — collarbone; strong lift (tsurite).
+    # HAJ-161 — collar grip splits by position. The original `COLLAR` value
+    # was a bare-stub "deep behind neck" entry; the head-steering work
+    # needs to distinguish two configurations real judo pulls apart:
+    #   - COLLAR_BACK (oku-eri, nape grip): hand reaches over the shoulder
+    #     to grip the back-collar / nape area. Maximum head-steering
+    #     authority — drives uke's head forward, down, or rotationally.
+    #     Setup grip for sumi-gaeshi (over-the-top), kata-guruma, and the
+    #     canonical head-pull entries to forward-rotation throws (high-
+    #     collar uchi-mata / harai-goshi).
+    #   - COLLAR_SIDE (kata-eri, near the trapezius / shoulder-line): the
+    #     hybrid lapel/collar grip taken at the trapezius. Less head-
+    #     control, more shoulder-control — a cleaner sumi/forward-couple
+    #     setup than LAPEL_HIGH but not the full nape grip.
+    COLLAR_BACK  = auto()  # Oku-eri — deep behind neck; max rotation + head authority.
+    COLLAR_SIDE  = auto()  # Kata-eri — trapezius / shoulder line; hybrid lapel/collar.
+    BELT         = auto()  # Obi-tori — wraps back to grip belt; max CoM lift.
+    PISTOL       = auto()  # Sode-tori — sleeve-cuff clamp; defensive, strip-resistant.
+    CROSS        = auto()  # Katate-ai-gumi — "wrong" hand across; breaks geometry.
 
     def is_unconventional(self) -> bool:
         """Under current IJF rules, unconventional grips must lead to immediate
@@ -302,6 +320,13 @@ class GripTypeV2(Enum):
         logic that doesn't care about height (display, generic vocabulary
         rules, kumi-kata clocks)."""
         return self in (GripTypeV2.SLEEVE_LOW, GripTypeV2.SLEEVE_HIGH)
+
+    def is_collar(self) -> bool:
+        """HAJ-161 — both collar sub-types share the collar family. The
+        head-as-output computation (HAJ-146) gates on this — only collar
+        grips drive the HEAD body-part state; lapel grips steer the
+        torso, not the head."""
+        return self in (GripTypeV2.COLLAR_BACK, GripTypeV2.COLLAR_SIDE)
 
 
 # ---------------------------------------------------------------------------

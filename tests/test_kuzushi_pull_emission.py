@@ -87,7 +87,11 @@ def _make_referee():
 class TestDirectionLookup:
     @pytest.mark.parametrize("grip_type", [
         GripTypeV2.LAPEL_LOW, GripTypeV2.LAPEL_HIGH,
-        GripTypeV2.SLEEVE_HIGH, GripTypeV2.COLLAR, GripTypeV2.BELT,
+        GripTypeV2.SLEEVE_HIGH,
+        # HAJ-161 — both collar sub-types share the identity-pull
+        # behaviour (no wrist-rotation bias).
+        GripTypeV2.COLLAR_BACK, GripTypeV2.COLLAR_SIDE,
+        GripTypeV2.BELT,
     ])
     def test_identity_grip_types_preserve_direction(self, grip_type):
         # Forward pull → forward kuzushi for all "identity" grip types.
@@ -95,7 +99,8 @@ class TestDirectionLookup:
         assert v == pytest.approx((1.0, 0.0))
 
     @pytest.mark.parametrize("grip_type", [
-        GripTypeV2.LAPEL_LOW, GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR,
+        GripTypeV2.LAPEL_LOW, GripTypeV2.LAPEL_HIGH,
+        GripTypeV2.COLLAR_BACK, GripTypeV2.COLLAR_SIDE,
     ])
     def test_lapel_pull_back_yields_backward_kuzushi(self, grip_type):
         # Spec example: lapel pull-down → forward-down vector. Our 2D

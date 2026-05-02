@@ -130,7 +130,7 @@ class GripEdge:
         # STANDARD or DEEP:
         v2 = self.grip_type_v2
         if self.depth_level == GripDepth.DEEP:
-            if v2 == GripTypeV2.COLLAR or v2 == GripTypeV2.LAPEL_HIGH:
+            if v2.is_collar() or v2 == GripTypeV2.LAPEL_HIGH:
                 return GripType.HIGH_COLLAR
             if v2 == GripTypeV2.BELT:
                 return GripType.BELT

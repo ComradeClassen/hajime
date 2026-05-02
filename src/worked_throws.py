@@ -73,7 +73,16 @@ UCHI_MATA: CoupleThrow = CoupleThrow(
         ),
         GripRequirement(
             hand="right_hand",                   # tsurite
-            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+            # HAJ-161 — high-collar Uchi-mata is a documented competitive
+            # variant: tori reaches over uke's shoulder (COLLAR_BACK) or
+            # to the trapezius line (COLLAR_SIDE) to drive the head-
+            # forward kuzushi the sweep-leg arc rotates around. LAPEL_HIGH
+            # remains the classical Kodokan setup.
+            grip_type=(
+                GripTypeV2.LAPEL_HIGH,
+                GripTypeV2.COLLAR_BACK,
+                GripTypeV2.COLLAR_SIDE,
+            ),
             min_depth=GripDepth.STANDARD,
             mode=GripMode.DRIVING,
         ),
@@ -557,7 +566,16 @@ HARAI_GOSHI: CoupleThrow = CoupleThrow(
         ),
         GripRequirement(
             hand="right_hand",
-            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+            # HAJ-161 — competitive Harai-goshi accepts the classical
+            # LAPEL_HIGH tsurite or either collar variant. The high-
+            # collar (COLLAR_BACK) drives the head-forward kuzushi the
+            # sagittal couple rotates around; the COLLAR_SIDE variant
+            # is the trapezius-line setup common in elite play.
+            grip_type=(
+                GripTypeV2.LAPEL_HIGH,
+                GripTypeV2.COLLAR_BACK,
+                GripTypeV2.COLLAR_SIDE,
+            ),
             min_depth=GripDepth.STANDARD,
             mode=GripMode.DRIVING,
         ),
@@ -608,7 +626,14 @@ HARAI_GOSHI_CLASSICAL: LeverThrow = LeverThrow(
         ),
         GripRequirement(
             hand="right_hand",
-            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+            # HAJ-161 — classical hip-fulcrum Harai-goshi accepts the
+            # LAPEL_HIGH tsurite or either collar variant. Same head-
+            # forward kuzushi argument as competitive Harai-goshi.
+            grip_type=(
+                GripTypeV2.LAPEL_HIGH,
+                GripTypeV2.COLLAR_BACK,
+                GripTypeV2.COLLAR_SIDE,
+            ),
             min_depth=GripDepth.STANDARD,
             mode=GripMode.DRIVING,
         ),
@@ -731,7 +756,15 @@ O_GURUMA: LeverThrow = LeverThrow(
         ),
         GripRequirement(
             hand="right_hand",
-            grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+            # HAJ-161 — O-guruma's extended-leg fulcrum at hip-line uses
+            # the same upper-torso loading as the harai/uchi-mata family.
+            # Either collar variant is a valid tsurite alongside
+            # LAPEL_HIGH.
+            grip_type=(
+                GripTypeV2.LAPEL_HIGH,
+                GripTypeV2.COLLAR_BACK,
+                GripTypeV2.COLLAR_SIDE,
+            ),
             min_depth=GripDepth.STANDARD,
             mode=GripMode.DRIVING,
         ),

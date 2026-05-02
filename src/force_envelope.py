@@ -118,13 +118,26 @@ FORCE_ENVELOPES: dict[GripTypeV2, ForceEnvelope] = {
         # the construction; mirrored fights it.
         stance_parity=StanceParity(matched=1.10, mirrored=0.85),
     ),
-    GripTypeV2.COLLAR: ForceEnvelope(
+    # HAJ-161 — collar grip splits by position. COLLAR_BACK retains the
+    # prior bare `COLLAR` envelope: deep nape grip, maximum rotation
+    # authority and the only grip whose physical purchase can steer the
+    # head as a coupled output. COLLAR_SIDE sits between LAPEL_HIGH and
+    # COLLAR_BACK — partial head-steering, more shoulder-control,
+    # slightly less stance-sensitive than the nape grip.
+    GripTypeV2.COLLAR_BACK: ForceEnvelope(
         max_pull_force=300.0, max_push_force=500.0, max_lift_force=300.0,
         moment_arm_to_uke_com=0.55, rotation_authority=1.8, strip_resistance=500.0,
         # Deep collar is the most stance-dependent grip in judo: the
         # rotational authority comes from the seam line, which is fully
         # served only when both fighters' lead sides agree.
         stance_parity=StanceParity(matched=1.15, mirrored=0.80),
+    ),
+    GripTypeV2.COLLAR_SIDE: ForceEnvelope(
+        max_pull_force=300.0, max_push_force=420.0, max_lift_force=350.0,
+        moment_arm_to_uke_com=0.45, rotation_authority=1.4, strip_resistance=420.0,
+        # Hybrid lapel/collar — less seam-dependent than COLLAR_BACK so
+        # the matched/mirrored gap narrows, but still favors matched.
+        stance_parity=StanceParity(matched=1.08, mirrored=0.90),
     ),
     GripTypeV2.BELT: ForceEnvelope(
         max_pull_force=500.0, max_push_force=300.0, max_lift_force=800.0,

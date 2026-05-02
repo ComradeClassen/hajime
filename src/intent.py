@@ -344,8 +344,14 @@ def _find_edge(edges, predicate) -> Optional["GripEdge"]:
 
 
 def _is_lapel(edge: "GripEdge") -> bool:
-    return edge.grip_type_v2 in (
-        GripTypeV2.LAPEL_HIGH, GripTypeV2.LAPEL_LOW, GripTypeV2.COLLAR,
+    """Plan-layer "lapel family" predicate. HAJ-161 — both COLLAR sub-types
+    stay inside this family because PULL_LAPEL / DEEPEN_LAPEL plan steps
+    target the upper-torso pull, which the collar grip satisfies. The
+    head-as-output gate (HAJ-146) reads `is_collar()` separately so a
+    pure-lapel grip doesn't drive the head state."""
+    return (
+        edge.grip_type_v2 in (GripTypeV2.LAPEL_HIGH, GripTypeV2.LAPEL_LOW)
+        or edge.grip_type_v2.is_collar()
     )
 
 

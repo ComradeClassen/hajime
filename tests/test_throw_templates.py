@@ -122,7 +122,11 @@ def _uchi_mata_couple() -> CoupleThrow:
             ),
             GripRequirement(
                 hand="right_hand",
-                grip_type=(GripTypeV2.LAPEL_HIGH, GripTypeV2.COLLAR),
+                grip_type=(
+                    GripTypeV2.LAPEL_HIGH,
+                    GripTypeV2.COLLAR_BACK,
+                    GripTypeV2.COLLAR_SIDE,
+                ),
                 min_depth=GripDepth.STANDARD, mode=GripMode.DRIVING,
             ),
         ),

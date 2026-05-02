@@ -454,18 +454,23 @@ def test_strip_always_emits_break_intent() -> None:
 
 
 def test_head_as_output_emits_when_steering_grip_present() -> None:
-    """A steering grip on uke produces a HEAD-DRIVING event on uke."""
+    """A steering COLLAR grip on uke produces a HEAD-DRIVING event on uke.
+
+    HAJ-161 — head-as-output gates on COLLAR grips only. Pre-fix this
+    test fired off a LAPEL_HIGH grip, which was mechanically dishonest
+    (a lapel steers the torso, not the head). Post-fix the test seats
+    a COLLAR_BACK grip, which is the canonical head-steering configuration.
+    """
     from match import Match
     from referee import build_suzuki
     import random as _r
     _r.seed(0)
     t, s = _pair()
     m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
-    # Hand-seat a lapel grip from t onto s with STEER intent set directly.
     edge = GripEdge(
         grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
-        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
-        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        target_id=s.identity.name, target_location=GripTarget.BACK_COLLAR,
+        grip_type_v2=GripTypeV2.COLLAR_BACK, depth_level=GripDepth.STANDARD,
         strength=1.0, established_tick=0,
     )
     edge.current_intent = "STEER"
@@ -511,7 +516,11 @@ def test_head_reverts_when_steering_ends() -> None:
 
 def test_pure_down_steer_collapses_to_head_down_verb() -> None:
     """When the union of steer directions is purely vertical, the head
-    verb collapses (DOWN / UP) — Seoi-nage's seoi-style head-down event."""
+    verb collapses (DOWN / UP) — Seoi-nage's seoi-style head-down event.
+
+    HAJ-161 — uses COLLAR_BACK so the head-as-output gate fires; lapel
+    grips no longer drive the head state.
+    """
     from match import Match
     from referee import build_suzuki
     import random as _r
@@ -520,8 +529,8 @@ def test_pure_down_steer_collapses_to_head_down_verb() -> None:
     m = Match(fighter_a=t, fighter_b=s, referee=build_suzuki(), max_ticks=5)
     edge = GripEdge(
         grasper_id=t.identity.name, grasper_part=BodyPart.RIGHT_HAND,
-        target_id=s.identity.name, target_location=GripTarget.LEFT_LAPEL,
-        grip_type_v2=GripTypeV2.LAPEL_HIGH, depth_level=GripDepth.STANDARD,
+        target_id=s.identity.name, target_location=GripTarget.BACK_COLLAR,
+        grip_type_v2=GripTypeV2.COLLAR_BACK, depth_level=GripDepth.STANDARD,
         strength=1.0, established_tick=0,
     )
     edge.current_intent = "STEER"

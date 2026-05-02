@@ -165,15 +165,18 @@ Grips are the coupling interface between tori's force and uke's body. A grip is 
 
 Sacripanti (2014, arXiv:1411.2763) distinguishes grip *roles*: **connective** (binding the two judoka into a single dyadic system so a torque-based throw can act on it) and **driving** (transmitting large directed force over a long moment arm to rotate uke over a fulcrum). The same grip can play either role; which role it's playing on a given tick is a choice by the judoka.
 
-### 2.2 Grip types (seven)
+### 2.2 Grip types
 
-- **Sleeve (sode) grip** — the hand grips uke's sleeve, typically at the elbow or mid-forearm. Primary role: controlling uke's arm rotation. High moment arm for rotating uke's upper body around the shoulder. Low vertical lift capacity. In classical throws this is the `hikite` (pulling hand — the hand that pulls uke off balance).
+- **Sleeve (sode) grip** — the hand grips uke's sleeve, typically at the elbow or mid-forearm. Primary role: controlling uke's arm rotation. High moment arm for rotating uke's upper body around the shoulder. Low vertical lift capacity. In classical throws this is the `hikite` (pulling hand — the hand that pulls uke off balance). HAJ-53 splits this into **SLEEVE_LOW** (cuff — wrist rotation, long moment arm, easier to slip) and **SLEEVE_HIGH** (elbow / tricep — strong lift, shorter moment arm, harder to strip).
 
 - **Lapel low (eri-tori, lower) grip** — the hand grips uke's lapel at mid-chest. Standard competitive grip. Medium vertical lift, medium trunk rotation. The everyday working grip in judo.
 
 - **Lapel high (eri-tori, upper) grip** — the hand grips uke's lapel near the collarbone. Higher moment arm for vertical lift because the grip sits further from uke's hips. More committed than lapel low, harder to strip. Often the `tsurite` (lifting hand — the hand that lifts and steers) in hip throws.
 
-- **Collar (oku-eri) grip** — the hand reaches deep across uke's shoulder to grip the collar behind uke's neck. Maximum trunk-rotation moment arm. Dominant in modern competition. High rotational authority, less lift than a lapel grip. Georgian-style systems build entire throw games around this grip.
+- **Collar grip** — HAJ-161 splits the prior bare collar entry into two positional sub-types because the head-as-output computation needs a mechanically honest referent: a *lapel* grip steers the torso, not the head. Both sub-types share the collar family for plan-layer purposes (PULL_LAPEL / DEEPEN_LAPEL still target either) but only the collar family drives uke's HEAD body-part state.
+
+  - **COLLAR_BACK (oku-eri, nape grip)** — the hand reaches over uke's shoulder and grips the collar behind the neck. Maximum trunk-rotation moment arm and the only grip in the vocabulary that drives uke's head as a coupled output. Setup grip for sumi-gaeshi (over-the-top), kata-guruma, and the high-collar entry to forward-rotation throws (uchi-mata, harai-goshi, o-guruma) where the head-forward kuzushi rotates the body around the sweep / fulcrum.
+  - **COLLAR_SIDE (kata-eri, trapezius line)** — the hybrid lapel / collar grip taken at the trapezius rather than over the shoulder. Partial head-steering authority (less than COLLAR_BACK), more shoulder-line control. Common elite setup for forward-rotation throws when the over-the-shoulder reach isn't available; sits in the rotation-authority gap between LAPEL_HIGH and COLLAR_BACK. Less seam-dependent than COLLAR_BACK, so the matched / mirrored stance penalty is narrower.
 
 - **Belt (obi-tori) grip** — an arm wraps around uke's back to grip the belt. Highest direct CoM control (grip point is right at uke's waist). Critical for O-goshi (major hip throw) and traditional koshi-waza (hip techniques). Under current IJF rules, an unconventional grip: requires immediate attack or it's shido.
 
@@ -194,15 +197,16 @@ Each grip type carries a `ForceEnvelope` struct specifying what forces it can tr
 
 Exact numerical values are calibration work for Session 4 and Phase 3. What the spec commits to now is relative ordering:
 
-| Grip | Pull | Push | Lift | Rotation auth. | Strip resist. |
-|------|------|------|------|----------------|---------------|
-| Sleeve | High | Low | Low | Medium | Medium |
-| Lapel low | Medium | Medium | Medium | Medium | Medium |
-| Lapel high | Medium | Medium | High | Medium-high | Medium-high |
-| Collar | Medium | High | Medium | **Highest** | High |
-| Belt | High | Medium | **Highest** | High | Very high (once seated) |
-| Pistol | Low | Low | Low | Low | **Highest** |
-| Cross | Medium | Medium | Medium | Variable | Low |
+| Grip          | Pull   | Push   | Lift   | Rotation auth. | Strip resist.            |
+|---------------|--------|--------|--------|----------------|--------------------------|
+| Sleeve        | High   | Low    | Low    | Medium         | Medium                   |
+| Lapel low     | Medium | Medium | Medium | Medium         | Medium                   |
+| Lapel high    | Medium | Medium | High   | Medium-high    | Medium-high              |
+| Collar (back) | Medium | High   | Medium | **Highest**    | High                     |
+| Collar (side) | Medium | Medium | Medium-high | High      | Medium-high              |
+| Belt          | High   | Medium | **Highest** | High      | Very high (once seated)  |
+| Pistol        | Low    | Low    | Low    | Low            | **Highest**              |
+| Cross         | Medium | Medium | Medium | Variable       | Low                      |
 
 ### 2.4 Depth, strength, fatigue, composure — modifiers on the envelope
 

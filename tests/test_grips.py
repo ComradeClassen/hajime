@@ -42,9 +42,18 @@ def test_envelope_relative_ordering_matches_spec() -> None:
     assert e[GripTypeV2.BELT].max_lift_force >= max(
         e[gt].max_lift_force for gt in GripTypeV2 if gt != GripTypeV2.BELT
     )
-    # Collar rotation authority is category max (kubi-nage, koshi-guruma)
-    assert e[GripTypeV2.COLLAR].rotation_authority >= max(
-        e[gt].rotation_authority for gt in GripTypeV2 if gt != GripTypeV2.COLLAR
+    # HAJ-161 — collar (now COLLAR_BACK after the sub-type split) holds
+    # category-max rotation authority. The bare nape grip steers head
+    # and torso both; no other grip in the vocabulary does that.
+    assert e[GripTypeV2.COLLAR_BACK].rotation_authority >= max(
+        e[gt].rotation_authority for gt in GripTypeV2 if gt != GripTypeV2.COLLAR_BACK
+    )
+    # COLLAR_SIDE is hybrid lapel/collar — its rotation authority sits
+    # between LAPEL_HIGH and COLLAR_BACK.
+    assert (
+        e[GripTypeV2.LAPEL_HIGH].rotation_authority
+        < e[GripTypeV2.COLLAR_SIDE].rotation_authority
+        < e[GripTypeV2.COLLAR_BACK].rotation_authority
     )
     # Pistol strip resistance is category max (sleeve-cuff clamp)
     assert e[GripTypeV2.PISTOL].strip_resistance >= max(

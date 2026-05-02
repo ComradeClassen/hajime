@@ -506,7 +506,15 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         throw_id=ThrowID.SUMI_GAESHI,
         name="Sumi-gaeshi",
         requires=[
-            # Sacrifice throw — opportunistic; works from awkward positions
+            # Sacrifice throw — opportunistic; works from awkward positions.
+            # HAJ-161 — the canonical setup is the over-the-top collar
+            # grip (BACK_COLLAR target / COLLAR_BACK type): tori reaches
+            # over uke's shoulder, drops under, and inverts. The legacy
+            # ThrowDef path keeps target_location=ANY because the
+            # signature-match path doesn't differentiate; once SUMI_GAESHI
+            # migrates to the worked-throw template (Part 5.5 backfill)
+            # the collar preference will be expressed as a typed
+            # GripRequirement.
             EdgeRequirement(
                 grasper_part=BodyPart.DOMINANT_HAND,
                 target_location=GripTarget.ANY,
