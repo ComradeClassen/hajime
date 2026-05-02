@@ -137,7 +137,20 @@ O_SOTO_GARI: CoupleThrow = CoupleThrow(
         ),
         GripRequirement(
             hand="right_hand",                   # tsurite
-            grip_type=(GripTypeV2.LAPEL_LOW, GripTypeV2.LAPEL_HIGH),
+            # HAJ-161 follow-up — high-collar O-soto-gari is documented
+            # canonical practice: per FloGrappling's "Ultimate Guide to
+            # Gripping" (Tom Grant, 2016), Teddy Riner uses the high-
+            # collar grip to set up "his feared uchi mata and osoto
+            # gari throws." The over-the-shoulder grip drives uke onto
+            # the reaped leg's heel — exactly the kuzushi the transverse
+            # couple needs. Either collar variant is valid alongside
+            # the classical LAPEL_LOW / LAPEL_HIGH tsurite.
+            grip_type=(
+                GripTypeV2.LAPEL_LOW,
+                GripTypeV2.LAPEL_HIGH,
+                GripTypeV2.COLLAR_BACK,
+                GripTypeV2.COLLAR_SIDE,
+            ),
             min_depth=GripDepth.STANDARD,
             mode=GripMode.DRIVING,
         ),

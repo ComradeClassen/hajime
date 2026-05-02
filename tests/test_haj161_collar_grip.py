@@ -32,7 +32,7 @@ from body_part_events import BodyPartHigh
 from match import Match
 from referee import build_suzuki
 from worked_throws import (
-    UCHI_MATA, HARAI_GOSHI, HARAI_GOSHI_CLASSICAL, O_GURUMA,
+    UCHI_MATA, O_SOTO_GARI, HARAI_GOSHI, HARAI_GOSHI_CLASSICAL, O_GURUMA,
 )
 import main as main_module
 from body_state import place_judoka
@@ -145,6 +145,21 @@ def test_o_guruma_accepts_both_collar_variants() -> None:
     """O-guruma's extended-leg fulcrum loads uke through the same
     upper-torso pull as harai/uchi-mata; collar tsurite is valid."""
     tsurite = next(g for g in O_GURUMA.force_grips if g.hand == "right_hand")
+    assert GripTypeV2.COLLAR_BACK in tsurite.grip_type
+    assert GripTypeV2.COLLAR_SIDE in tsurite.grip_type
+
+
+def test_o_soto_gari_accepts_collar_grip_per_riner_reference() -> None:
+    """HAJ-161 follow-up — FloGrappling's "Ultimate Guide to Gripping"
+    (Tom Grant, 2016) explicitly cites Teddy Riner's high-collar setup
+    for "his feared uchi mata and osoto gari throws." The over-the-
+    shoulder grip drives uke onto the reaped leg's heel, which is
+    exactly the kuzushi the transverse couple needs. Both collar
+    variants must be valid tsurite alongside the classical LAPEL_LOW /
+    LAPEL_HIGH options."""
+    tsurite = next(g for g in O_SOTO_GARI.force_grips if g.hand == "right_hand")
+    assert GripTypeV2.LAPEL_LOW in tsurite.grip_type
+    assert GripTypeV2.LAPEL_HIGH in tsurite.grip_type
     assert GripTypeV2.COLLAR_BACK in tsurite.grip_type
     assert GripTypeV2.COLLAR_SIDE in tsurite.grip_type
 
