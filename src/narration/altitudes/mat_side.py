@@ -57,6 +57,16 @@ _ALWAYS_PROMOTE_EVENT_TYPES: frozenset[str] = frozenset({
 _STABLE_SAMPLE_INTERVAL: int = 7
 
 
+# HAJ-166 — head-as-output substrate (HAJ-146 + HAJ-161) emits one
+# HEAD_AS_OUTPUT BPE per fighter under steer. The mat-side prose layer
+# renders an outcome-bound line citing the specific collar sub-type and
+# the resulting head movement. Below the threshold the steerer's grip
+# is poorly seated (force absorbed, posture stiff) — a substitute line
+# fires instead. Lapel grips are filtered out at the substrate (HAJ-161
+# is_collar() gate), so this template never reaches a non-collar grip.
+_HEAD_STEER_GRIP_STRENGTH_THRESHOLD: float = 0.5
+
+
 # HAJ-162 — the (closing, grip_war) entry is dynamic (resolved by
 # `_grip_seating_prose` against engine state) so the line is honest
 # about whether one or both fighters actually seated grips on the
@@ -127,6 +137,66 @@ def _grip_seating_prose(match: "Match") -> str:
     # Defensive fallback — shouldn't hit unless the engine transitioned
     # to GRIPPING with no edges in the graph (test-only configuration).
     return "Both fighters lock onto their grips."
+
+
+# ---------------------------------------------------------------------------
+# HAJ-166 — outcome-bound prose for collar-grip head-steering
+# ---------------------------------------------------------------------------
+def _head_steer_prose(match: "Match", victim_name: str) -> Optional[str]:
+    """Resolve the head-steer line for `victim_name` against the live
+    grip graph. Returns the prose string, or None when no collar grip
+    with STEER intent is on the victim (the BPE substrate would have
+    suppressed the HEAD_AS_OUTPUT event in that case too — defensive).
+
+    Discrimination:
+      - COLLAR_BACK → oku-eri / nape grip; head moves down-and-forward.
+      - COLLAR_SIDE → kata-eri / trapezius grip; head turns / chin off.
+      - Below the strength threshold → the force is absorbed; substitute
+        with a "stays planted" line instead of an effective steer.
+
+    Lapel grips never reach this path because HAJ-161's is_collar()
+    filter on `compute_head_state` suppresses the BPE; the narrator's
+    detector keys off the HEAD_AS_OUTPUT BPE, so a lapel-only steer
+    produces no input here.
+    """
+    from enums import GripTypeV2
+    primary = None
+    for edge in match.grip_graph.edges:
+        if edge.target_id != victim_name:
+            continue
+        if edge.current_intent != "STEER":
+            continue
+        if not edge.grip_type_v2.is_collar():
+            continue
+        primary = edge
+        break
+    if primary is None:
+        return None
+    grasper_name = primary.grasper_id
+    effective = primary.strength >= _HEAD_STEER_GRIP_STRENGTH_THRESHOLD
+    if not effective:
+        # Blocked — force absorbed, posture stiff. Same template across
+        # both collar sub-types; the failure mode is the same beat
+        # (no head movement).
+        side_word = (
+            "back collar" if primary.grip_type_v2 is GripTypeV2.COLLAR_BACK
+            else "side collar"
+        )
+        return (
+            f"{grasper_name} cranks at the {side_word} — "
+            f"{victim_name}'s neck stays planted."
+        )
+    if primary.grip_type_v2 is GripTypeV2.COLLAR_BACK:
+        return (
+            f"{grasper_name} pulls {victim_name}'s head down with the "
+            f"back collar."
+        )
+    if primary.grip_type_v2 is GripTypeV2.COLLAR_SIDE:
+        return (
+            f"{grasper_name} cranks the side collar, turning "
+            f"{victim_name}'s chin off-center."
+        )
+    return None
 
 
 class MatSideNarrator:
@@ -223,6 +293,15 @@ class MatSideNarrator:
         # Rule 2 — non-default-modifier promotion.
         out.extend(self._promote_modifier_extremes(tick, bpes))
 
+        # HAJ-166 — collar-grip head-steering. Reads HEAD_AS_OUTPUT BPEs
+        # and renders an outcome-bound line citing the specific collar
+        # sub-type (back vs side) and whether the head actually moved
+        # past the grip-strength threshold. Lapel-grip steering is
+        # filtered at the substrate (HAJ-161 is_collar() gate) so no
+        # HEAD_AS_OUTPUT BPE fires for lapel — the detector naturally
+        # respects that.
+        out.extend(self._detect_head_steer(tick, bpes, match))
+
         # Rule 4 — sample.
         if not out and (tick - self._last_sample_tick) >= _STABLE_SAMPLE_INTERVAL:
             sample = self._sample_phase(tick, match, bpes)
@@ -296,6 +375,35 @@ class MatSideNarrator:
                     source="intent_mismatch",
                     actors=(b.actor,),
                 ))
+        return out
+
+    def _detect_head_steer(
+        self, tick: int, bpes: list[BodyPartEvent], match: "Match",
+    ) -> list[MatchClockEntry]:
+        """HAJ-166 — render a single outcome-bound head-steer line per
+        victim per tick (rate-limited). Fires off HEAD_AS_OUTPUT BPEs
+        so the narration follows the substrate; the live grip graph
+        supplies the collar sub-type and effectiveness."""
+        out: list[MatchClockEntry] = []
+        seen_victims: set[str] = set()
+        for b in bpes:
+            if b.tick != tick:
+                continue
+            if b.source != "HEAD_AS_OUTPUT":
+                continue
+            if b.actor in seen_victims:
+                continue
+            if not self._rate_check(b.actor, "head_steer", tick):
+                continue
+            prose = _head_steer_prose(match, b.actor)
+            if prose is None:
+                continue
+            seen_victims.add(b.actor)
+            out.append(MatchClockEntry(
+                tick=tick, prose=prose,
+                source="head_steer",
+                actors=(b.actor,),
+            ))
         return out
 
     def _rate_check(self, actor: str, source: str, tick: int) -> bool:
