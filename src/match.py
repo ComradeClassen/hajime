@@ -272,6 +272,35 @@ def is_out_of_bounds(judoka: Judoka) -> bool:
     return abs(x) > MAT_HALF_WIDTH or abs(y) > MAT_HALF_WIDTH
 
 
+# HAJ-142 — graded mat regions (CENTER / WORKING / WARNING / OUT_OF_BOUNDS).
+# Concentric bands defined as percentages of MAT_HALF_WIDTH on the same
+# Chebyshev (square-mat) metric is_out_of_bounds uses, so the boundary
+# semantics line up. The 30/70 split is interim — calibration in v0.2;
+# bands widen automatically with MAT_HALF_WIDTH.
+MAT_REGION_CENTER_FRAC:  float = 0.30
+MAT_REGION_WARNING_FRAC: float = 0.70
+
+
+def region_of(judoka: Judoka) -> "MatRegion":
+    """HAJ-142 — return the named region for `judoka`'s current CoM.
+
+    Pure function of position; recompute each tick. Square-mat geometry,
+    so the metric is `max(|x|, |y|)` — same Chebyshev distance the OOB
+    helper uses. Returns one of CENTER / WORKING / WARNING /
+    OUT_OF_BOUNDS.
+    """
+    from enums import MatRegion as _MR
+    x, y = judoka.state.body_state.com_position
+    chebyshev = max(abs(x), abs(y))
+    if chebyshev > MAT_HALF_WIDTH:
+        return _MR.OUT_OF_BOUNDS
+    if chebyshev <= MAT_HALF_WIDTH * MAT_REGION_CENTER_FRAC:
+        return _MR.CENTER
+    if chebyshev <= MAT_HALF_WIDTH * MAT_REGION_WARNING_FRAC:
+        return _MR.WORKING
+    return _MR.WARNING
+
+
 def _distance_to_nearest_edge(com: tuple[float, float]) -> float:
     """HAJ-156 — meters from the CoM to the nearest contest boundary.
     Negative when the fighter is outside the boundary."""
@@ -1635,6 +1664,15 @@ class Match:
             current_tick=tick,
         )
         events.extend(ne_events)
+
+        # HAJ-142 — CRAWL_TOWARD_BOUNDARY. The bottom fighter, under
+        # threat (active pin, choke, or armbar) and within the WORKING
+        # / WARNING bands, can deliberately drift toward the nearest
+        # boundary as a defensive escape — out-of-bounds → Matte → pin
+        # broken → reset. Probability scales with bottom's ne_waza
+        # skill (a more savvy bottom uses geometry on purpose) and
+        # how close they already are to the line.
+        events.extend(self._maybe_crawl_toward_boundary(tick))
 
         # HAJ-129 — track stalemate during ne-waza so the referee's
         # NEWAZA_MATTE_TICKS window can fire. Pre-fix the counter was only
@@ -3568,6 +3606,19 @@ class Match:
                 sampled_lag=lag, commit_tick=tick,
             )
             self._perception_log.append(response)
+            # HAJ-142 — STEP_OUT_VOLUNTARY shido-eat. When the
+            # perceiver is in WARNING and reading an imminent throw
+            # commit, they may deliberately step over the line and
+            # take an OOB shido instead of accepting the throw. The
+            # gate is conservative: WARNING band + composure or
+            # desperation pressure + savvy enough fight_iq to weigh
+            # the cost-benefit. The action cancels the staged commit
+            # and lets the existing HAJ-127 OOB Matte path fire on
+            # the next tick (one shido beats a likely waza-ari).
+            if self._maybe_step_out_voluntary(
+                perceiver, attacker, sig, tick, events,
+            ):
+                continue
             if response.kind == "BRACE":
                 self._brace_active[perceiver.identity.name] = True
                 # Active perception costs cardio.
@@ -5224,6 +5275,8 @@ class Match:
             fighter_a_oob=is_out_of_bounds(self.fighter_a),
             fighter_b_oob=is_out_of_bounds(self.fighter_b),
             any_throw_in_flight=bool(self._throws_in_progress),
+            fighter_a_region=region_of(self.fighter_a).name,
+            fighter_b_region=region_of(self.fighter_b).name,
         )
 
     def _ne_waza_top(self) -> Judoka:
@@ -5235,6 +5288,182 @@ class Match:
         if self.ne_waza_top_id == self.fighter_b.identity.name:
             return self.fighter_a
         return self.fighter_b
+
+    def _maybe_step_out_voluntary(
+        self, perceiver: Judoka, attacker: Judoka,
+        sig, tick: int, events: list[Event],
+    ) -> bool:
+        """HAJ-142 — voluntary OOB step as a shido-eat. Fires when:
+
+          - perceiver is in WARNING
+          - the intent signal is a throw_commit
+          - perceiver is under composure / desperation pressure
+            (low composure OR defensive desperation active)
+          - perceiver has enough fight_iq to weigh shido vs throw
+
+        Effect: perceiver's CoM lands just past the nearest boundary,
+        the staged commit is cancelled (FIRE_COMMIT_FROM_INTENT
+        dropped), the placeholder _ThrowInProgress entry is freed,
+        and a STEP_OUT_VOLUNTARY engine event fires. The OOB Matte
+        + shido on the next tick falls out of the existing HAJ-127
+        path. Returns True if the step-out fires (caller should skip
+        the regular BRACE / NONE response handling)."""
+        from enums import MatRegion as _MR
+        from intent_signal import SETUP_THROW_COMMIT as _SETUP_TC
+        if sig.setup_class != _SETUP_TC:
+            return False
+        if region_of(perceiver) is not _MR.WARNING:
+            return False
+        in_def_desp = self._defensive_desperation_active.get(
+            perceiver.identity.name, False,
+        )
+        composure_ratio = (
+            perceiver.state.composure_current
+            / max(1.0, float(perceiver.capability.composure_ceiling))
+        )
+        if not (in_def_desp or composure_ratio < 0.4):
+            return False
+        iq = getattr(perceiver.capability, "fight_iq", 0)
+        # Lower IQ → can't read the threat / weigh the trade. The
+        # gate sits above white-belt territory; v0.2 calibration may
+        # shift this up or down.
+        if iq < 6:
+            return False
+        rng = random.Random(
+            f"haj142:stepout:{perceiver.identity.name}:{self.seed}:{tick}"
+        )
+        # Probabilistic so it doesn't fire every time the gate opens —
+        # ~50% under desperation, ~25% under low-composure-only.
+        prob = 0.5 if in_def_desp else 0.25
+        if rng.random() > prob:
+            return False
+        # Place perceiver just past the nearest boundary on whichever
+        # axis they're closer to the line on.
+        bx, by = perceiver.state.body_state.com_position
+        ax = MAT_HALF_WIDTH - abs(bx)
+        ay = MAT_HALF_WIDTH - abs(by)
+        epsilon = 0.05  # land clearly OOB (visible to the OOB check).
+        if ax <= ay:
+            sx = (MAT_HALF_WIDTH + epsilon) * (1.0 if bx >= 0 else -1.0)
+            sy = by
+        else:
+            sx = bx
+            sy = (MAT_HALF_WIDTH + epsilon) * (1.0 if by >= 0 else -1.0)
+        perceiver.state.body_state.com_position = (sx, sy)
+        # Cancel the attacker's staged commit. Pre-fix the throw would
+        # still fire on N+1 even though the dyad is heading to Matte;
+        # v0.1 cleanly cancels the FIRE_COMMIT_FROM_INTENT consequence
+        # and frees the placeholder entry so the engine doesn't carry
+        # phantom in-progress state into the reset.
+        a_name = attacker.identity.name
+        self._consequence_queue = [
+            c for c in self._consequence_queue
+            if not (
+                c.kind == "FIRE_COMMIT_FROM_INTENT"
+                and c.payload.get("attacker_name") == a_name
+            )
+        ]
+        self._throws_in_progress.pop(a_name, None)
+        events.append(Event(
+            tick=tick, event_type="STEP_OUT_VOLUNTARY",
+            description=(
+                f"[shido-eat] {perceiver.identity.name} steps over the "
+                f"line — voluntary OOB rather than face "
+                f"{attacker.identity.name}'s {sig.setup_class}."
+            ),
+            data={
+                "perceiver": perceiver.identity.name,
+                "attacker": a_name,
+                "throw_id": (sig.throw_id.name
+                             if sig.throw_id is not None else None),
+                "voluntary": True,
+            },
+        ))
+        return True
+
+    def _maybe_crawl_toward_boundary(self, tick: int) -> list[Event]:
+        """HAJ-142 — bottom-fighter ne-waza geometry as defense.
+
+        Real bottom-game judo: when pinned or under threat, a savvy
+        bottom fighter uses position to escape — crawl toward the line
+        until you slide out and Matte breaks the hold. The engine had
+        no representation of this. Here: when the bottom is in the
+        WORKING or WARNING band, probabilistically nudge their CoM
+        (and the top fighter's, since the dyad is tangled) toward the
+        nearest boundary. Probability scales with ne-waza skill and
+        boundary closeness; exiting OOB triggers the existing HAJ-127
+        Matte path, breaking the pin.
+
+        Out of scope here: a deliberate per-tick action ladder pick.
+        v0.1 ships this as a per-tick CoM drift; v0.2 can promote it
+        to an explicit selectable action.
+        """
+        from enums import MatRegion as _MR
+        bottom = self._ne_waza_bottom()
+        if bottom is None:
+            return []
+        # Only crawl when there's something to escape from — pin,
+        # active sub, or technique chain. A neutral guard exchange
+        # doesn't motivate a crawl.
+        under_threat = (
+            self.osaekomi.active
+            or self.ne_waza_resolver.active_technique is not None
+        )
+        if not under_threat:
+            return []
+        region = region_of(bottom)
+        if region not in (_MR.WORKING, _MR.WARNING):
+            return []
+        bx, by = bottom.state.body_state.com_position
+        # Probability: warning band gets a higher base; ne-waza skill
+        # bumps it further. White belts (skill 0-3) crawl ~5%; elite
+        # (skill 9-10) crawl ~30% per tick in WARNING.
+        ne_skill = getattr(bottom.capability, "ne_waza_skill", 5) / 10.0
+        if region is _MR.WARNING:
+            prob = 0.10 + ne_skill * 0.20
+        else:
+            prob = 0.03 + ne_skill * 0.07
+        rng = random.Random(
+            f"haj142:crawl:{bottom.identity.name}:{self.seed}:{tick}"
+        )
+        if rng.random() > prob:
+            return []
+        # Direction: nearest boundary on whichever axis the bottom is
+        # closer to the line on. Move both fighters together since the
+        # dyad is tangled.
+        ax = MAT_HALF_WIDTH - abs(bx)
+        ay = MAT_HALF_WIDTH - abs(by)
+        if ax <= ay:
+            sx = 1.0 if bx >= 0 else -1.0
+            sy = 0.0
+        else:
+            sx = 0.0
+            sy = 1.0 if by >= 0 else -1.0
+        # Crawl distance per tick — small but accumulates. ~0.20 m
+        # means ~2-4 ticks from WARNING to OOB depending on starting
+        # position.
+        crawl_distance = 0.20
+        for f in (bottom, self._ne_waza_top()):
+            if f is None:
+                continue
+            cx, cy = f.state.body_state.com_position
+            f.state.body_state.com_position = (
+                cx + sx * crawl_distance,
+                cy + sy * crawl_distance,
+            )
+        return [Event(
+            tick=tick,
+            event_type="CRAWL_TOWARD_BOUNDARY",
+            description=(
+                f"[ne-waza] {bottom.identity.name} inches toward the line."
+            ),
+            data={
+                "fighter": bottom.identity.name,
+                "region": region.name,
+                "direction": (sx, sy),
+                "distance": crawl_distance,
+            },
+        )]
 
     def _apply_throw_fatigue(
         self, attacker: Judoka, throw_id: ThrowID, outcome: str

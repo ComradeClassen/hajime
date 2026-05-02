@@ -271,6 +271,35 @@ def _posture_change_prose(
     return None
 
 
+def _region_transition_prose(
+    name: str, old_region, new_region,
+) -> Optional[str]:
+    """HAJ-142 — short connective beat for a fighter's region change.
+    Returns None when the change isn't worth surfacing (entry to the
+    same band twice, OOB transitions which the engine's HAJ-127 prose
+    already covers, or any baseline establish where the prior region
+    is unknown). Lean toward narrating arrivals at the WARNING and
+    CENTER bands — they're the bands a viewer cares about; WORKING is
+    the default and largely silent."""
+    from enums import MatRegion
+    if old_region is None or old_region == new_region:
+        return None
+    # OOB is owned by the existing OOB / Matte prose path.
+    if new_region is MatRegion.OUT_OF_BOUNDS:
+        return None
+    # Returning to CENTER from outer bands: a recovered-position beat.
+    if new_region is MatRegion.CENTER:
+        return f"{name} works back to the center of the mat."
+    if new_region is MatRegion.WARNING:
+        return f"{name} drifts into the warning area near the edge."
+    # WORKING entries from CENTER are bland; WORKING from WARNING is
+    # a recovery beat.
+    if (new_region is MatRegion.WORKING
+            and old_region is MatRegion.WARNING):
+        return f"{name} steps off the line, back into open mat."
+    return None
+
+
 def _pull_without_commit_prose(
     actor: str, opponent: str, target: Optional[str],
 ) -> str:
@@ -312,6 +341,11 @@ class MatSideNarrator:
         # beat. Initialized to None so the first tick the narrator runs
         # establishes the baseline without firing prose.
         self._last_posture: dict[str, object] = {}
+        # HAJ-142 — per-fighter mat region tracking. Region changes
+        # produce a connective prose beat ("Sato walks into the warning
+        # area"). Initialized lazily so the first tick the narrator
+        # runs establishes the baseline without firing prose.
+        self._last_region: dict[str, object] = {}
 
     def consume_tick(
         self, tick: int, events: list, bpes: list[BodyPartEvent],
@@ -417,9 +451,20 @@ class MatSideNarrator:
         # the issue calls out); it just declines to fire on KUZUSHI_INDUCED
         # ticks where the engine already authors the BROKEN line.
         out.extend(self._detect_posture_change(tick, events, match))
+        # HAJ-142 — region transitions. A fighter walking into WARNING
+        # or working back to CENTER is a clean spatial beat the viewer
+        # benefits from. Suppressed alongside other movement prose on
+        # state-change ticks (commits, scores, etc.) so it doesn't
+        # double-author with engine prose.
         if not suppress_movement:
+            out.extend(self._detect_region_transition(tick, match))
             out.extend(self._detect_circling(tick, events, match))
             out.extend(self._detect_pull_without_commit(tick, bpes, match))
+        else:
+            # Even when suppressed for prose, advance the region
+            # baseline so the next un-suppressed tick has a current
+            # comparison point and doesn't fire stale transitions.
+            self._refresh_region_baseline(match)
 
         # Rule 4 — sample.
         if not out and (tick - self._last_sample_tick) >= _STABLE_SAMPLE_INTERVAL:
@@ -653,6 +698,51 @@ class MatSideNarrator:
                 actors=(actor,),
             ))
         return out
+
+    def _detect_region_transition(
+        self, tick: int, match: "Match",
+    ) -> list[MatchClockEntry]:
+        """HAJ-142 — render a single line per fighter whose mat region
+        changed since the last tick. State-change beat (always promote
+        when the line resolves to non-None); the resolver suppresses
+        bland transitions like CENTER→WORKING by default."""
+        out: list[MatchClockEntry] = []
+        fighter_a = getattr(match, "fighter_a", None)
+        fighter_b = getattr(match, "fighter_b", None)
+        if fighter_a is None or fighter_b is None:
+            return out
+        try:
+            from match import region_of
+        except ImportError:
+            return out
+        for fighter in (fighter_a, fighter_b):
+            name = fighter.identity.name
+            current = region_of(fighter)
+            previous = self._last_region.get(name)
+            self._last_region[name] = current
+            if previous is None:
+                continue
+            prose = _region_transition_prose(name, previous, current)
+            if prose is None:
+                continue
+            out.append(MatchClockEntry(
+                tick=tick, prose=prose,
+                source="region",
+                actors=(name,),
+            ))
+        return out
+
+    def _refresh_region_baseline(self, match: "Match") -> None:
+        fighter_a = getattr(match, "fighter_a", None)
+        fighter_b = getattr(match, "fighter_b", None)
+        if fighter_a is None or fighter_b is None:
+            return
+        try:
+            from match import region_of
+        except ImportError:
+            return
+        for fighter in (fighter_a, fighter_b):
+            self._last_region[fighter.identity.name] = region_of(fighter)
 
     def _opponent_of(self, actor: str, match: "Match") -> Optional[str]:
         fighter_a = getattr(match, "fighter_a", None)

@@ -92,6 +92,13 @@ class MatchState:
     fighter_a_oob: bool = False
     fighter_b_oob: bool = False
     any_throw_in_flight: bool = False
+    # HAJ-142 — named mat regions (CENTER / WORKING / WARNING / OUT_OF_BOUNDS).
+    # Computed once per tick from each fighter's CoM. Tests, viewer pill,
+    # and prose narrator all read this for region-aware behavior /
+    # narration. Optional to keep legacy unit tests that hand-construct
+    # MatchState compiling.
+    fighter_a_region: Optional[str] = None
+    fighter_b_region: Optional[str] = None
 
 
 # ===========================================================================

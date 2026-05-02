@@ -610,10 +610,68 @@ def _closing_step_action(
     gap  = dist - ENGAGEMENT_DISTANCE_M
     if gap <= 0.0:
         return None
+    # HAJ-142 — edge pressure. When the opponent is in the WARNING
+    # band and the actor's fight_iq is high enough to weaponize it,
+    # shift the closing direction off the dyad axis and toward the
+    # opponent's nearest edge: the goal becomes "drive them out,"
+    # not just "close on their CoM."
+    if _edge_pressure_active(judoka, opponent):
+        dx, dy = _edge_pressure_step_direction(opponent, (dx, dy))
     base_mag = min(CLOSING_STEP_MAGNITUDE_M, gap)
     return _step_action(
         judoka, (dx, dy), base_mag,
         tactical_intent=TACTICAL_INTENT_CLOSING,
+    )
+
+
+# HAJ-142 — edge-pressure gates. fight_iq threshold reflects the
+# ticket: white belts don't use edge pressure consciously. The bias
+# is only applied when the opponent has already drifted into WARNING
+# (the "yellow" band); WORKING / CENTER opponents don't need it.
+EDGE_PRESSURE_FIGHT_IQ_THRESHOLD: int = 6
+
+
+def _edge_pressure_active(actor: "Judoka", opponent: "Judoka") -> bool:
+    """HAJ-142 — True when `actor` should weaponize edge geometry on
+    this STEP. Conditions:
+      - opponent's current region is WARNING
+      - actor's fight_iq >= EDGE_PRESSURE_FIGHT_IQ_THRESHOLD
+    Reads the live engine state every call (pure)."""
+    from match import region_of
+    from enums import MatRegion
+    if region_of(opponent) is not MatRegion.WARNING:
+        return False
+    iq = getattr(actor.capability, "fight_iq", 0)
+    return iq >= EDGE_PRESSURE_FIGHT_IQ_THRESHOLD
+
+
+def _edge_pressure_step_direction(
+    opponent: "Judoka", base_dxdy: tuple[float, float],
+) -> tuple[float, float]:
+    """HAJ-142 — compose the closing direction with a bias toward the
+    opponent's nearest edge. Half closing-axis (so the actor still
+    closes the gap) and half edge-direction (so the opponent gets
+    pushed further out instead of recovering toward center). Returns a
+    non-normalized vector — magnitude is set by the caller."""
+    from match import MAT_HALF_WIDTH
+    bx, by = base_dxdy
+    base_norm = (bx * bx + by * by) ** 0.5 or 1.0
+    bx_n, by_n = bx / base_norm, by / base_norm
+    ox, oy = opponent.state.body_state.com_position
+    # Edge direction: same sign as opponent's CoM, magnitude scaled to
+    # the boundary distance. A larger excursion → stronger bias.
+    edge_x = (1.0 if ox >= 0.0 else -1.0) * (
+        abs(ox) / MAT_HALF_WIDTH if MAT_HALF_WIDTH > 0 else 0.0
+    )
+    edge_y = (1.0 if oy >= 0.0 else -1.0) * (
+        abs(oy) / MAT_HALF_WIDTH if MAT_HALF_WIDTH > 0 else 0.0
+    )
+    edge_norm = (edge_x * edge_x + edge_y * edge_y) ** 0.5 or 1.0
+    edge_x /= edge_norm
+    edge_y /= edge_norm
+    return (
+        bx_n * 0.5 + edge_x * 0.5,
+        by_n * 0.5 + edge_y * 0.5,
     )
 
 

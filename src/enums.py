@@ -76,6 +76,21 @@ class Posture(Enum):
 
 
 # ---------------------------------------------------------------------------
+# MAT REGION (HAJ-142)
+# Concentric named regions on top of the existing 2D mat coordinate
+# system. The 30/70 split is a percentage of MAT_HALF_WIDTH so the bands
+# widen automatically if the contest area scales (interim 1.5 m mat →
+# IJF-ref 4 m mat). Region is a derived property of CoM position; the
+# helper `region_of` in match.py recomputes it per tick.
+# ---------------------------------------------------------------------------
+class MatRegion(Enum):
+    CENTER         = auto()  # Within 30% of MAT_HALF_WIDTH; matte resumes here.
+    WORKING        = auto()  # 30-70% — normal contest space.
+    WARNING        = auto()  # 70-100% — yellow zone; edge tactics legal.
+    OUT_OF_BOUNDS  = auto()  # Beyond MAT_HALF_WIDTH; HAJ-127 Matte path.
+
+
+# ---------------------------------------------------------------------------
 # STANCE
 # ---------------------------------------------------------------------------
 class Stance(Enum):
