@@ -38,6 +38,22 @@ class EntryDirection(Enum):
 
 
 # ---------------------------------------------------------------------------
+# THROW CLASS (HAJ-155)
+# Routing on stuff / failure: STANDING throws reset to standing (the
+# legacy behavior was to open the ne-waza door on any failed standing
+# commit, which produced the HAJ-144 t007 read of a stuffed O-uchi-gari
+# routing both fighters to GUARD_TOP). SACRIFICE throws keep the door
+# because tori is geometrically committed to the ground when the throw
+# fails — standing back up cleanly isn't available, and the natural
+# continuation is ne-waza scrambling. Counters inherit the class of
+# the throw being countered (handled at the routing site).
+# ---------------------------------------------------------------------------
+class ThrowClass(Enum):
+    STANDING  = auto()  # Default — fail/stuff resets to standing.
+    SACRIFICE = auto()  # Fail/stuff opens the ne-waza door (tori on bottom).
+
+
+# ---------------------------------------------------------------------------
 # THROW IDs — unchanged from Phase 1
 # ---------------------------------------------------------------------------
 class ThrowID(Enum):
@@ -164,6 +180,17 @@ class ThrowDef:
     # because most legacy throws are forward-loading; the SACRIFICE
     # / lateral / two-phase paths set their own values.
     entry_direction: EntryDirection = EntryDirection.ADVANCING
+
+    # HAJ-155 — routing class. STANDING throws reset to standing on
+    # stuff / failure; SACRIFICE throws open the ne-waza door (tori
+    # ends up on the bottom because they geometrically committed to
+    # the ground). The default is STANDING; sacrifice throws (Sumi-
+    # gaeshi, Tomoe-nage, and the future Yoko-otoshi / Uki-waza /
+    # Tani-otoshi / Yoko-wakare backfills) explicitly mark themselves
+    # as SACRIFICE. Conservative defaults at v0.1 — drop-style
+    # standing throws (drop seoi) keep STANDING; calibration to
+    # follow in v0.2.
+    throw_class: ThrowClass = ThrowClass.STANDING
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +561,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         post_score_chase_advantage=0.4,
         # HAJ-156 — sacrifice throw drops in place; no edge penalty.
         entry_direction=EntryDirection.DROPPING,
+        # HAJ-155 — sacrifice throw; stuff/fail opens the ne-waza door.
+        throw_class=ThrowClass.SACRIFICE,
     ),
 
     ThrowID.DE_ASHI_HARAI: ThrowDef(
@@ -637,6 +666,8 @@ THROW_DEFS: dict[ThrowID, ThrowDef] = {
         post_score_chase_advantage=0.4,
         # HAJ-156 — sacrifice throw drops in place.
         entry_direction=EntryDirection.DROPPING,
+        # HAJ-155 — sacrifice throw; stuff/fail opens the ne-waza door.
+        throw_class=ThrowClass.SACRIFICE,
     ),
 
     ThrowID.O_GURUMA: ThrowDef(
@@ -732,3 +763,21 @@ COMBO_REGISTRY: dict[ComboID, Combo] = {
         chain_bonus=0.20,
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# THROW CLASS LOOKUP (HAJ-155)
+# ---------------------------------------------------------------------------
+def throw_class_for(throw_id: ThrowID) -> ThrowClass:
+    """Look up the routing class for a throw. Throws missing from the
+    THROW_DEFS registry default to STANDING — the conservative path
+    (no ne-waza door) for unrecognized vocabulary."""
+    td = THROW_DEFS.get(throw_id)
+    if td is None:
+        return ThrowClass.STANDING
+    return td.throw_class
+
+
+def is_sacrifice_throw(throw_id: ThrowID) -> bool:
+    """True iff `throw_id` is a sacrifice throw (per its ThrowDef)."""
+    return throw_class_for(throw_id) is ThrowClass.SACRIFICE

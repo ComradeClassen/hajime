@@ -291,18 +291,18 @@ def test_simultaneous_stuffs_dedupe_to_single_newaza_door() -> None:
     """When both fighters stuff on the same tick, only one
     NEWAZA_TRANSITION_AFTER_STUFF consequence is queued for the dyad.
     Pre-HAJ-157 each fighter's _apply_throw_result enqueued its own
-    consequence, so the door fired twice."""
+    consequence, so the door fired twice. HAJ-155 — only sacrifice
+    throws open the door, so this test uses Sumi-gaeshi to exercise
+    the dedupe path."""
     t, s, m = _elite_match(seed=42)
     real = match_module.resolve_throw
     match_module.resolve_throw = lambda *a, **kw: ("STUFFED", -2.0)
     try:
         T = 5
-        # Both fighters commit elite N=1 throws on the same tick;
-        # both stuffs land on T+3 from the consequence queue. Uchi-mata
-        # is a snap throw (HAJ-143 execution_ticks=1), so the resolution
-        # tick is unchanged from the pre-HAJ-143 baseline.
-        m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=T)
-        m._resolve_commit_throw(s, t, ThrowID.UCHI_MATA, tick=T)
+        # Both fighters commit elite N=1 sacrifice throws on the same
+        # tick; both stuffs land on T+3 from the consequence queue.
+        m._resolve_commit_throw(t, s, ThrowID.SUMI_GAESHI, tick=T)
+        m._resolve_commit_throw(s, t, ThrowID.SUMI_GAESHI, tick=T)
         # Walk the schedule (offsets 1, 2) and let RESOLVE_KAKE_N1 fire
         # both stuffs on T+3.
         m._advance_throws_in_progress(tick=T + 1)
@@ -332,15 +332,14 @@ def test_simultaneous_stuffs_dedupe_to_single_newaza_door() -> None:
 def test_single_stuff_still_queues_exactly_one_newaza_door() -> None:
     """Sanity check: one fighter stuffing alone still queues exactly
     one ne-waza door consequence. The dedupe is conservative — it only
-    fires when a duplicate is already queued for the same tick."""
+    fires when a duplicate is already queued for the same tick. HAJ-155
+    — uses Sumi-gaeshi (sacrifice) so the door actually fires."""
     t, s, m = _elite_match(seed=11)
     real = match_module.resolve_throw
     match_module.resolve_throw = lambda *a, **kw: ("STUFFED", -2.0)
     try:
         T = 5
-        # Uchi-mata is a snap throw (HAJ-143 execution_ticks=1), so the
-        # T+3 resolution tick is the pre-HAJ-143 baseline.
-        m._resolve_commit_throw(t, s, ThrowID.UCHI_MATA, tick=T)
+        m._resolve_commit_throw(t, s, ThrowID.SUMI_GAESHI, tick=T)
         m._advance_throws_in_progress(tick=T + 1)
         m._advance_throws_in_progress(tick=T + 2)
         outcomes: list = []

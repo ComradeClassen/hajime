@@ -3735,8 +3735,14 @@ class Match:
             defender = self._fighter_by_name(c.payload["defender_name"])
             if attacker is None or defender is None:
                 return
+            # HAJ-155 — sacrifice-throw failures force tori on the
+            # bottom (the throw committed them to the ground; the
+            # probabilistic ne_waza_start_position roll doesn't
+            # apply). Other paths keep the legacy random scramble.
+            sacrifice = c.payload.get("throw_class") == "SACRIFICE"
             ne_events = self._resolve_newaza_transition(
                 attacker, defender, tick,
+                aggressor_on_bottom=sacrifice,
             )
             for ev in ne_events:
                 ev.data.setdefault("from_consequence_queue", True)
@@ -4601,14 +4607,32 @@ class Match:
                     attacker, defender, throw_id, throw_name, net, tick,
                 ))
             else:
+                # HAJ-155 — only sacrifice throws open the ne-waza door
+                # on stuff. Standing throws reset to standing (per the
+                # ticket: a stuffed O-uchi-gari should not look
+                # mechanically identical to a stuffed Tomoe-nage). The
+                # prose for the STUFFED event diverges accordingly so
+                # the log is honest about the routing.
+                from throws import is_sacrifice_throw
+                is_sacrifice = is_sacrifice_throw(throw_id)
                 self._stuffed_throw_tick = tick
+                if is_sacrifice:
+                    stuff_desc = (
+                        f"[throw] {a_name} stuffed on {throw_name} — "
+                        f"{d_name} defends. Ne-waza window open."
+                    )
+                else:
+                    stuff_desc = (
+                        f"[throw] {a_name} stuffed on {throw_name} — "
+                        f"{d_name} defends. Resetting to standing."
+                    )
                 events.append(Event(
                     tick=tick,
                     event_type="STUFFED",
-                    description=(
-                        f"[throw] {a_name} stuffed on {throw_name} — "
-                        f"{d_name} defends. Ne-waza window open."
-                    ),
+                    description=stuff_desc,
+                    data={"throw_class": (
+                        "SACRIFICE" if is_sacrifice else "STANDING"
+                    )},
                 ))
                 # Composure hit on attacker for being stuffed
                 attacker.state.composure_current = max(
@@ -4639,6 +4663,42 @@ class Match:
                 # already queued for the same target tick — the dyad is
                 # shared between the two stuffs, so a single transition
                 # covers both.
+                #
+                # HAJ-155 — gate the door on throw class. Sacrifice throws
+                # commit tori to the ground; standing back up isn't
+                # available, so the natural continuation is ne-waza.
+                # Standing throws reset to standing instead — the door
+                # is not enqueued. The HAJ-158 grip-init recompute below
+                # still fires either way (post-stuff is still a fresh
+                # grip-fight beat).
+                if is_sacrifice:
+                    already_queued = any(
+                        c.kind == "NEWAZA_TRANSITION_AFTER_STUFF"
+                        and c.due_tick == tick + 1
+                        for c in self._consequence_queue
+                    )
+                    if not already_queued:
+                        self._consequence_queue.append(_Consequence(
+                            due_tick=tick + 1,
+                            kind="NEWAZA_TRANSITION_AFTER_STUFF",
+                            payload={
+                                "attacker_name": attacker.identity.name,
+                                "defender_name": defender.identity.name,
+                                "throw_class": "SACRIFICE",
+                            },
+                        ))
+
+        else:  # FAILED
+            events.extend(self._resolve_failed_commit(
+                attacker, defender, throw_id, throw_name, net, tick,
+            ))
+            # HAJ-155 — sacrifice-throw failures open the ne-waza door
+            # (tori is geometrically committed to the ground; standing
+            # back up cleanly isn't available). Standing-throw failures
+            # stay on _resolve_failed_commit's reset path. Mirrors the
+            # STUFFED-without-motivation gate above.
+            from throws import is_sacrifice_throw
+            if is_sacrifice_throw(throw_id):
                 already_queued = any(
                     c.kind == "NEWAZA_TRANSITION_AFTER_STUFF"
                     and c.due_tick == tick + 1
@@ -4651,13 +4711,9 @@ class Match:
                         payload={
                             "attacker_name": attacker.identity.name,
                             "defender_name": defender.identity.name,
+                            "throw_class": "SACRIFICE",
                         },
                     ))
-
-        else:  # FAILED
-            events.extend(self._resolve_failed_commit(
-                attacker, defender, throw_id, throw_name, net, tick,
-            ))
 
         # HAJ-49 / HAJ-67 — janitor: clear the motivation snapshot for this
         # attacker. _resolve_failed_commit pops it on failure; this covers
@@ -4864,7 +4920,8 @@ class Match:
     # NE-WAZA TRANSITION (after stuffed throw)
     # -----------------------------------------------------------------------
     def _resolve_newaza_transition(
-        self, aggressor: Judoka, defender: Judoka, tick: int
+        self, aggressor: Judoka, defender: Judoka, tick: int,
+        *, aggressor_on_bottom: bool = False,
     ) -> list[Event]:
         events: list[Event] = []
         window_q = 0.5  # moderate quality after a stuffed throw
@@ -4873,10 +4930,18 @@ class Match:
             aggressor, defender, window_q
         )
         if commits:
-            # Determine starting position
-            start_pos = PositionMachine.ne_waza_start_position(
-                was_stuffed=True, aggressor=aggressor, defender=defender
-            )
+            # Determine starting position. HAJ-155 — sacrifice throw
+            # failures route tori onto the bottom (they committed to
+            # the ground geometrically); we force GUARD_TOP with
+            # defender-on-top instead of rolling the probabilistic
+            # ne_waza_start_position (which can put tori on top, the
+            # wrong geometry for a stuffed sacrifice throw).
+            if aggressor_on_bottom:
+                start_pos = Position.GUARD_TOP
+            else:
+                start_pos = PositionMachine.ne_waza_start_position(
+                    was_stuffed=True, aggressor=aggressor, defender=defender
+                )
             trans_events = self.grip_graph.transform_for_position(
                 self.position, start_pos, tick
             )
@@ -4897,8 +4962,12 @@ class Match:
             # Reset stalemate counter — ne-waza just started, no stalemate.
             self.stalemate_ticks = 0
 
-            # Set who is on top
-            if start_pos == Position.SIDE_CONTROL:
+            # Set who is on top. HAJ-155 — sacrifice failures put the
+            # defender on top regardless of the start position (tori is
+            # geometrically committed to the bottom).
+            if aggressor_on_bottom:
+                self.ne_waza_top_id = defender.identity.name
+            elif start_pos == Position.SIDE_CONTROL:
                 # Defender is on top (absorbed the throw)
                 self.ne_waza_top_id = defender.identity.name
             else:
