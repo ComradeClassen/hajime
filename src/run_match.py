@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        with args.config.open("r", encoding="utf-8") as f:
+        with args.config.open("r", encoding="utf-8-sig") as f:
             config = json.load(f)
     except Exception as exc:
         _write_error_log(args.output, "Failed to read config: %s" % exc)

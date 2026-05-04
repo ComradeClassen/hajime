@@ -2,8 +2,23 @@
   "events": [
     {
       "tick": 0,
-      "type": "ERROR",
-      "prose": "Failed to read config: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+      "type": "MATCH_START",
+      "prose": "Stub simulation: Fighter 1 vs Fighter 2"
+    },
+    {
+      "tick": 30,
+      "type": "GRIP_ENGAGE",
+      "prose": "Stub: fighters establish initial grip."
+    },
+    {
+      "tick": 120,
+      "type": "THROW_ATTEMPT",
+      "prose": "Stub: Fighter 1 attempts (no forced throw)."
+    },
+    {
+      "tick": 240,
+      "type": "TIME_EXPIRED",
+      "prose": "Stub: clock expired."
     }
   ]
 }
