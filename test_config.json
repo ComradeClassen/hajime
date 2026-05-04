@@ -1,1 +1,44 @@
-﻿{"fighter1":{}, "fighter2":{}, "match":{}}
+﻿{
+  "fighter1": {
+    "name": "Alpha", "age": 25, "height_cm": 175,
+    "weight_class": "-90kg", "body_archetype": "LEVER",
+    "belt_rank": "BLACK_2", "dominant_side": "RIGHT",
+    "personality_facets": {
+      "aggressive_patient": 5, "technical_athletic": 5,
+      "confident_anxious": 5, "loyal_improv": 5
+    },
+    "capability": {
+      "hands_left": 5, "hands_right": 5,
+      "forearms_left": 5, "forearms_right": 5,
+      "legs_left": 5, "legs_right": 5,
+      "core": 5, "lower_back": 5, "neck": 5,
+      "cardio_capacity": 5, "cardio_efficiency": 5,
+      "fight_iq": 5, "composure_ceiling": 5,
+      "ne_waza_skill": 5, "other_body_parts_global": 5
+    }
+  },
+  "fighter2": {
+    "name": "Bravo", "age": 25, "height_cm": 175,
+    "weight_class": "-90kg", "body_archetype": "LEVER",
+    "belt_rank": "BLACK_2", "dominant_side": "RIGHT",
+    "personality_facets": {
+      "aggressive_patient": 5, "technical_athletic": 5,
+      "confident_anxious": 5, "loyal_improv": 5
+    },
+    "capability": {
+      "hands_left": 5, "hands_right": 5,
+      "forearms_left": 5, "forearms_right": 5,
+      "legs_left": 5, "legs_right": 5,
+      "core": 5, "lower_back": 5, "neck": 5,
+      "cardio_capacity": 5, "cardio_efficiency": 5,
+      "fight_iq": 5, "composure_ceiling": 5,
+      "ne_waza_skill": 5, "other_body_parts_global": 5
+    }
+  },
+  "match": {
+    "starting_position": "STANDING_NEUTRAL",
+    "time_on_clock": 240,
+    "forced_throw": "NONE",
+    "ref_personality": "NEUTRAL"
+  }
+}
