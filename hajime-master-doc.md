@@ -1563,16 +1563,19 @@ ring.*
 - `master-doc-patch-2026-05-04.md` — The patch that landed the ring
   reorder, state-modular commitment, and fog-of-war principle.
   Decision-of-record for the May 4 reframe.
-- `one-year-of-worldgen.md` — First-cut spec for the atomic unit of
-  worldgen output. Seed for the full Ring 2 spec.
-- `lineage-system.md` — *new doc, pending.* Lineage data model from
-  Ring 2 forward; the data is now load-bearing for worldgen, not a
-  forward-compatibility hedge. Expanded scope under the May 4
-  reframe.
+- `one-year-of-worldgen.md` — *landed.* First-cut spec for the atomic
+  unit of worldgen output. Seed for the full Ring 2 spec.
+- `resource-model.md` — *landed.* Four-resource economy
+  (attention-hours, energy, health, money), derivative reputation
+  model, aging curve, family layer, and trade-off pairs. Underlying
+  spec for the scheduling UI and the resource-driven shape of a
+  multi-decade career.
 - *Pending:* full Ring 2 spec extending `one-year-of-worldgen.md`
-  with the abstracted resolver's calibration plan, the legends-
-  rendering authoring strategy, the state-module architecture, the
-  fog-of-war mechanics, and the technology/rules era handling.
+  and `resource-model.md` with the abstracted resolver's calibration
+  plan, the legends-rendering authoring strategy, the state-module
+  architecture, the fog-of-war mechanics, and the technology/rules
+  era handling.
+- `lineage-system.md` — *downstream of the Ring 2 spec, not alongside it.* Lineage data model load-bearing for worldgen; expanded scope under the May 4 reframe, to be drafted after the full Ring 2 spec lands.
 
 **Ring 3 (the dojo deep-dive):**
 - `dojo-as-institution.md` — Calendar, sessions, roster,
