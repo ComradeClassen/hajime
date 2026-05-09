@@ -109,6 +109,25 @@ STAMINA_DESPERATION_MIN_SHIDOS:  int   = 1
 STAMINA_DESPERATION_HAND_FAT_MIN: float = 0.40
 STAMINA_DESPERATION_PER_TICK_PROB: float = 0.20
 
+# HAJ-74 — Golden-score relaxes the gates. The match clock is gone, the
+# fighters know the next score (or third shido) ends it, and a low-conditioned
+# judoka starts forcing desperate ippon attempts even without the regulation
+# shido prerequisite. Composure is suppressed in the GS-low-stamina window —
+# represented here as relaxed gates and a higher per-tick probability.
+GS_STAMINA_DESPERATION_CARDIO_MAX:  float = 0.65
+GS_STAMINA_DESPERATION_MIN_SHIDOS:  int   = 0
+GS_STAMINA_DESPERATION_HAND_FAT_MIN: float = 0.25
+GS_STAMINA_DESPERATION_PER_TICK_PROB: float = 0.40
+
+# HAJ-74 — Golden-score damps SHIDO_FARMING. The v2 spec calls for
+# "tactical behavior shifts away from defensive shido-baiting and toward
+# technique commitment." A real fighter in golden score does not pose-attack
+# to fish for opponent passivity shidos; they commit. We multiply the per-
+# tick probability by this factor (and zero the threshold-based tendency
+# floor) so farming still has a residual chance for low-IQ habit but the
+# population behavior shifts toward real commits.
+GS_SHIDO_FARMING_DAMPER: float = 0.20
+
 # Priority order of drop-variant throws for any non-scoring motivation, most
 # preferred first. Lowest-commitment entries in standard vocabularies: fast
 # recovery-to-stance is the whole point, so shin-block (TAI_OTOSHI),
@@ -147,6 +166,7 @@ def select_actions(
     desperation_jitter: Optional[dict] = None,
     current_tick: int = 0,
     position: Optional[Position] = None,
+    golden_score: bool = False,
 ) -> list[Action]:
     """Return the judoka's chosen actions for this tick.
 
@@ -195,6 +215,7 @@ def select_actions(
         opponent_in_progress_throw=opponent_in_progress_throw,
         desperation_jitter=desperation_jitter,
         current_tick=current_tick,
+        golden_score=golden_score,
     )
     # HAJ-128 — locomotion is additive, never replaces grip work. Skip
     # when a commit is in flight (commits are exclusive in the ladder)
@@ -309,6 +330,7 @@ def _select_grip_actions(
     opponent_in_progress_throw: Optional[ThrowID] = None,
     desperation_jitter: Optional[dict] = None,
     current_tick: int = 0,
+    golden_score: bool = False,
 ) -> list[Action]:
     """The grip / commit / probe priority ladder. Pre-HAJ-128 this was
     the body of select_actions; locomotion now wraps it.
@@ -360,6 +382,7 @@ def _select_grip_actions(
         kumi_kata_clock=kumi_kata_clock,
         opponent_kumi_kata_clock=opponent_kumi_kata_clock,
         current_tick=current_tick,
+        golden_score=golden_score,
     )
     if commit is not None:
         return [commit]
@@ -906,6 +929,7 @@ def _try_commit(
     kumi_kata_clock: int = 0,
     opponent_kumi_kata_clock: int = 0,
     current_tick: int = 0,
+    golden_score: bool = False,
 ) -> Optional[Action]:
     """If there's a throw whose *perceived* signature clears the commit
     threshold AND the formal grip-presence gate allows it (or is bypassed
@@ -986,6 +1010,7 @@ def _try_commit(
         kumi_kata_clock=kumi_kata_clock,
         opponent_kumi_kata_clock=opponent_kumi_kata_clock,
         perceived_by_throw=perceived_by_throw,
+        golden_score=golden_score,
     )
     if motivation is None:
         return None
@@ -1013,12 +1038,17 @@ def _select_non_scoring_motivation(
     kumi_kata_clock: int,
     opponent_kumi_kata_clock: int,
     perceived_by_throw: dict[ThrowID, float],
+    golden_score: bool = False,
 ) -> Optional[CommitMotivation]:
     """Dispatch to the first non-scoring motivation whose gate fires.
 
     Each predicate is self-contained and performs its own hard gates plus
     per-tick probability roll. Priority order: CLOCK_RESET, then
     STAMINA_DESPERATION, GRIP_ESCAPE, SHIDO_FARMING.
+
+    HAJ-74 — `golden_score` relaxes the STAMINA_DESPERATION gates and
+    damps SHIDO_FARMING; the v2 spec calls for technique commitment over
+    shido-baiting once the regulation clock is gone.
     """
     # All four motivations pick from drop-variant preferences; if the
     # fighter has none, skip the whole dispatch.
@@ -1028,12 +1058,15 @@ def _select_non_scoring_motivation(
 
     if _should_fire_clock_reset(judoka, kumi_kata_clock, rng):
         return CommitMotivation.CLOCK_RESET
-    if _should_fire_stamina_desperation(judoka, rng):
+    if _should_fire_stamina_desperation(
+        judoka, rng, golden_score=golden_score,
+    ):
         return CommitMotivation.STAMINA_DESPERATION
     if _should_fire_grip_escape(judoka, opponent, graph, rng):
         return CommitMotivation.GRIP_ESCAPE
     if _should_fire_shido_farming(
         judoka, opponent_kumi_kata_clock, perceived_by_throw, rng,
+        golden_score=golden_score,
     ):
         return CommitMotivation.SHIDO_FARMING
     return None
@@ -1063,21 +1096,42 @@ def _should_fire_clock_reset(
 
 def _should_fire_stamina_desperation(
     judoka: "Judoka", rng: Optional[random.Random] = None,
+    *, golden_score: bool = False,
 ) -> bool:
     """STAMINA_DESPERATION — tori is cardio-cooked, has eaten at least one
     shido, and can't drive force through grips (proxy: hand fatigue above
     threshold). A cooked, penalized fighter falls into anything to buy
     time on the mat.
+
+    HAJ-74 — in golden score, the gates relax and the per-tick probability
+    rises. The shido prerequisite drops away (the regulation-shido signal
+    of "this fighter has been forced into desperation" is no longer the
+    only license; the GS clock itself is the license), the cardio ceiling
+    rises (a fighter at 0.6 cardio in GS is more cooked relative to what
+    they'll need than a fighter at 0.6 in regulation), and the hand-fatigue
+    floor drops. Composure suppression is modeled here: even fighters who
+    would have ridden out regulation start forcing desperate ippon attempts
+    once they realize the next score wins.
     """
-    if judoka.state.cardio_current > STAMINA_DESPERATION_CARDIO_MAX:
+    if golden_score:
+        cardio_max = GS_STAMINA_DESPERATION_CARDIO_MAX
+        min_shidos = GS_STAMINA_DESPERATION_MIN_SHIDOS
+        hand_min   = GS_STAMINA_DESPERATION_HAND_FAT_MIN
+        prob       = GS_STAMINA_DESPERATION_PER_TICK_PROB
+    else:
+        cardio_max = STAMINA_DESPERATION_CARDIO_MAX
+        min_shidos = STAMINA_DESPERATION_MIN_SHIDOS
+        hand_min   = STAMINA_DESPERATION_HAND_FAT_MIN
+        prob       = STAMINA_DESPERATION_PER_TICK_PROB
+    if judoka.state.cardio_current > cardio_max:
         return False
-    if judoka.state.shidos < STAMINA_DESPERATION_MIN_SHIDOS:
+    if judoka.state.shidos < min_shidos:
         return False
-    if _avg_hand_fatigue(judoka) < STAMINA_DESPERATION_HAND_FAT_MIN:
+    if _avg_hand_fatigue(judoka) < hand_min:
         return False
     if rng is None:
         return True
-    return rng.random() < STAMINA_DESPERATION_PER_TICK_PROB
+    return rng.random() < prob
 
 
 def _should_fire_grip_escape(
@@ -1120,12 +1174,20 @@ def _should_fire_shido_farming(
     judoka: "Judoka", opponent_kumi_kata_clock: int,
     perceived_by_throw: dict[ThrowID, float],
     rng: Optional[random.Random] = None,
+    *, golden_score: bool = False,
 ) -> bool:
     """SHIDO_FARMING — opponent has been passive (their kumi-kata clock is
     elevated), tori has no real scoring opportunity, and tori's style
     tolerates grinding the referee for the opposing shido. Tori poses an
     attack to keep themselves above the passivity bar while forcing uke
     to either escalate or eat a shido of their own.
+
+    HAJ-74 — in golden score the per-tick probability is damped by
+    GS_SHIDO_FARMING_DAMPER (0.20x). The v2 spec calls for tactical
+    behavior to shift away from defensive shido-baiting toward technique
+    commitment once regulation is over; pose-attacks for opposing shidos
+    do not match that. A small residual chance survives so habituated /
+    low-IQ fighters still occasionally do the wrong thing.
     """
     if opponent_kumi_kata_clock < SHIDO_FARMING_OPP_CLOCK:
         return False
@@ -1142,7 +1204,10 @@ def _should_fire_shido_farming(
         return False
     if rng is None:
         return True
-    return rng.random() < SHIDO_FARMING_PER_TICK_PROB
+    prob = SHIDO_FARMING_PER_TICK_PROB
+    if golden_score:
+        prob *= GS_SHIDO_FARMING_DAMPER
+    return rng.random() < prob
 
 
 def _select_false_attack_throw(

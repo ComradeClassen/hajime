@@ -21,6 +21,11 @@ from enums import (
 from grip_graph import Event
 
 
+# HAJ-74 — golden-score scaling for the ne-waza stalemate matte threshold.
+# Spec: "STALEMATE_DURATION threshold scaled up 20-30% in GS." Mid of band.
+GOLDEN_SCORE_STALEMATE_SCALE: float = 1.25
+
+
 # ---------------------------------------------------------------------------
 # SCORE RESULT
 # Returned by referee.score_throw() — tells the match what happened.
@@ -99,6 +104,12 @@ class MatchState:
     # MatchState compiling.
     fighter_a_region: Optional[str] = None
     fighter_b_region: Optional[str] = None
+    # HAJ-74 — golden-score flag. The match is past regulation, sudden
+    # death is live. Referee uses this to scale the ne-waza stalemate
+    # matte threshold up: real refs let golden-score ground exchanges
+    # cook a little longer before resetting, since a reset wastes the
+    # only time-pressured commitment in the match.
+    golden_score: bool = False
 
 
 # ===========================================================================
@@ -195,8 +206,13 @@ class Referee:
             # If osaekomi is running, the clock is live — don't interrupt
             if state.osaekomi_holder_id is not None:
                 return None
-            # Otherwise count against newaza patience window
-            if state.stalemate_ticks >= self._NEWAZA_MATTE_TICKS:
+            # Otherwise count against newaza patience window. HAJ-74 — in
+            # golden score, scale the threshold up 25% so referees give the
+            # only score-deciding ground exchange more rope before resetting.
+            threshold = self._NEWAZA_MATTE_TICKS
+            if state.golden_score:
+                threshold = int(round(threshold * GOLDEN_SCORE_STALEMATE_SCALE))
+            if state.stalemate_ticks >= threshold:
                 return MatteReason.STALEMATE
 
         # After a stuffed throw: check stuffed_throw_tolerance window

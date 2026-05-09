@@ -424,6 +424,39 @@ HAND_FATIGUE_PER_TICK: float = 0.0003
 # meaningful surcharge on top of CARDIO_DRAIN_PER_TICK without dominating it.
 POSTURE_BENT_CARDIO_DRAIN: float = 0.001
 
+# HAJ-74 — Golden-score cardio escalation. The match clock has run out, the
+# fighters have already paid a full regulation's drain, and now every action
+# costs more. Drain accelerates linearly with elapsed GS time on top of a
+# baseline GS surcharge: at GS entry the multiplier is BASE; it ramps to
+# BASE + RAMP over GOLDEN_SCORE_RAMP_TICKS. Conditioning shaves the
+# acceleration: high cardio_efficiency (1..10, 5 = neutral) reduces the
+# effective multiplier so a high-conditioned judoka burns through GS more
+# slowly than a low-conditioned one. This is the v2 spec's "conditioning's
+# contribution to decision-making escalates" knob.
+GOLDEN_SCORE_CARDIO_BASE_MULT:   float = 1.5
+GOLDEN_SCORE_CARDIO_RAMP_MULT:   float = 1.5   # plus base = 3.0x at full ramp
+GOLDEN_SCORE_RAMP_TICKS:         int   = 120
+
+
+def golden_score_cardio_multiplier(
+    elapsed_gs_ticks: int, cardio_efficiency: int = 5,
+) -> float:
+    """Linear escalation of cardio drain in golden score, conditioning-scaled.
+
+    elapsed_gs_ticks is the number of ticks since GOLDEN_SCORE_START.
+    cardio_efficiency is the 1..10 capability stat (5 = neutral).
+    Returns 1.0 outside golden score (caller responsibility) — but for
+    elapsed_gs_ticks >= 0 it always returns >= BASE so the caller should
+    only invoke this when match.golden_score is True.
+    """
+    ramp = min(1.0, max(0.0, elapsed_gs_ticks / float(GOLDEN_SCORE_RAMP_TICKS)))
+    raw = GOLDEN_SCORE_CARDIO_BASE_MULT + ramp * GOLDEN_SCORE_CARDIO_RAMP_MULT
+    # Conditioning shave: efficiency 10 reduces the *surplus* over 1.0 by 50%;
+    # efficiency 1 inflates it by 50%. Neutral 5 = no change.
+    surplus = raw - 1.0
+    eff_factor = 1.0 + (5 - cardio_efficiency) * 0.10
+    return max(1.0, 1.0 + surplus * eff_factor)
+
 # Composure drops on scoring events
 COMPOSURE_DROP_WAZA_ARI: float = 0.5
 COMPOSURE_DROP_IPPON:    float = 2.0
@@ -1327,6 +1360,7 @@ class Match:
             ),
             current_tick=tick,
             position=self.position,
+            golden_score=self.golden_score,
         )
         actions_b = select_actions(
             self.fighter_b, self.fighter_a, self.grip_graph,
@@ -1343,6 +1377,7 @@ class Match:
             ),
             current_tick=tick,
             position=self.position,
+            golden_score=self.golden_score,
         )
         # A fighter mid-attempt must not re-commit — strip any COMMIT_THROW
         # the ladder re-proposes this tick.
@@ -5277,6 +5312,7 @@ class Match:
             any_throw_in_flight=bool(self._throws_in_progress),
             fighter_a_region=region_of(self.fighter_a).name,
             fighter_b_region=region_of(self.fighter_b).name,
+            golden_score=self.golden_score,
         )
 
     def _ne_waza_top(self) -> Judoka:
@@ -5492,9 +5528,28 @@ class Match:
         s = judoka.state
         s.body["right_hand"].fatigue = min(1.0, s.body["right_hand"].fatigue + HAND_FATIGUE_PER_TICK)
         s.body["left_hand"].fatigue  = min(1.0, s.body["left_hand"].fatigue  + HAND_FATIGUE_PER_TICK)
-        s.cardio_current = max(0.0, s.cardio_current - CARDIO_DRAIN_PER_TICK)
+        # HAJ-74 — in golden score, cardio drain escalates linearly with
+        # elapsed GS time, shaved by cardio_efficiency. Posture surcharge
+        # is multiplied too: bending forward in overtime is even costlier.
+        mult = self._cardio_drain_multiplier(judoka)
+        s.cardio_current = max(0.0, s.cardio_current - CARDIO_DRAIN_PER_TICK * mult)
         if s.body_state.trunk_sagittal > UPRIGHT_LIMIT_RAD:
-            s.cardio_current = max(0.0, s.cardio_current - POSTURE_BENT_CARDIO_DRAIN)
+            s.cardio_current = max(0.0, s.cardio_current - POSTURE_BENT_CARDIO_DRAIN * mult)
+
+    def _cardio_drain_multiplier(self, judoka: Judoka) -> float:
+        """HAJ-74 — golden-score drain multiplier for `judoka` this tick.
+
+        Returns 1.0 in regulation. In golden score, returns the linear
+        escalator from `golden_score_cardio_multiplier`, indexed by elapsed
+        GS ticks and the fighter's cardio_efficiency stat.
+        """
+        if not self.golden_score or self.golden_score_start_tick is None:
+            return 1.0
+        elapsed = max(0, self.ticks_run - self.golden_score_start_tick)
+        return golden_score_cardio_multiplier(
+            elapsed_gs_ticks=elapsed,
+            cardio_efficiency=judoka.capability.cardio_efficiency,
+        )
 
     def _decay_stun(self, judoka: Judoka) -> None:
         if judoka.state.stun_ticks > 0:
