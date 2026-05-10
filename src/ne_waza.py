@@ -30,6 +30,38 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
+# NE-WAZA STATE MACHINE — HAJ-185
+# The ground game has three coarse states with different rules and different
+# scoring paths. They are MUTUALLY EXCLUSIVE: a submission attempt is not an
+# osaekomi position, and the engine must not run the osaekomi clock during a
+# submission.
+#
+#   OSAEKOMI            — top fighter has bottom held in a recognized
+#                         osaekomi position (kesa, yoko-shiho, kami-shiho,
+#                         tate-shiho, ura, kata). Osaekomi clock runs.
+#                         Resolves to waza-ari at 10s, ippon at 20s, or to
+#                         TRANSITIONAL on escape / boundary / reverse.
+#   SUBMISSION_ATTEMPT  — top fighter applying a joint lock or strangle.
+#                         No osaekomi clock. Binary resolution: tap or
+#                         escape (or referee-called matte after stalemate).
+#   TRANSITIONAL        — neither pin nor submission active: turtle defense,
+#                         half-guard scramble, recovery, etc. No clock.
+#                         Resolves to one of the other two states or back
+#                         to tachiwaza.
+#
+# Boundary cases (e.g. a kuzure-kami-shiho-gatame setup escalated into a
+# juji-gatame) are modeled as TRANSITIONS between states, not as a single
+# conflated state. When the top fighter abandons a pin to attempt a sub the
+# osaekomi is broken (per IJF rules: pause is rare, cancel is the default).
+# ---------------------------------------------------------------------------
+class NeWazaState(Enum):
+    """Coarse ne-waza phase. Mutually exclusive."""
+    TRANSITIONAL       = auto()
+    OSAEKOMI           = auto()
+    SUBMISSION_ATTEMPT = auto()
+
+
+# ---------------------------------------------------------------------------
 # NE-WAZA TECHNIQUE STATE
 # Tracks which ground technique is in progress and how far along the chain.
 # ---------------------------------------------------------------------------
@@ -135,6 +167,34 @@ class NewazaResolver:
 
     def __init__(self) -> None:
         self.active_technique: Optional[ActiveTechnique] = None
+
+    # -----------------------------------------------------------------------
+    # STATE MACHINE — HAJ-185
+    # The current coarse state is derived from osaekomi.active and
+    # active_technique. We keep the derivation, not a separate explicit
+    # field, so the two can never desync. Callers (match.py, tests) read
+    # `state(osaekomi)` to know which phase the ground game is in.
+    # -----------------------------------------------------------------------
+    def state(self, osaekomi: "OsaekomiClock") -> NeWazaState:
+        """Return the current coarse ne-waza phase.
+
+        Submission attempts win over pins because once a sub starts the
+        osaekomi has already been broken (by tick_resolve, before the
+        submission was initiated). If both ever appear active simultaneously
+        that is a state-machine violation — see HAJ-185.
+        """
+        if self.active_technique is not None:
+            return NeWazaState.SUBMISSION_ATTEMPT
+        if osaekomi.active:
+            return NeWazaState.OSAEKOMI
+        return NeWazaState.TRANSITIONAL
+
+    def reset(self, osaekomi: "OsaekomiClock") -> None:
+        """Clear all ne-waza state. Called by match.py when ne-waza ends
+        (escape, score, matte) so the next ground entry starts clean."""
+        self.active_technique = None
+        if osaekomi.active:
+            osaekomi.break_pin()
 
     # -----------------------------------------------------------------------
     # ATTEMPT GROUND COMMIT
@@ -257,6 +317,9 @@ class NewazaResolver:
             ))
 
         # --- Active technique chain ---
+        # HAJ-185 — when a submission is in progress we are in
+        # NeWazaState.SUBMISSION_ATTEMPT. The osaekomi clock must be off;
+        # any attempt to start a pin during a sub is rejected below.
         if self.active_technique:
             tech_events = self._advance_technique(
                 self.active_technique, top_fighter, bottom_fighter, current_tick
@@ -269,6 +332,28 @@ class NewazaResolver:
                     top_fighter, bottom_fighter, position, current_tick
                 )
                 if tech:
+                    # HAJ-185 — boundary case: top fighter abandons a pin
+                    # to escalate into a submission (kuzure-kami-shiho into
+                    # juji-gatame, kata-gatame into a strangle, etc.). The
+                    # osaekomi is broken before the submission begins so
+                    # the pin clock and the sub never co-run.
+                    if osaekomi.active:
+                        ticks_held = osaekomi.ticks_held
+                        osaekomi.break_pin()
+                        events.append(Event(
+                            tick=current_tick,
+                            event_type="OSAEKOMI_TO_SUBMISSION",
+                            description=(
+                                f"[ne-waza] {top_fighter.identity.name} "
+                                f"abandons hold for {tech.name} attempt — "
+                                f"osaekomi clock stops at {ticks_held}s."
+                            ),
+                            data={
+                                "former_holder": top_fighter.identity.name,
+                                "technique": tech.name,
+                                "ticks_held": ticks_held,
+                            },
+                        ))
                     self.active_technique = tech
                     events.append(Event(
                         tick=current_tick,
@@ -280,7 +365,10 @@ class NewazaResolver:
                     ))
             elif not osaekomi.active and position in (
                     Position.SIDE_CONTROL, Position.MOUNT, Position.BACK_CONTROL):
-                # Start a pin if none active
+                # Start a pin if none active. (Pin start is gated on
+                # active_technique=None by the surrounding else branch, so
+                # NeWazaState.SUBMISSION_ATTEMPT cannot transition into
+                # OSAEKOMI accidentally — a sub must resolve first.)
                 osaekomi.start(top_fighter.identity.name, position)
                 events.append(Event(
                     tick=current_tick,

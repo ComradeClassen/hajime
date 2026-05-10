@@ -1718,7 +1718,7 @@ class Match:
         # event that signals movement (technique initiated, pin started,
         # submission landed, escape, counter-action partial success).
         progress_event_types = {
-            "OSAEKOMI_BEGIN", "OSAEKOMI_BROKEN",
+            "OSAEKOMI_BEGIN", "OSAEKOMI_BROKEN", "OSAEKOMI_TO_SUBMISSION",
             "SUBMISSION_VICTORY", "ESCAPE_SUCCESS", "COUNTER_ACTION",
         }
         had_progress_event = any(
@@ -1750,8 +1750,9 @@ class Match:
                 self._end_match(winner, method, tick, events)
                 return
             if ev.event_type == "ESCAPE_SUCCESS":
-                self.ne_waza_resolver.active_technique = None
-                self.osaekomi.break_pin()
+                # HAJ-185 — atomic ne-waza reset on escape so the next
+                # standing engagement doesn't carry ghost state.
+                self.ne_waza_resolver.reset(self.osaekomi)
                 # HAJ-129 — escape resets to STANDING_DISTANT with the same
                 # post-score-style recovery bonus so getting up off the mat
                 # eats real time before the next grip can seat. Drops any
@@ -5250,11 +5251,10 @@ class Match:
         """
         # Break all edges
         self.grip_graph.break_all_edges()
-        # Stop osaekomi if running
-        if self.osaekomi.active:
-            self.osaekomi.break_pin()
-        # Reset ne-waza state
-        self.ne_waza_resolver.active_technique = None
+        # HAJ-185 — single ne-waza reset surface. The resolver clears its
+        # own active_technique and breaks the osaekomi atomically so the
+        # next ground entry starts in NeWazaState.TRANSITIONAL.
+        self.ne_waza_resolver.reset(self.osaekomi)
         self.ne_waza_top_id = None
         # Reset sub-loop to standing + physics state.
         self._stuffed_throw_tick = 0
