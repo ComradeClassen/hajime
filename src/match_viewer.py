@@ -366,12 +366,14 @@ CONTEST_M:       float = 8.0
 TRAIL_LENGTH:    int = 30
 
 # Frame pacing — ticks/second of wall clock (a tick is 1 sim second).
-# 1.25 tps ≈ 800ms per tick — comfortable read-along pace for the prose
-# stream and the event ticker. A 4-minute (240-tick) match plays in ~3
-# minutes of wall clock at this rate. Faster pacing was confusing to
-# read in the ticker; bumping the default down makes the viewer feel
-# like a real-time broadcast rather than a sped-up replay.
-DEFAULT_TICKS_PER_SECOND: float = 1.25
+# 0.5 tps ≈ 2s per tick — slow enough that a viewer learning the visual
+# vocabulary can actually read what changed between ticks (grip flips,
+# kuzushi flashes, score events). 1.25 tps was confusing; even 1.0 tps
+# (real-time) hides too much. Per-session feedback May 2026: default
+# slow, let the user speed up with +/- as they get fluent. A 4-minute
+# (240-tick) match plays in ~8 minutes of wall clock at the default;
+# tap '+' twice to roughly halve that.
+DEFAULT_TICKS_PER_SECOND: float = 0.7
 MIN_TPS: float = 0.1
 MAX_TPS: float = 30.0   # 10× of real-time is the ticket spec; 30 leaves headroom
 TPS_STEP_FACTOR: float = 1.5
