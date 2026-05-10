@@ -273,6 +273,12 @@ class Phase1ViewState:
     # directly in tests can skip these.
     grip_edges:        tuple["GripEdgeView", ...] = ()
     grip_node_flashes: tuple["GripNodeFlash", ...] = ()
+    # HAJ-189 — Phase 2b: arrows + damage tinting + mini-map prep.
+    # Body damage tinting reads body_a.region_damage; the band
+    # classification lives on the BodyView itself via damage_bands so
+    # the renderer doesn't re-classify per region per frame.
+    arrows:            tuple["ArrowView", ...] = ()
+    mini_map:          Optional["MiniMapView"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +423,126 @@ def _node_flash_base_duration(kind: str) -> float:
         NODE_FLASH_COMPROMISED: NODE_FLASH_COMPROMISED_S,
         NODE_FLASH_SWITCHED:    NODE_FLASH_SWITCHED_S,
     }.get(kind, 0.4)
+
+
+# ---------------------------------------------------------------------------
+# HAJ-189 — INTENT/ACTUAL ARROWS + DAMAGE TINTING + MINI-MAP (Sections
+# 2.2, 2.4, 2.11)
+# ---------------------------------------------------------------------------
+
+# Arrow kinds — gray ghost intent vs solid identity-tinted actual.
+ARROW_KIND_INTENT = "INTENT"
+ARROW_KIND_ACTUAL = "ACTUAL"
+
+
+@dataclass(frozen=True)
+class ArrowView:
+    """One per (judoka, kind). Vector is in mat-coordinate units (the
+    same units the engine uses for force × direction). Renderer
+    scales to pixels via `arrow_pixel_length`. The arrow originates
+    near the judoka's CoM and points along (vec_x, vec_y).
+
+    `magnitude` is the |vector| precomputed so tests + renderer don't
+    need to recompute. Length encodes attempted (intent) or delivered
+    (actual) force magnitude per Section 2.4."""
+    judoka_name:     str
+    judoka_identity: str
+    kind:            str          # ARROW_KIND_INTENT / ARROW_KIND_ACTUAL
+    vec_x:           float
+    vec_y:           float
+    magnitude:       float
+
+
+# Damage tinting bands — Section 2.2. Boundaries are wear thresholds
+# (0.0 = fresh, 1.0 = cooked). Discrete bands; render layer maps each
+# band to a red mix amount.
+DAMAGE_HEALTHY     = "healthy"
+DAMAGE_WORKED      = "worked"
+DAMAGE_COMPROMISED = "compromised"
+DAMAGE_CRITICAL    = "critical"
+
+# Thresholds — anything < WORKED_MIN is healthy, etc. Tunable in one
+# place; calibration sweeps in HAJ-195 may shift them.
+DAMAGE_BAND_THRESHOLDS: tuple[tuple[float, str], ...] = (
+    (0.25, DAMAGE_WORKED),
+    (0.50, DAMAGE_COMPROMISED),
+    (0.75, DAMAGE_CRITICAL),
+)
+# Red-mix per band, used by both the test layer (asserting band
+# classification) and the render layer (computing tint). Healthy = 0.
+DAMAGE_BAND_RED_MIX: dict[str, float] = {
+    DAMAGE_HEALTHY:     0.00,
+    DAMAGE_WORKED:      0.25,
+    DAMAGE_COMPROMISED: 0.50,
+    DAMAGE_CRITICAL:    0.85,    # 75-100% range; pulse in renderer
+}
+
+
+def damage_band(value: float) -> str:
+    """Classify a 0.0-1.0 wear value into one of the four bands. Pure
+    function; tested directly so calibration changes can pin the
+    exact band boundaries.
+
+    Bands (Section 2.2): healthy < 0.25, worked [0.25, 0.5),
+    compromised [0.5, 0.75), critical >= 0.75."""
+    if value < 0.25:
+        return DAMAGE_HEALTHY
+    if value < 0.50:
+        return DAMAGE_WORKED
+    if value < 0.75:
+        return DAMAGE_COMPROMISED
+    return DAMAGE_CRITICAL
+
+
+def tint_toward_red(
+    base_rgb: tuple[int, int, int], red_mix: float,
+) -> tuple[int, int, int]:
+    """Section 2.2 — saturation/luminance shift toward red, not a
+    pure hue replacement. Identity color is preserved.
+
+    Implementation: linear interpolation between the base RGB and a
+    deep red anchor. White (235, 235, 240) walks through pink to red.
+    Blue (90, 140, 230) walks through purple to dark red. Pure
+    function so tests can pin exact values per band."""
+    if red_mix <= 0.0:
+        return base_rgb
+    mix = max(0.0, min(1.0, red_mix))
+    # Anchor: a saturated red that isn't pure (255, 0, 0) so the blend
+    # doesn't go neon. Slight orange-red so heavily-damaged regions
+    # read as 'badly hurt' rather than 'video-game red'.
+    anchor = (220, 60, 50)
+    r = int(round(base_rgb[0] * (1 - mix) + anchor[0] * mix))
+    g = int(round(base_rgb[1] * (1 - mix) + anchor[1] * mix))
+    b = int(round(base_rgb[2] * (1 - mix) + anchor[2] * mix))
+    return (max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b)))
+
+
+@dataclass(frozen=True)
+class MiniMapView:
+    """Section 2.11 — top-down mat schematic. Captures the geometry
+    + per-fighter positions and recent-movement tail so the renderer
+    can paint the corner widget without recomputing geometry per
+    frame. Tail length is bounded to keep snapshots compact."""
+    contest_half_m:   float           # half-side of contest area in meters
+    safety_half_m:    float           # half-side of safety boundary
+    a_position:       tuple[float, float]
+    b_position:       tuple[float, float]
+    a_identity:       str
+    b_identity:       str
+    a_tail:           tuple[tuple[float, float], ...]    # recent positions
+    b_tail:           tuple[tuple[float, float], ...]
+    a_near_edge:      bool             # for boundary-approach pulse
+    b_near_edge:      bool
+
+
+# Mini-map geometry — pulled from match.MAT_HALF_WIDTH (4.0) plus the
+# usual safety border; if the engine doesn't expose them, fall back to
+# IJF-reference values. The viewer is forgiving here because mat geom
+# changes are rare and a default lets tests + headless runs work.
+MINI_MAP_CONTEST_HALF_M_DEFAULT: float = 4.0
+MINI_MAP_SAFETY_HALF_M_DEFAULT:  float = 7.0   # contest + 3m safety per IJF
+MINI_MAP_TAIL_LENGTH:            int   = 12
+MINI_MAP_EDGE_THRESHOLD_M:       float = 0.75  # within this many m of edge → pulse
 
 
 # ---------------------------------------------------------------------------
@@ -780,6 +906,14 @@ def capture_phase1_view(
         tick, events, grip_edges, deepened_ids, degraded_ids, prev_view,
     )
 
+    # HAJ-189 — intent + actual arrows (Section 2.4).
+    arrows = _capture_arrows(match, identity_for)
+
+    # HAJ-189 — mini-map (Section 2.11).
+    mini_map = _capture_mini_map(
+        match, body_a, body_b, identity_for, prev_view,
+    )
+
     return Phase1ViewState(
         tick=tick,
         position_state=position_bucket(match.position, match.sub_loop_state),
@@ -792,7 +926,97 @@ def capture_phase1_view(
         mat_coords_a=mat_a, mat_coords_b=mat_b,
         grip_edges=grip_edges,
         grip_node_flashes=node_flashes,
+        arrows=arrows,
+        mini_map=mini_map,
     )
+
+
+def _capture_arrows(
+    match, identity_for: dict[str, str],
+) -> tuple[ArrowView, ...]:
+    """Pull per-fighter intent + actual force vectors from Match's
+    HAJ-189 storage and convert to ArrowViews. A zero-magnitude
+    vector emits no arrow — the spec's 'fade entirely when no active
+    intent' is structural: no view, no draw, no flash.
+
+    Match exposes `_intent_force` and `_actual_force` dicts keyed by
+    fighter name; both reset to zero at the top of each tick and
+    accumulate via _compute_net_force_on. Tolerant of older Match
+    versions that lack these attrs (returns empty tuple)."""
+    intent_map: dict[str, tuple[float, float]] = getattr(
+        match, "_intent_force", {},
+    )
+    actual_map: dict[str, tuple[float, float]] = getattr(
+        match, "_actual_force", {},
+    )
+    out: list[ArrowView] = []
+    for name, identity in identity_for.items():
+        ix, iy = intent_map.get(name, (0.0, 0.0))
+        ax, ay = actual_map.get(name, (0.0, 0.0))
+        i_mag = (ix * ix + iy * iy) ** 0.5
+        a_mag = (ax * ax + ay * ay) ** 0.5
+        if i_mag > 1e-6:
+            out.append(ArrowView(
+                judoka_name=name, judoka_identity=identity,
+                kind=ARROW_KIND_INTENT,
+                vec_x=float(ix), vec_y=float(iy),
+                magnitude=float(i_mag),
+            ))
+        if a_mag > 1e-6:
+            out.append(ArrowView(
+                judoka_name=name, judoka_identity=identity,
+                kind=ARROW_KIND_ACTUAL,
+                vec_x=float(ax), vec_y=float(ay),
+                magnitude=float(a_mag),
+            ))
+    return tuple(out)
+
+
+def _capture_mini_map(
+    match, body_a: BodyView, body_b: BodyView,
+    identity_for: dict[str, str],
+    prev_view: Optional[Phase1ViewState],
+) -> MiniMapView:
+    """Pull mat geometry + per-fighter positions and recent-movement
+    tail. Tail walks the prev_view chain backwards to MINI_MAP_TAIL_LENGTH
+    snapshots so the mini-map renders the same trail across review-mode
+    scrubbing as it did live."""
+    contest_half = float(getattr(
+        match, "MAT_HALF_WIDTH", MINI_MAP_CONTEST_HALF_M_DEFAULT,
+    ) or MINI_MAP_CONTEST_HALF_M_DEFAULT)
+    safety_half = contest_half + 3.0   # IJF safety border is 3m beyond contest
+    a_pos = body_a.com_position
+    b_pos = body_b.com_position
+    # Tail = previous N positions, oldest-first. Built by appending the
+    # prev tick's position onto the prev tick's tail and truncating.
+    a_tail: list[tuple[float, float]] = []
+    b_tail: list[tuple[float, float]] = []
+    if prev_view is not None and prev_view.mini_map is not None:
+        a_tail = list(prev_view.mini_map.a_tail)
+        a_tail.append(prev_view.body_a.com_position)
+        b_tail = list(prev_view.mini_map.b_tail)
+        b_tail.append(prev_view.body_b.com_position)
+        a_tail = a_tail[-MINI_MAP_TAIL_LENGTH:]
+        b_tail = b_tail[-MINI_MAP_TAIL_LENGTH:]
+    a_edge = _near_edge(a_pos, contest_half)
+    b_edge = _near_edge(b_pos, contest_half)
+    return MiniMapView(
+        contest_half_m=contest_half,
+        safety_half_m=safety_half,
+        a_position=a_pos, b_position=b_pos,
+        a_identity=body_a.identity, b_identity=body_b.identity,
+        a_tail=tuple(a_tail),
+        b_tail=tuple(b_tail),
+        a_near_edge=a_edge, b_near_edge=b_edge,
+    )
+
+
+def _near_edge(pos: tuple[float, float], contest_half: float) -> bool:
+    """Within MINI_MAP_EDGE_THRESHOLD_M of any contest-area boundary?
+    Used by the mini-map's boundary-approach pulse cue."""
+    x, y = pos
+    margin = contest_half - max(abs(x), abs(y))
+    return margin <= MINI_MAP_EDGE_THRESHOLD_M
 
 
 # ---------------------------------------------------------------------------
@@ -1279,9 +1503,16 @@ class Phase1AnatomicalRenderer:
         screen.fill(COL_BG)
         self._draw_top_panel(screen, snap)
         self._draw_bodies(screen, snap)
+        # HAJ-189 — arrows go on top of bodies but under the grip layer
+        # so grip edges remain readable; arrows are diagnostic for
+        # 'what force is being applied' which sits behind 'which
+        # specific grip is delivering it.'
+        self._draw_arrows(screen, snap)
         # HAJ-188 — grip layer goes on top of bodies so edges and nodes
         # are unobstructed; flashes ride on the same layer plane.
         self._draw_grip_layer(screen, snap)
+        # HAJ-189 — mini-map corner widget (top-right).
+        self._draw_mini_map(screen, snap)
         self._draw_caption_strip(screen, snap)
         self._draw_active_flashes(screen, snap)
         self._draw_footer_hint(screen)
@@ -1371,12 +1602,30 @@ class Phase1AnatomicalRenderer:
         self._draw_body(screen, snap.body_b, pose_b)
 
     def _draw_body(self, screen, body: BodyView, pose: _BodyPose) -> None:
+        """HAJ-187 anatomy + HAJ-189 damage tinting. Each region's
+        engine fatigue (captured into body.region_damage) classifies
+        into a band; the band's red-mix shifts the region's identity
+        colour toward red without losing the underlying tint. Critical
+        regions slowly pulse via a wall-clock multiplier so the eye
+        catches them even on a still frame."""
         import pygame
-        col = _identity_color(body.identity)
-        outline = _identity_outline(body.identity)
+        base_col = _identity_color(body.identity)
+        outline  = _identity_outline(body.identity)
+        # Per-region damage map for fast lookup.
+        damage_by_region = dict(body.region_damage)
+        # Critical-band pulse multiplier — 0.85 baseline ± 0.15 over
+        # ~1.5s. Phase from wall clock so it ticks even when paused.
+        import math
+        pulse = 0.85 + 0.15 * math.sin(time.monotonic() * 4.2)
         for region in _BODY_LAYOUT:
             rect = pose.region_rect(region)
-            pygame.draw.rect(screen, col, rect)
+            wear = float(damage_by_region.get(region.name, 0.0) or 0.0)
+            band = damage_band(wear)
+            mix = DAMAGE_BAND_RED_MIX[band]
+            if band == DAMAGE_CRITICAL:
+                mix = mix * pulse
+            tinted = tint_toward_red(base_col, mix)
+            pygame.draw.rect(screen, tinted, rect)
             if outline is not None:
                 pygame.draw.rect(screen, outline, rect, 1)
             else:
@@ -1389,7 +1638,7 @@ class Phase1AnatomicalRenderer:
         bar_y = pose.centre_xy[1] + int(3.4 * pose.body_unit_px)
         pygame.draw.rect(screen, COL_PANEL_LINE, (bar_x, bar_y, 100, 6))
         cardio_w = max(0, min(100, int(100 * body.cardio)))
-        pygame.draw.rect(screen, col, (bar_x, bar_y, cardio_w, 6))
+        pygame.draw.rect(screen, base_col, (bar_x, bar_y, cardio_w, 6))
 
     def _draw_caption_strip(self, screen, snap: Phase1ViewState) -> None:
         import pygame
@@ -1748,6 +1997,251 @@ class Phase1AnatomicalRenderer:
                 screen.blit(
                     surf, (xy[0] - radius - 2, xy[1] - radius - 2),
                 )
+
+    # ------------------------------------------------------------------
+    # HAJ-189 — arrow rendering (intent ghost + actual solid)
+    # ------------------------------------------------------------------
+    def _draw_arrows(self, screen, snap: Phase1ViewState) -> None:
+        """Render up to 4 arrows total — intent + actual per fighter.
+        Anchored near each fighter's body centre, offset to opposite
+        sides per fighter so up to 4 arrows don't collide visually
+        (Section 2.4)."""
+        import pygame
+        if not snap.arrows:
+            return
+        pose_a, pose_b = _layout_bodies(snap.position_state)
+        pose_for: dict[str, "_BodyPose"] = {
+            snap.body_a.name: pose_a,
+            snap.body_b.name: pose_b,
+        }
+        # Tori (a) arrows offset slightly above body centre; Uke (b)
+        # arrows offset slightly below — keeps the four arrows from
+        # crossing each other when both fighters are active.
+        offset_for: dict[str, tuple[int, int]] = {
+            snap.body_a.name: (0, -10),
+            snap.body_b.name: (0, +10),
+        }
+        for arrow in snap.arrows:
+            pose = pose_for.get(arrow.judoka_name)
+            if pose is None:
+                continue
+            # Body-centre anchor point. Roughly in the chest region.
+            anchor = (
+                pose.centre_xy[0] + offset_for.get(arrow.judoka_name, (0, 0))[0],
+                pose.centre_xy[1] + int(1.0 * pose.body_unit_px)
+                + offset_for.get(arrow.judoka_name, (0, 0))[1],
+            )
+            length_px = self._arrow_pixel_length(arrow.magnitude)
+            self._draw_one_arrow(screen, anchor, arrow, length_px)
+
+    def _arrow_pixel_length(self, magnitude: float) -> int:
+        """Map a force magnitude to an arrow length in pixels. The
+        engine's force units are ~Newton-scale; an empirical span
+        from 0–500N maps to 0–80px works well at the default body
+        scale (60 body-units = ~one body height of 240px). Saturating
+        beyond that prevents a single high-magnitude tick from
+        drawing an arrow off-screen."""
+        clamped = max(0.0, min(500.0, magnitude))
+        return int(round(clamped / 500.0 * 80.0)) + 8
+
+    def _draw_one_arrow(
+        self, screen, anchor: tuple[int, int],
+        arrow: ArrowView, length_px: int,
+    ) -> None:
+        """One arrow body + arrowhead. Intent: gray ghost, thinner.
+        Actual: identity-tinted, thicker, fully saturated. White
+        identity arrows always get a dark outline so they read on the
+        background (Section 2.4)."""
+        import pygame
+        if arrow.magnitude <= 0:
+            return
+        ux = arrow.vec_x / arrow.magnitude
+        uy = arrow.vec_y / arrow.magnitude
+        end = (
+            anchor[0] + int(ux * length_px),
+            anchor[1] + int(uy * length_px),
+        )
+        if arrow.kind == ARROW_KIND_INTENT:
+            color = _intent_arrow_color(arrow.judoka_identity)
+            thickness = 2
+            outline = None
+            head_size = 8
+        else:
+            color = _identity_color(arrow.judoka_identity)
+            thickness = 5
+            outline = _identity_outline(arrow.judoka_identity)
+            head_size = 12
+        # Shaft.
+        pygame.draw.line(screen, color, anchor, end, thickness)
+        if outline is not None:
+            pygame.draw.line(screen, outline, anchor, end, 1)
+        # Arrowhead — small triangle at the tip.
+        # Perpendicular vector for the head's base.
+        perp = (-uy, ux)
+        base = (
+            end[0] - int(ux * head_size),
+            end[1] - int(uy * head_size),
+        )
+        left = (
+            base[0] + int(perp[0] * head_size * 0.6),
+            base[1] + int(perp[1] * head_size * 0.6),
+        )
+        right = (
+            base[0] - int(perp[0] * head_size * 0.6),
+            base[1] - int(perp[1] * head_size * 0.6),
+        )
+        pygame.draw.polygon(screen, color, (end, left, right))
+        if outline is not None:
+            pygame.draw.polygon(screen, outline, (end, left, right), 1)
+
+    # ------------------------------------------------------------------
+    # HAJ-189 — mini-map (corner widget, top-down mat schematic)
+    # ------------------------------------------------------------------
+    def _draw_mini_map(self, screen, snap: Phase1ViewState) -> None:
+        import pygame
+        mm = snap.mini_map
+        if mm is None:
+            return
+        # Layout: ~140×140 in top-right, just under the score panel.
+        widget_size = 140
+        margin = 12
+        x0 = WINDOW_W - widget_size - margin
+        y0 = PANEL_TOP_H + margin
+        # Background panel for legibility.
+        pygame.draw.rect(
+            screen, COL_PANEL, (x0, y0, widget_size, widget_size),
+        )
+        pygame.draw.rect(
+            screen, COL_PANEL_LINE, (x0, y0, widget_size, widget_size), 1,
+        )
+
+        # Mat-coord → widget-pixel scale. The full safety boundary
+        # spans (-safety_half, +safety_half); fit it in the widget
+        # with a small inner pad.
+        pad = 6
+        usable = widget_size - 2 * pad
+        scale = usable / (2.0 * mm.safety_half_m)
+        cx = x0 + widget_size // 2
+        cy = y0 + widget_size // 2
+
+        def mat_to_px(mp):
+            mx, my = mp
+            return (cx + int(mx * scale), cy - int(my * scale))
+
+        # Outer dashed safety boundary.
+        safety_corner_min = mat_to_px((-mm.safety_half_m, +mm.safety_half_m))
+        safety_corner_max = mat_to_px((+mm.safety_half_m, -mm.safety_half_m))
+        self._draw_dashed_rect(
+            screen, COL_PANEL_LINE, safety_corner_min, safety_corner_max,
+        )
+        # Inner solid contest area.
+        contest_corner_min = mat_to_px((-mm.contest_half_m, +mm.contest_half_m))
+        contest_corner_max = mat_to_px((+mm.contest_half_m, -mm.contest_half_m))
+        pygame.draw.rect(
+            screen, COL_PANEL_LINE,
+            (contest_corner_min[0], contest_corner_min[1],
+             contest_corner_max[0] - contest_corner_min[0],
+             contest_corner_max[1] - contest_corner_min[1]),
+            1,
+        )
+
+        # Tails — fading line behind each fighter's circle.
+        self._draw_mini_map_tail(
+            screen, mm.a_tail, _identity_color(mm.a_identity), mat_to_px,
+        )
+        self._draw_mini_map_tail(
+            screen, mm.b_tail, _identity_color(mm.b_identity), mat_to_px,
+        )
+
+        # Fighter circles.
+        a_xy = mat_to_px(mm.a_position)
+        b_xy = mat_to_px(mm.b_position)
+        self._draw_mini_map_fighter(
+            screen, a_xy, mm.a_identity, mm.a_near_edge,
+        )
+        self._draw_mini_map_fighter(
+            screen, b_xy, mm.b_identity, mm.b_near_edge,
+        )
+
+    def _draw_dashed_rect(self, screen, color, p_min, p_max) -> None:
+        """Outer safety boundary as a dashed rectangle. Cheap manual
+        segmentation — no pygame primitive for this."""
+        import pygame
+        x0, y0 = p_min
+        x1, y1 = p_max
+        dash, gap = 4, 3
+        # Top.
+        x = x0
+        while x < x1:
+            pygame.draw.line(
+                screen, color, (x, y0), (min(x + dash, x1), y0), 1,
+            )
+            x += dash + gap
+        # Bottom.
+        x = x0
+        while x < x1:
+            pygame.draw.line(
+                screen, color, (x, y1), (min(x + dash, x1), y1), 1,
+            )
+            x += dash + gap
+        # Left.
+        y = y0
+        while y < y1:
+            pygame.draw.line(
+                screen, color, (x0, y), (x0, min(y + dash, y1)), 1,
+            )
+            y += dash + gap
+        # Right.
+        y = y0
+        while y < y1:
+            pygame.draw.line(
+                screen, color, (x1, y), (x1, min(y + dash, y1)), 1,
+            )
+            y += dash + gap
+
+    def _draw_mini_map_tail(self, screen, tail, color, mat_to_px) -> None:
+        import pygame
+        n = len(tail)
+        if n < 2:
+            return
+        for i in range(1, n):
+            alpha = int(40 + 180 * (i / n))
+            surf = pygame.Surface((3, 3), pygame.SRCALPHA)
+            surf.fill((*color, alpha))
+            px = mat_to_px(tail[i])
+            screen.blit(surf, (px[0] - 1, px[1] - 1))
+
+    def _draw_mini_map_fighter(
+        self, screen, xy, identity_tag: str, near_edge: bool,
+    ) -> None:
+        """Filled circle, identity-tinted; pulses outward when within
+        the boundary-approach band (Section 2.11)."""
+        import pygame
+        col = _identity_color(identity_tag)
+        outline = _identity_outline(identity_tag)
+        pygame.draw.circle(screen, col, xy, 5)
+        if outline is not None:
+            pygame.draw.circle(screen, outline, xy, 5, 1)
+        if near_edge:
+            import math
+            pulse_r = 7 + int(3 * (0.5 + 0.5 * math.sin(time.monotonic() * 5.0)))
+            surf = pygame.Surface(
+                (pulse_r * 2 + 2, pulse_r * 2 + 2), pygame.SRCALPHA,
+            )
+            pygame.draw.circle(
+                surf, (*col, 160),
+                (pulse_r + 1, pulse_r + 1), pulse_r, 1,
+            )
+            screen.blit(surf, (xy[0] - pulse_r - 1, xy[1] - pulse_r - 1))
+
+
+def _intent_arrow_color(identity_tag: str) -> tuple[int, int, int]:
+    """Section 2.4 — gray ghost intent arrow, identity-aware so the
+    white judoka's intent reads against the white actual arrow.
+    Blue identity → mid-gray; white identity → darker gray."""
+    if identity_tag == Identity.WHITE:
+        return (110, 110, 120)
+    return (160, 160, 165)
 
 
 def _node_flash_color(kind: str) -> tuple[int, int, int]:

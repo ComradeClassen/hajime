@@ -970,6 +970,23 @@ class Match:
         # commit) and per-fighter perception bookkeeping read by the
         # reaction-lag math.
         self._intent_signals: list[IntentSignal] = []
+        # HAJ-189 — viewer-facing per-tick force state. The Phase 2b
+        # anatomical viewer (phase1_viewer.py) needs both the *requested*
+        # (intent) and *delivered* (actual) force vector per fighter so
+        # it can render the gray-vs-solid arrow grammar. Populated by
+        # _compute_net_force_on each tick; reset at the top of every
+        # tick by _reset_per_tick_force so a fighter who issues no
+        # driving action this tick has zero vectors and the viewer's
+        # arrows fade. Stored on Match (not on Judoka) because they're
+        # tick-scoped diagnostic state, not gameplay state.
+        self._intent_force: dict[str, tuple[float, float]] = {
+            fighter_a.identity.name: (0.0, 0.0),
+            fighter_b.identity.name: (0.0, 0.0),
+        }
+        self._actual_force: dict[str, tuple[float, float]] = {
+            fighter_a.identity.name: (0.0, 0.0),
+            fighter_b.identity.name: (0.0, 0.0),
+        }
         # Familiarity counter — how many times each fighter has seen
         # the opponent commit each throw class. Feeds reaction_lag's
         # familiarity modulator so the second uchi-mata of a match is
@@ -1247,6 +1264,15 @@ class Match:
     # -----------------------------------------------------------------------
     def _tick(self, tick: int) -> None:
         events: list[Event] = []
+
+        # HAJ-189 — reset per-tick viewer-facing force vectors. Each
+        # tick starts with both intent and actual at zero; if a fighter
+        # issues a driving action this tick, _compute_net_force_on
+        # populates them. A tick with no action leaves them at zero so
+        # the viewer's arrows fade per spec.
+        for name in self._intent_force:
+            self._intent_force[name] = (0.0, 0.0)
+            self._actual_force[name] = (0.0, 0.0)
 
         # HAJ-160 — restart-hajime emission. Fires on the tick after a
         # matte resolved, marking the start of the next exchange so the
@@ -2514,6 +2540,12 @@ class Match:
         )
         from kuzushi import pull_kuzushi_event, record_kuzushi_event
         fx = fy = 0.0
+        # HAJ-189 — viewer-facing force accumulators. Intent = sum of
+        # requested force vectors over all driving actions this tick
+        # (what the attacker is *trying* to apply, before envelope /
+        # depth / fatigue scaling). Actual = sum of delivered vectors
+        # (what they're *succeeding* at delivering — same as fx, fy).
+        intent_fx = intent_fy = 0.0
         # HAJ-51 — read the current matchup once per call; per-edge multiplier
         # comes from FORCE_ENVELOPES[grip_type].stance_parity below.
         stance_matchup = self._compute_stance_matchup()
@@ -2523,6 +2555,13 @@ class Match:
                 continue
             if act.direction is None:
                 continue
+            # HAJ-189 — accumulate intent BEFORE the gate that requires
+            # an active grip. The viewer wants to see "X is trying to
+            # pull in this direction" even when the attempt fails to
+            # deliver because no grip backs it.
+            i_dx, i_dy = act.direction
+            intent_fx += i_dx * float(act.magnitude)
+            intent_fy += i_dy * float(act.magnitude)
 
             # Find the grip this hand is driving through. No grip → no force.
             edge = None
@@ -2597,6 +2636,21 @@ class Match:
                 self._attach_bpe(None, decompose_pull(
                     attacker, edge, act.direction, act.magnitude, tick,
                 ))
+
+        # HAJ-189 — stash this tick's intent + actual vectors for the
+        # anatomical viewer. The attacker is the one applying force;
+        # arrows render off the *attacker's* CoM. (The victim's net
+        # force on themselves is the inverse — but the spec's intent /
+        # actual arrows are the attacker's narrative, not the victim's.)
+        if attacker.identity.name in self._intent_force:
+            cur_int = self._intent_force[attacker.identity.name]
+            self._intent_force[attacker.identity.name] = (
+                cur_int[0] + intent_fx, cur_int[1] + intent_fy,
+            )
+            cur_act = self._actual_force[attacker.identity.name]
+            self._actual_force[attacker.identity.name] = (
+                cur_act[0] + fx, cur_act[1] + fy,
+            )
 
         return (fx, fy)
 
