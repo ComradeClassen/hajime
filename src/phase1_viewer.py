@@ -268,6 +268,155 @@ class Phase1ViewState:
     ruleset:           Optional[str] = None
     mat_coords_a:      tuple[float, float] = (0.0, 0.0)
     mat_coords_b:      tuple[float, float] = (0.0, 0.0)
+    # HAJ-188 — Phase 2a grip data. Defaulted to empty so existing
+    # Phase 1 callers continue to work; callers building snapshots
+    # directly in tests can skip these.
+    grip_edges:        tuple["GripEdgeView", ...] = ()
+    grip_node_flashes: tuple["GripNodeFlash", ...] = ()
+
+
+# ---------------------------------------------------------------------------
+# HAJ-188 — GRIP NODES + EDGES + STATE-CHANGE FLASHES (Sections 2.3, 2.6)
+#
+# Phase 2a brings the grip graph into the viewer so the grip war reads
+# at a glance. The visual contract:
+#
+#   * Grip nodes — invisible by default, light up when an active grip
+#     touches them. 10 named nodes per body covering every gripable
+#     anatomical location (lapels, sleeves, collar, belt, thighs, head).
+#   * Grip edges — line from the grasper's hand-node on judoka A to the
+#     target node on judoka B (or vice versa). Owner color, depth-scaled
+#     thickness, and a per-state animation token (stable / contested /
+#     deepening / stripping / compromised).
+#   * State-change flashes — when an edge changes state, a brief flash
+#     fires on the affected grip node. Red ring on strip, green pulse
+#     on deepen, yellow ring on compromise, swap animation on owner flip.
+# ---------------------------------------------------------------------------
+
+# 10 named grip-target nodes per body. Mirrors the engine's GripTarget
+# enum for the standing/ne-waza target locations the simulation actually
+# uses. Nodes that exist for ne-waza (head_neck, thighs) are present but
+# only become visible when a grip lands on them — Phase 2a doesn't
+# special-case ne-waza targeting; later phases pin osaekomi/submission
+# state to the same nodes.
+GRIP_NODE_IDS: tuple[str, ...] = (
+    "left_lapel",   "right_lapel",
+    "left_sleeve",  "right_sleeve",
+    "back_collar",  "side_collar",
+    "belt",
+    "left_thigh",   "right_thigh",
+    "head_neck",
+)
+
+
+# Grip-target string (lowercase, matches engine GripTarget.value or our
+# normalised form) → display node id. Engine uses some legacy / ne-waza
+# spellings (e.g. "neck" vs "head_neck"); collapse them onto the
+# 10-node display vocabulary so the viewer doesn't grow a node per
+# variant.
+_TARGET_TO_NODE_ID: dict[str, str] = {
+    "left_lapel":    "left_lapel",
+    "right_lapel":   "right_lapel",
+    "left_sleeve":   "left_sleeve",
+    "right_sleeve":  "right_sleeve",
+    "back_collar":   "back_collar",
+    "side_collar":   "side_collar",
+    "belt":          "belt",
+    "waist":         "belt",            # ne-waza waist grip → belt node
+    "left_thigh":    "left_thigh",
+    "right_thigh":   "right_thigh",
+    "left_knee":     "left_thigh",      # roll knee onto thigh node
+    "right_knee":    "right_thigh",
+    "head":          "head_neck",
+    "neck":          "head_neck",
+    "left_back_gi":  "back_collar",     # rear gi grips read as back-collar
+    "right_back_gi": "back_collar",
+}
+
+
+def target_to_node_id(target_value: str) -> Optional[str]:
+    """Map an engine GripTarget value (lowercase string) to one of the
+    10 display node ids. Returns None for ne-waza-only targets that
+    Phase 2a doesn't render (wrists / ankles / elbows / shoulders).
+    Pure function — testable without a Match."""
+    return _TARGET_TO_NODE_ID.get(target_value.lower())
+
+
+# Edge-state vocabulary — Section 2.3. Strings rather than an Enum so
+# capture-layer outputs serialise cleanly (e.g. for the future HAJ-194
+# regression that diffs viewer output against a recorded fixture).
+EDGE_STATE_STABLE      = "stable"
+EDGE_STATE_CONTESTED   = "contested"
+EDGE_STATE_DEEPENING   = "deepening"
+EDGE_STATE_STRIPPING   = "stripping"
+EDGE_STATE_COMPROMISED = "compromised"
+
+
+@dataclass(frozen=True)
+class GripEdgeView:
+    """One active grip edge as the viewer needs to draw it. Per-tick.
+
+    `edge_id` is the engine edge's `id()` so the renderer can correlate
+    across consecutive snapshots (state-change flashes need the previous
+    snapshot's edge for the same id). The id is stable for the
+    lifetime of the edge — when the engine drops an edge and creates a
+    new one, the id changes, which is exactly the signal the renderer
+    uses for "switched ownership" detection.
+
+    `depth` is the continuous 0.0–1.0 modifier from GripDepth (Section
+    2.3 thickness mapping is linear: 1px at 0.0 → 6px at 1.0).
+    """
+    edge_id:         int
+    grasper_id:      str
+    grasper_identity: str          # Identity.BLUE / Identity.WHITE
+    grasper_part:    str           # 'left_hand' / 'right_hand'
+    target_id:       str
+    target_identity: str
+    target_node:     str           # one of GRIP_NODE_IDS
+    target_raw:      str           # engine GripTarget.value (for debug / detail)
+    depth:           float         # 0.0–1.0
+    state:           str           # one of EDGE_STATE_*
+
+
+# Grip-node flash kinds — Section 2.6.
+NODE_FLASH_STRIPPED    = "STRIPPED"     # red ring, ~400ms at 1×
+NODE_FLASH_DEEPENED    = "DEEPENED"     # green pulse, brief
+NODE_FLASH_COMPROMISED = "COMPROMISED"  # yellow ring, ~600ms at 1×
+NODE_FLASH_SWITCHED    = "SWITCHED"     # owner-flip swap, ~300ms at 1×
+
+
+@dataclass(frozen=True)
+class GripNodeFlash:
+    """A grip-node flash firing this tick. The renderer decays it over
+    the appropriate wall-clock window scaled by playback rate.
+
+    `target_id` identifies which body owns the node (the body being
+    gripped — flashes paint on the *target* node, not the grasper hand).
+    `node_id` is one of GRIP_NODE_IDS. `prev_owner_identity` /
+    `new_owner_identity` are populated for SWITCHED flashes."""
+    tick:                 int
+    kind:                 str
+    target_id:            str
+    target_identity:      str
+    node_id:              str
+    prev_owner_identity:  Optional[str] = None
+    new_owner_identity:   Optional[str] = None
+
+
+# Animation timing for grip cues, at 1× playback. Matches Section 2.6.
+NODE_FLASH_STRIPPED_S:    float = 0.4
+NODE_FLASH_DEEPENED_S:    float = 0.4
+NODE_FLASH_COMPROMISED_S: float = 0.6
+NODE_FLASH_SWITCHED_S:    float = 0.3
+
+
+def _node_flash_base_duration(kind: str) -> float:
+    return {
+        NODE_FLASH_STRIPPED:    NODE_FLASH_STRIPPED_S,
+        NODE_FLASH_DEEPENED:    NODE_FLASH_DEEPENED_S,
+        NODE_FLASH_COMPROMISED: NODE_FLASH_COMPROMISED_S,
+        NODE_FLASH_SWITCHED:    NODE_FLASH_SWITCHED_S,
+    }.get(kind, 0.4)
 
 
 # ---------------------------------------------------------------------------
@@ -368,14 +517,212 @@ def _hansoku_flash(events) -> Optional[RefereeFlash]:
     return None
 
 
-def capture_phase1_view(match, tick: int, events) -> Phase1ViewState:
+def _capture_grip_edges(
+    match, events, identity_for: dict[str, str],
+) -> tuple[tuple["GripEdgeView", ...], frozenset[int], frozenset[int]]:
+    """Extract a frozen GripEdgeView per active engine edge plus the
+    sets of edge ids that deepened / stripped this tick (used for
+    state derivation and flash synthesis). Returns
+    (edges, deepened_ids, stripped_or_degraded_ids).
+
+    `identity_for` maps fighter name → Identity tag (BLUE / WHITE) so
+    edges carry the visual identity directly without re-deriving.
+
+    Pure read of `match.grip_graph` and the per-tick events list; no
+    mutation, no engine-side calls."""
+    deepened_ids: set[int] = set()
+    degraded_ids: set[int] = set()
+    for ev in events:
+        et = ev.event_type
+        if et == "GRIP_DEEPEN":
+            eid = (ev.data or {}).get("edge_id")
+            if eid is not None:
+                deepened_ids.add(int(eid))
+        elif et == "GRIP_DEGRADE":
+            eid = (ev.data or {}).get("edge_id")
+            if eid is not None:
+                degraded_ids.add(int(eid))
+
+    edges_out: list[GripEdgeView] = []
+    grip_graph = getattr(match, "grip_graph", None)
+    if grip_graph is None:
+        return tuple(), frozenset(), frozenset()
+    for e in grip_graph.edges:
+        eid = id(e)
+        depth = float(e.depth_level.modifier())
+        target_raw = e.target_location.value
+        node = target_to_node_id(target_raw)
+        if node is None:
+            # Ne-waza-only target Phase 2a doesn't render. Skip; the
+            # edge still exists in the engine but has no display node.
+            continue
+        # State derivation. Compromised wins over deepening / stripping
+        # because a SLIPPING grip is structurally broken regardless of
+        # what's happening to it this tick (Section 2.3).
+        if e.depth_level.name == "SLIPPING":
+            state = EDGE_STATE_COMPROMISED
+        elif eid in deepened_ids:
+            state = EDGE_STATE_DEEPENING
+        elif eid in degraded_ids:
+            state = EDGE_STATE_STRIPPING
+        elif getattr(e, "contested", False):
+            state = EDGE_STATE_CONTESTED
+        else:
+            state = EDGE_STATE_STABLE
+        grasper_part_name = e.grasper_part.value
+        # Only RIGHT_HAND / LEFT_HAND grasping makes display sense in
+        # Phase 2a (the spec's hand-node → body-node grammar). Other
+        # graspers (e.g. ne-waza wrist-grip) collapse onto the same
+        # left/right hand of the grasper for visual purposes.
+        if grasper_part_name not in ("right_hand", "left_hand"):
+            grasper_part_name = (
+                "right_hand"
+                if "right" in grasper_part_name
+                else "left_hand"
+            )
+        edges_out.append(GripEdgeView(
+            edge_id=eid,
+            grasper_id=e.grasper_id,
+            grasper_identity=identity_for.get(e.grasper_id, Identity.BLUE),
+            grasper_part=grasper_part_name,
+            target_id=e.target_id,
+            target_identity=identity_for.get(e.target_id, Identity.WHITE),
+            target_node=node,
+            target_raw=target_raw,
+            depth=depth,
+            state=state,
+        ))
+    return tuple(edges_out), frozenset(deepened_ids), frozenset(degraded_ids)
+
+
+def _derive_grip_node_flashes(
+    tick: int,
+    events,
+    cur_edges: tuple["GripEdgeView", ...],
+    deepened_ids: frozenset[int],
+    degraded_ids: frozenset[int],
+    prev_view: Optional["Phase1ViewState"],
+) -> tuple["GripNodeFlash", ...]:
+    """Derive per-tick node flashes from (this tick's events + diff
+    against prev snapshot). Pure function — testable without pygame.
+
+    Flash kinds (Section 2.6):
+      * DEEPENED  — fires when a GRIP_DEEPEN event names an edge.
+      * STRIPPING / fully-stripped — STRIPPED flash fires when a
+        GRIP_STRIPPED or GRIP_BREAK event fires (edge gone from graph),
+        OR when an edge's depth degraded to SLIPPING this tick (which
+        the spec calls 'compromised' visually but the user-visible cue
+        is still red — the grip is on its way out).
+      * COMPROMISED — fires when an edge *enters* SLIPPING (was alive
+        with depth > SLIPPING last tick, is SLIPPING now). Requires
+        prev_view; without it we can't distinguish 'just compromised'
+        from 'still compromised', so we skip rather than spam.
+      * SWITCHED — fires when the same display target_node is now
+        owned by the opposite identity vs the previous tick. Requires
+        prev_view.
+    """
+    flashes: list[GripNodeFlash] = []
+    cur_by_id = {e.edge_id: e for e in cur_edges}
+
+    # Deepened: directly from this tick's deepen events.
+    for e in cur_edges:
+        if e.edge_id in deepened_ids:
+            flashes.append(GripNodeFlash(
+                tick=tick, kind=NODE_FLASH_DEEPENED,
+                target_id=e.target_id,
+                target_identity=e.target_identity,
+                node_id=e.target_node,
+            ))
+
+    # Stripped: GRIP_STRIPPED / GRIP_BREAK events (edge no longer in
+    # graph this tick). Pull target node from prev snapshot since the
+    # edge is already gone from cur_edges.
+    prev_by_id: dict[int, GripEdgeView] = {}
+    if prev_view is not None:
+        prev_by_id = {e.edge_id: e for e in prev_view.grip_edges}
+    for ev in events:
+        if ev.event_type not in ("GRIP_STRIPPED", "GRIP_BREAK"):
+            continue
+        # The engine doesn't currently embed edge_id on GRIP_STRIPPED /
+        # GRIP_BREAK events, so we fall back to "any edge that vanished
+        # between prev and current". That's lossy but correct in the
+        # common case of one strip per tick.
+        for eid, prev_e in prev_by_id.items():
+            if eid in cur_by_id:
+                continue
+            flashes.append(GripNodeFlash(
+                tick=tick, kind=NODE_FLASH_STRIPPED,
+                target_id=prev_e.target_id,
+                target_identity=prev_e.target_identity,
+                node_id=prev_e.target_node,
+            ))
+        # Avoid double-firing: only one stripped event in the loop is
+        # enough to cover all vanished edges this tick.
+        break
+
+    # Compromised: edge entered SLIPPING this tick. Need prev to detect.
+    if prev_view is not None:
+        for e in cur_edges:
+            if e.state != EDGE_STATE_COMPROMISED:
+                continue
+            prev_e = prev_by_id.get(e.edge_id)
+            if prev_e is None or prev_e.state == EDGE_STATE_COMPROMISED:
+                # New grip that started SLIPPING (rare), or already
+                # compromised last tick — no fresh flash.
+                continue
+            flashes.append(GripNodeFlash(
+                tick=tick, kind=NODE_FLASH_COMPROMISED,
+                target_id=e.target_id,
+                target_identity=e.target_identity,
+                node_id=e.target_node,
+            ))
+
+    # Switched ownership: same (target_id, target_node) is now held by
+    # the opposite identity. Detect by indexing prev edges by
+    # (target_id, target_node).
+    if prev_view is not None:
+        prev_owners: dict[tuple[str, str], str] = {}
+        for pe in prev_view.grip_edges:
+            prev_owners.setdefault(
+                (pe.target_id, pe.target_node), pe.grasper_identity,
+            )
+        seen: set[tuple[str, str]] = set()
+        for e in cur_edges:
+            key = (e.target_id, e.target_node)
+            if key in seen:
+                continue
+            seen.add(key)
+            prev_owner = prev_owners.get(key)
+            if prev_owner is None or prev_owner == e.grasper_identity:
+                continue
+            flashes.append(GripNodeFlash(
+                tick=tick, kind=NODE_FLASH_SWITCHED,
+                target_id=e.target_id,
+                target_identity=e.target_identity,
+                node_id=e.target_node,
+                prev_owner_identity=prev_owner,
+                new_owner_identity=e.grasper_identity,
+            ))
+
+    return tuple(flashes)
+
+
+def capture_phase1_view(
+    match, tick: int, events,
+    prev_view: Optional["Phase1ViewState"] = None,
+) -> Phase1ViewState:
     """Build a frozen Phase1ViewState from live Match state. Pure read;
     never mutates anything. Called once per tick from Phase1Renderer.update.
 
     Section 3.1 commitment: this function reads from the same per-tick
     state windows the narration module reads. It does not infer or
     invent any state. Anything visible in the Phase 1 viewer is
-    derivable from (match @ tick T, events fired in T-1..T)."""
+    derivable from (match @ tick T, events fired in T-1..T).
+
+    `prev_view` is the previous tick's snapshot (or None for the first
+    tick). It enables HAJ-188 grip-state diff cues — COMPROMISED and
+    SWITCHED-ownership flashes need to compare against prev. Without
+    it we still capture per-event cues (DEEPENED, STRIPPED) cleanly."""
     body_a = _capture_body(match.fighter_a, Identity.BLUE,
                            match.sub_loop_state, match.position)
     body_b = _capture_body(match.fighter_b, Identity.WHITE,
@@ -421,6 +768,18 @@ def capture_phase1_view(match, tick: int, events) -> Phase1ViewState:
     era = getattr(match, "era_stamp", None)
     ruleset = getattr(match, "ruleset_version", None)
 
+    # HAJ-188 — grip edges + state-change flashes.
+    identity_for = {
+        match.fighter_a.identity.name: Identity.BLUE,
+        match.fighter_b.identity.name: Identity.WHITE,
+    }
+    grip_edges, deepened_ids, degraded_ids = _capture_grip_edges(
+        match, events, identity_for,
+    )
+    node_flashes = _derive_grip_node_flashes(
+        tick, events, grip_edges, deepened_ids, degraded_ids, prev_view,
+    )
+
     return Phase1ViewState(
         tick=tick,
         position_state=position_bucket(match.position, match.sub_loop_state),
@@ -431,6 +790,8 @@ def capture_phase1_view(match, tick: int, events) -> Phase1ViewState:
         referee_flashes=tuple(flashes),
         era=era, ruleset=ruleset,
         mat_coords_a=mat_a, mat_coords_b=mat_b,
+        grip_edges=grip_edges,
+        grip_node_flashes=node_flashes,
     )
 
 
@@ -577,6 +938,50 @@ class _BodyPose:
         return (cx - w // 2, cy - h // 2, w, h)
 
 
+# HAJ-188 — grip-node positions in body-units (dx, dy), measured from
+# the top of the head outwards. Mirrors the chest / forearm / thigh
+# anatomy used in _BODY_LAYOUT so nodes land on the rendered region
+# they correspond to. Hand-nodes (left_hand, right_hand) are reused
+# for grasper-side rendering — same position as the hand region.
+_GRIP_NODE_POS_BODY_UNITS: dict[str, tuple[float, float]] = {
+    # Standing-grip targets — placed on chest / forearm / belt regions.
+    "left_lapel":   (-0.25, 0.95),
+    "right_lapel":  (+0.25, 0.95),
+    "left_sleeve":  (-0.70, 1.32),
+    "right_sleeve": (+0.70, 1.32),
+    "back_collar":  ( 0.00, 0.55),    # behind / above the neck
+    "side_collar":  (+0.30, 0.65),    # near right shoulder line
+    "belt":         ( 0.00, 1.82),
+    # Ne-waza targets — exist but only light up when gripped.
+    "left_thigh":   (-0.28, 2.15),
+    "right_thigh": (+0.28, 2.15),
+    "head_neck":    ( 0.00, 0.10),
+    # Hand-nodes (grasper side) — same as the hand region centres.
+    "left_hand":    (-0.72, 1.75),
+    "right_hand":   (+0.72, 1.75),
+}
+
+
+def grip_node_screen_xy(
+    node_id: str, pose: "_BodyPose",
+) -> Optional[tuple[int, int]]:
+    """Resolve a grip-node id to screen coordinates given a body pose.
+    Returns None for unknown ids. Pure function so tests can verify
+    layout without pygame."""
+    pos = _GRIP_NODE_POS_BODY_UNITS.get(node_id)
+    if pos is None:
+        return None
+    u = pose.body_unit_px
+    dx, dy = pos
+    if not pose.rotated_90:
+        cx = pose.centre_xy[0] + int(dx * u)
+        cy = pose.centre_xy[1] + int(dy * u)
+    else:
+        cx = pose.centre_xy[0] + int(dy * u)
+        cy = pose.centre_xy[1] + int(dx * u)
+    return (cx, cy)
+
+
 def _layout_bodies(position_state: str) -> tuple[_BodyPose, _BodyPose]:
     """Choose pose centres + body-unit scale per Phase 1 position
     bucket. Pure function — testable without pygame."""
@@ -721,6 +1126,10 @@ class Phase1AnatomicalRenderer:
         self._burst_queue = TextBurstQueue(self._playback_rate)
         # Active flashes: (RefereeFlash, started_wall_seconds, base_duration)
         self._active_flashes: list[tuple[RefereeFlash, float, float]] = []
+        # HAJ-188 — node flashes ride alongside but decay per kind.
+        self._active_node_flashes: list[
+            tuple[GripNodeFlash, float, float]
+        ] = []
         self._latest_snap: Optional[Phase1ViewState] = None
 
     # --- Renderer protocol --------------------------------------------------
@@ -738,7 +1147,9 @@ class Phase1AnatomicalRenderer:
         """Capture-only push hook. Called from inside Match.step() (which
         run_interactive drives). The wall-clock pacing + rendering loop
         runs in run_interactive between step calls."""
-        snap = capture_phase1_view(match, tick, events)
+        snap = capture_phase1_view(
+            match, tick, events, prev_view=self._latest_snap,
+        )
         self._snapshots.append(snap)
         self._latest_snap = snap
         self._burst_queue.push_many(snap.text_bursts)
@@ -746,6 +1157,12 @@ class Phase1AnatomicalRenderer:
         for f in snap.referee_flashes:
             base = _flash_base_duration(f.kind)
             self._active_flashes.append((f, now_wall, base))
+        # HAJ-188 — node flashes ride alongside referee flashes; the
+        # render layer reads them out of _active_node_flashes during
+        # _render_frame and decays them over their per-kind lifetime.
+        for nf in snap.grip_node_flashes:
+            base = _node_flash_base_duration(nf.kind)
+            self._active_node_flashes.append((nf, now_wall, base))
 
     def stop(self) -> None:
         import pygame
@@ -862,6 +1279,9 @@ class Phase1AnatomicalRenderer:
         screen.fill(COL_BG)
         self._draw_top_panel(screen, snap)
         self._draw_bodies(screen, snap)
+        # HAJ-188 — grip layer goes on top of bodies so edges and nodes
+        # are unobstructed; flashes ride on the same layer plane.
+        self._draw_grip_layer(screen, snap)
         self._draw_caption_strip(screen, snap)
         self._draw_active_flashes(screen, snap)
         self._draw_footer_hint(screen)
@@ -1065,6 +1485,279 @@ class Phase1AnatomicalRenderer:
         pygame.draw.rect(surf, (*color, a), surf.get_rect(), 4)
         screen.blit(surf, (rect[0], rect[1]))
 
+    # ------------------------------------------------------------------
+    # HAJ-188 — grip layer rendering
+    # ------------------------------------------------------------------
+    def _draw_grip_layer(self, screen, snap: Phase1ViewState) -> None:
+        """Top-of-bodies layer: grip edges → grip nodes → node flashes.
+        Drawn in that order so flashes ride above edges and nodes."""
+        pose_a, pose_b = _layout_bodies(snap.position_state)
+        pose_for: dict[str, "_BodyPose"] = {
+            snap.body_a.name: pose_a,
+            snap.body_b.name: pose_b,
+        }
+        # Edges first (so node dots sit on top of line endpoints).
+        self._draw_grip_edges(screen, snap, pose_for)
+        # Active nodes — every node touched by a current edge.
+        self._draw_active_grip_nodes(screen, snap, pose_for)
+        # State-change flashes ride on top.
+        now_wall = time.monotonic()
+        self._cull_node_flashes(now_wall)
+        self._draw_node_flashes(screen, snap, pose_for, now_wall)
+
+    def _draw_grip_edges(
+        self, screen, snap: Phase1ViewState,
+        pose_for: dict[str, "_BodyPose"],
+    ) -> None:
+        import pygame
+        for e in snap.grip_edges:
+            grasper_pose = pose_for.get(e.grasper_id)
+            target_pose  = pose_for.get(e.target_id)
+            if grasper_pose is None or target_pose is None:
+                continue
+            hand_xy = grip_node_screen_xy(e.grasper_part, grasper_pose)
+            tgt_xy  = grip_node_screen_xy(e.target_node, target_pose)
+            if hand_xy is None or tgt_xy is None:
+                continue
+            color = _identity_color(e.grasper_identity)
+            outline = _identity_outline(e.grasper_identity)
+            # Section 2.3 — thickness scales linearly 1px (depth 0) →
+            # 6px (depth 1.0). Round to nearest pixel; clamp to 1.
+            thickness = max(1, min(6, int(round(1 + 5 * e.depth))))
+            # Per-state stylisation. Stable: solid line. Contested:
+            # shimmer (dashed segments offset over time). Deepening:
+            # short forward dashes. Stripping: short reverse dashes.
+            # Compromised: long dashes + reduced alpha.
+            self._draw_edge_with_state(
+                screen, hand_xy, tgt_xy, color, outline,
+                thickness, e.state,
+            )
+
+    def _draw_edge_with_state(
+        self, screen, p0, p1, color, outline, thickness: int, state: str,
+    ) -> None:
+        """Draw a single grip edge, with the state animation token
+        controlling dash pattern + shimmer. Phase 2a uses pygame
+        primitives — no shaders. Throwaway-OK."""
+        import pygame
+        if state == EDGE_STATE_STABLE:
+            pygame.draw.line(screen, color, p0, p1, thickness)
+            return
+        if state == EDGE_STATE_COMPROMISED:
+            # Long dashes — visibly broken. Lower alpha so it reads as
+            # 'on its way out'.
+            self._draw_dashed_line(
+                screen, color, p0, p1, thickness,
+                dash=10, gap=8, alpha=140,
+            )
+            return
+        if state == EDGE_STATE_DEEPENING:
+            # Forward-flow short dashes. Phase animation uses wall
+            # clock so it shifts each frame (continuous motion).
+            self._draw_dashed_line(
+                screen, color, p0, p1, thickness,
+                dash=6, gap=4, alpha=255,
+                phase_dir=+1,
+            )
+            return
+        if state == EDGE_STATE_STRIPPING:
+            # Reverse-flow dashes — same dash size, opposite direction.
+            self._draw_dashed_line(
+                screen, color, p0, p1, thickness,
+                dash=6, gap=4, alpha=255,
+                phase_dir=-1,
+            )
+            return
+        if state == EDGE_STATE_CONTESTED:
+            # Shimmer — fast back-and-forth dash phase. Visual cue:
+            # the line oscillates rather than pulses.
+            self._draw_dashed_line(
+                screen, color, p0, p1, thickness,
+                dash=4, gap=3, alpha=210,
+                phase_dir=0, shimmer=True,
+            )
+            return
+        # Fallback: solid.
+        pygame.draw.line(screen, color, p0, p1, thickness)
+
+    def _draw_dashed_line(
+        self, screen, color, p0, p1, thickness: int,
+        dash: int, gap: int, alpha: int = 255,
+        phase_dir: int = 0, shimmer: bool = False,
+    ) -> None:
+        """Pygame doesn't ship a dashed-line primitive, so we segment
+        the line manually. `phase_dir` shifts the dash pattern over
+        wall-clock time so the dashes appear to flow forward (+1),
+        backward (-1), or oscillate (shimmer=True)."""
+        import pygame
+        x0, y0 = p0
+        x1, y1 = p1
+        dx, dy = x1 - x0, y1 - y0
+        length = max(1.0, (dx * dx + dy * dy) ** 0.5)
+        ux, uy = dx / length, dy / length
+        period = dash + gap
+        # Wall-clock phase: 60 px/sec scroll feels lively without
+        # being distracting at the default playback rate.
+        t = time.monotonic()
+        if shimmer:
+            phase = (60.0 * abs((t * 2.0) % 2.0 - 1.0))
+        else:
+            phase = (60.0 * t * phase_dir) % period
+        # Walk segments along the line.
+        cur = -phase
+        while cur < length:
+            seg_start = max(0.0, cur)
+            seg_end   = min(length, cur + dash)
+            if seg_end > seg_start:
+                sx = int(round(x0 + ux * seg_start))
+                sy = int(round(y0 + uy * seg_start))
+                ex = int(round(x0 + ux * seg_end))
+                ey = int(round(y0 + uy * seg_end))
+                if alpha >= 255:
+                    pygame.draw.line(
+                        screen, color, (sx, sy), (ex, ey), thickness,
+                    )
+                else:
+                    surf = pygame.Surface(
+                        (WINDOW_W, WINDOW_H), pygame.SRCALPHA,
+                    )
+                    pygame.draw.line(
+                        surf, (*color, max(0, min(255, alpha))),
+                        (sx, sy), (ex, ey), thickness,
+                    )
+                    screen.blit(surf, (0, 0))
+            cur += period
+
+    def _draw_active_grip_nodes(
+        self, screen, snap: Phase1ViewState,
+        pose_for: dict[str, "_BodyPose"],
+    ) -> None:
+        """Per Section 2.3, grip nodes are normally invisible. They
+        become visible when an active grip is on or near them. Phase 2a
+        uses 'an active grip references this node' as the visibility
+        signal — both grasper hand-nodes and target body-nodes light
+        up when an edge involves them."""
+        import pygame
+        # Collect (judoka_name, node_id) pairs that have any active edge.
+        active: set[tuple[str, str]] = set()
+        edge_owner_identity: dict[tuple[str, str], str] = {}
+        for e in snap.grip_edges:
+            active.add((e.target_id,  e.target_node))
+            edge_owner_identity[(e.target_id, e.target_node)] = (
+                e.grasper_identity
+            )
+            active.add((e.grasper_id, e.grasper_part))
+        for (judoka_name, node_id) in active:
+            pose = pose_for.get(judoka_name)
+            if pose is None:
+                continue
+            xy = grip_node_screen_xy(node_id, pose)
+            if xy is None:
+                continue
+            # Target node tinted with the gripper's identity (so you
+            # see at a glance who owns this contact); hand-node tinted
+            # with the body's own identity.
+            owner = edge_owner_identity.get((judoka_name, node_id))
+            if owner is not None:
+                col = _identity_color(owner)
+            else:
+                # It's a grasper hand-node — colour by its body.
+                body_identity = (
+                    snap.body_a.identity if judoka_name == snap.body_a.name
+                    else snap.body_b.identity
+                )
+                col = _identity_color(body_identity)
+            pygame.draw.circle(screen, col, xy, 6)
+            pygame.draw.circle(screen, COL_PANEL_LINE, xy, 6, 1)
+
+    def _cull_node_flashes(self, now_wall: float) -> None:
+        kept: list[tuple[GripNodeFlash, float, float]] = []
+        for entry in self._active_node_flashes:
+            _, started, base = entry
+            if now_wall - started < scaled_duration(
+                base, self._playback_rate,
+            ):
+                kept.append(entry)
+        self._active_node_flashes = kept
+
+    def _draw_node_flashes(
+        self, screen, snap: Phase1ViewState,
+        pose_for: dict[str, "_BodyPose"], now_wall: float,
+    ) -> None:
+        import pygame
+        for entry in self._active_node_flashes:
+            nf, started, base = entry
+            life = scaled_duration(base, self._playback_rate)
+            if life <= 0:
+                continue
+            elapsed = now_wall - started
+            t = max(0.0, min(1.0, elapsed / life))
+            alpha = int(255 * (1.0 - t))
+            pose = pose_for.get(nf.target_id)
+            if pose is None:
+                continue
+            xy = grip_node_screen_xy(nf.node_id, pose)
+            if xy is None:
+                continue
+            color = _node_flash_color(nf.kind)
+            # Stripped / Compromised: expanding ring. Deepened: filled
+            # pulse. Switched: small ring that swaps colours over its
+            # short lifetime.
+            if nf.kind == NODE_FLASH_DEEPENED:
+                radius = 8 + int(12 * t)
+                surf = pygame.Surface(
+                    (radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA,
+                )
+                pygame.draw.circle(
+                    surf, (*color, max(0, alpha)),
+                    (radius + 2, radius + 2), radius,
+                )
+                screen.blit(
+                    surf, (xy[0] - radius - 2, xy[1] - radius - 2),
+                )
+            elif nf.kind == NODE_FLASH_SWITCHED:
+                # Two-colour swap: midway through, swap from prev to
+                # new owner colour.
+                if t < 0.5 and nf.prev_owner_identity is not None:
+                    swap_col = _identity_color(nf.prev_owner_identity)
+                else:
+                    swap_col = _identity_color(
+                        nf.new_owner_identity or nf.target_identity,
+                    )
+                radius = 10
+                surf = pygame.Surface(
+                    (radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA,
+                )
+                pygame.draw.circle(
+                    surf, (*swap_col, max(0, alpha)),
+                    (radius + 2, radius + 2), radius, 3,
+                )
+                screen.blit(
+                    surf, (xy[0] - radius - 2, xy[1] - radius - 2),
+                )
+            else:
+                # STRIPPED / COMPROMISED — expanding ring.
+                radius = 8 + int(20 * t)
+                surf = pygame.Surface(
+                    (radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA,
+                )
+                pygame.draw.circle(
+                    surf, (*color, max(0, alpha)),
+                    (radius + 2, radius + 2), radius, 3,
+                )
+                screen.blit(
+                    surf, (xy[0] - radius - 2, xy[1] - radius - 2),
+                )
+
+
+def _node_flash_color(kind: str) -> tuple[int, int, int]:
+    return {
+        NODE_FLASH_STRIPPED:    (240,  80,  80),
+        NODE_FLASH_DEEPENED:    ( 90, 220, 110),
+        NODE_FLASH_COMPROMISED: (240, 210,  60),
+        NODE_FLASH_SWITCHED:    (255, 255, 255),
+    }.get(kind, (255, 255, 255))
+
 
 def _flash_base_duration(kind: str) -> float:
     return {
@@ -1100,7 +1793,8 @@ class Phase1RecordingRenderer:
 
     def update(self, tick: int, match: "Match", events) -> None:
         self.update_calls += 1
-        snap = capture_phase1_view(match, tick, events)
+        prev = self.snapshots[-1] if self.snapshots else None
+        snap = capture_phase1_view(match, tick, events, prev_view=prev)
         self.snapshots.append(snap)
         for ev in events:
             desc = getattr(ev, "description", None)
@@ -1128,3 +1822,17 @@ class Phase1RecordingRenderer:
 
     def all_flashes(self) -> list[RefereeFlash]:
         return [f for snap in self.snapshots for f in snap.referee_flashes]
+
+    def all_grip_node_flashes(self) -> list[GripNodeFlash]:
+        return [
+            nf for snap in self.snapshots for nf in snap.grip_node_flashes
+        ]
+
+    def all_grip_edges(self) -> list[tuple[int, GripEdgeView]]:
+        """Flatten every captured grip edge to (tick, view) — used by
+        tests asserting per-tick state derivation."""
+        out: list[tuple[int, GripEdgeView]] = []
+        for snap in self.snapshots:
+            for e in snap.grip_edges:
+                out.append((snap.tick, e))
+        return out
