@@ -1063,11 +1063,39 @@ HANSOKU_FLASH_S:  float = 1.4
 # can come later if needed; Phase 1 demonstrates the data contract
 # first, polish later (Section 4 — pygame is throwaway-OK).
 # ---------------------------------------------------------------------------
-WINDOW_W: int = 1100
-WINDOW_H: int = 720
-PANEL_TOP_H: int = 90      # match clock + score panel
-PANEL_BOTTOM_H: int = 90   # text burst caption strip
-BODY_AREA_H: int = WINDOW_H - PANEL_TOP_H - PANEL_BOTTOM_H
+WINDOW_W: int = 1280
+WINDOW_H: int = 800
+PANEL_TOP_H: int = 90       # match clock + score panel
+PANEL_BOTTOM_H: int = 84    # text burst caption strip
+FOOTER_H: int = 24          # speed + keybinding hint
+
+# HAJ-189 follow-up — layout reversal per session feedback.
+# Centre pane = top-down mat view (the diagnostic centerpiece). Two
+# corner anatomical panels frame it, one per fighter, showing grip
+# nodes + damage tinting + stamina at a glance. The original
+# anatomical-centerpiece layout (HAJ-187/188/189 first cut) lost the
+# 'sense of the match' — spatial information reads it; anatomy is
+# detail-on-demand.
+ANATOMY_PANEL_W: int = 280
+ANATOMY_PANEL_TOP_Y: int = PANEL_TOP_H
+ANATOMY_PANEL_H: int = WINDOW_H - PANEL_TOP_H - PANEL_BOTTOM_H - FOOTER_H
+
+CENTRE_PANE_X: int = ANATOMY_PANEL_W
+CENTRE_PANE_Y: int = PANEL_TOP_H
+CENTRE_PANE_W: int = WINDOW_W - 2 * ANATOMY_PANEL_W
+CENTRE_PANE_H: int = ANATOMY_PANEL_H
+
+BODY_AREA_H: int = ANATOMY_PANEL_H   # legacy alias for older helpers
+
+# Top-down mat constants — central pane geometry. The mat fills the
+# pane minus a margin. px_per_m derived from MAT_HALF_WIDTH at draw
+# time so both contest area and safety border fit.
+TOPDOWN_PAD: int = 20
+SAFETY_HALF_M_DEFAULT: float = 7.0    # contest 4m + 3m IJF safety border
+COL_MAT_SAFETY = (148, 110,  74)
+COL_MAT_CONTEST = (188, 154, 100)
+COL_MAT_GRID    = ( 60,  64,  74)
+COL_KUZUSHI     = (255,  95,  60)
 
 # Identity colours. Blue judoka is straight blue; white judoka is
 # off-white with a dark outline so it reads against the background.
@@ -1498,21 +1526,43 @@ class Phase1AnatomicalRenderer:
         self._active_flashes = kept
 
     def _render_frame(self, snap: Phase1ViewState) -> None:
+        """Layout (post-feedback rebuild):
+
+            +-------------------------------------------------+
+            | TOP: clock / score / shido / position state     |
+            +---------+---------------------------+-----------+
+            | ANATOMY |                           | ANATOMY   |
+            | A       |    TOP-DOWN MAT VIEW      | B         |
+            | (corner)|    (diagnostic centre)    | (corner)  |
+            |         |                           |           |
+            +---------+---------------------------+-----------+
+            | BOTTOM: text-burst captioning                   |
+            +-------------------------------------------------+
+            | FOOTER: speed + keybinds                        |
+            +-------------------------------------------------+
+
+        Top-down mat view is the centerpiece because spatial info is
+        what reads 'the sense of the match' — who's pressing whom,
+        edge tactics, mat-zone dynamics. Anatomical panels are
+        glanceable supporting detail (grip nodes lit + damage tint
+        + stamina). Mini-map is dropped — the centre pane already
+        renders mat geometry at higher fidelity."""
         import pygame
         screen = self._screen
         screen.fill(COL_BG)
         self._draw_top_panel(screen, snap)
-        self._draw_bodies(screen, snap)
-        # HAJ-189 — arrows go on top of bodies but under the grip layer
-        # so grip edges remain readable; arrows are diagnostic for
-        # 'what force is being applied' which sits behind 'which
-        # specific grip is delivering it.'
-        self._draw_arrows(screen, snap)
-        # HAJ-188 — grip layer goes on top of bodies so edges and nodes
-        # are unobstructed; flashes ride on the same layer plane.
-        self._draw_grip_layer(screen, snap)
-        # HAJ-189 — mini-map corner widget (top-right).
-        self._draw_mini_map(screen, snap)
+        # Centre pane: top-down mat with fighter dots, grip lines
+        # between them, and intent/actual force arrows projected
+        # onto the mat plane.
+        self._draw_topdown_pane(screen, snap)
+        # Two corner anatomy panels framing the centre pane.
+        self._draw_anatomy_panel(
+            screen, snap.body_a, snap, x=0, side="left",
+        )
+        self._draw_anatomy_panel(
+            screen, snap.body_b, snap,
+            x=WINDOW_W - ANATOMY_PANEL_W, side="right",
+        )
         self._draw_caption_strip(screen, snap)
         self._draw_active_flashes(screen, snap)
         self._draw_footer_hint(screen)
@@ -1596,10 +1646,305 @@ class Phase1AnatomicalRenderer:
             )
             pygame.draw.rect(screen, colour, (cx, 14, card_w, card_h))
 
-    def _draw_bodies(self, screen, snap: Phase1ViewState) -> None:
-        pose_a, pose_b = _layout_bodies(snap.position_state)
-        self._draw_body(screen, snap.body_a, pose_a)
-        self._draw_body(screen, snap.body_b, pose_b)
+    # ------------------------------------------------------------------
+    # Layout-rebuild renderers — top-down centre + corner anatomy panels.
+    # ------------------------------------------------------------------
+    def _topdown_transform(self, snap: Phase1ViewState):
+        """Return a closure (mat_to_px, px_per_m, contest_half_m,
+        safety_half_m) for the centre pane. Pulled from
+        snap.mini_map.* if present (they share geometry), else
+        defaults. Pure layout math; no pygame."""
+        if snap.mini_map is not None:
+            contest_half = snap.mini_map.contest_half_m
+            safety_half  = snap.mini_map.safety_half_m
+        else:
+            contest_half = MINI_MAP_CONTEST_HALF_M_DEFAULT
+            safety_half  = SAFETY_HALF_M_DEFAULT
+        usable_w = CENTRE_PANE_W - 2 * TOPDOWN_PAD
+        usable_h = CENTRE_PANE_H - 2 * TOPDOWN_PAD
+        px_per_m = min(usable_w, usable_h) / (2.0 * safety_half)
+        cx = CENTRE_PANE_X + CENTRE_PANE_W // 2
+        cy = CENTRE_PANE_Y + CENTRE_PANE_H // 2
+
+        def mat_to_px(mp):
+            mx, my = mp
+            return (cx + int(round(mx * px_per_m)),
+                    cy - int(round(my * px_per_m)))
+
+        return mat_to_px, px_per_m, contest_half, safety_half
+
+    def _draw_topdown_pane(self, screen, snap: Phase1ViewState) -> None:
+        """Centre pane — the diagnostic centerpiece. Renders mat
+        geometry, fighter dots with facing, top-down grip lines
+        between dots (owner-tinted, depth-thickness), kuzushi halos
+        on off-balance fighters, and intent/actual force arrows
+        projected onto the mat plane originating from each dot."""
+        import pygame
+        # Background panel.
+        pygame.draw.rect(
+            screen, COL_PANEL,
+            (CENTRE_PANE_X, CENTRE_PANE_Y, CENTRE_PANE_W, CENTRE_PANE_H),
+        )
+        mat_to_px, px_per_m, contest_half, safety_half = (
+            self._topdown_transform(snap)
+        )
+        # Safety boundary (outer dashed).
+        s_min = mat_to_px((-safety_half, +safety_half))
+        s_max = mat_to_px((+safety_half, -safety_half))
+        pygame.draw.rect(
+            screen, COL_MAT_SAFETY,
+            (s_min[0], s_min[1],
+             s_max[0] - s_min[0], s_max[1] - s_min[1]),
+        )
+        # Contest area (inner solid).
+        c_min = mat_to_px((-contest_half, +contest_half))
+        c_max = mat_to_px((+contest_half, -contest_half))
+        pygame.draw.rect(
+            screen, COL_MAT_CONTEST,
+            (c_min[0], c_min[1],
+             c_max[0] - c_min[0], c_max[1] - c_min[1]),
+        )
+        # Centre cross — quick visual reference for mat origin.
+        ox, oy = mat_to_px((0.0, 0.0))
+        pygame.draw.line(
+            screen, COL_MAT_GRID, (ox - 8, oy), (ox + 8, oy), 1,
+        )
+        pygame.draw.line(
+            screen, COL_MAT_GRID, (ox, oy - 8), (ox, oy + 8), 1,
+        )
+        # Recent-movement tails for both fighters (read off mini_map
+        # capture, which already truncates to MINI_MAP_TAIL_LENGTH).
+        if snap.mini_map is not None:
+            self._draw_topdown_tail(
+                screen, snap.mini_map.a_tail,
+                _identity_color(snap.body_a.identity), mat_to_px,
+            )
+            self._draw_topdown_tail(
+                screen, snap.mini_map.b_tail,
+                _identity_color(snap.body_b.identity), mat_to_px,
+            )
+        # Fighter positions + facing. body.com_position is in mat
+        # coords; capture stored facing on… no, capture only kept
+        # com_position in BodyView. Use mat_coords_*; facing isn't
+        # currently captured. The dot itself is enough at this scale.
+        a_xy = mat_to_px(snap.mat_coords_a)
+        b_xy = mat_to_px(snap.mat_coords_b)
+        # Top-down grip lines BETWEEN the dots — owner-tinted with
+        # depth-scaled thickness. State (deepening / stripping /
+        # contested / compromised) carries the same dash treatment as
+        # the centre pane on the original layout, but at this scale we
+        # keep it simple: solid lines, owner color, thickness from
+        # depth. The corner anatomy panels carry the full grip-state
+        # detail (nodes light + flashes).
+        pos_for: dict[str, tuple[int, int]] = {
+            snap.body_a.name: a_xy, snap.body_b.name: b_xy,
+        }
+        for e in snap.grip_edges:
+            grasper_xy = pos_for.get(e.grasper_id)
+            target_xy  = pos_for.get(e.target_id)
+            if grasper_xy is None or target_xy is None:
+                continue
+            color = _identity_color(e.grasper_identity)
+            outline = _identity_outline(e.grasper_identity)
+            thickness = max(1, min(6, int(round(1 + 5 * e.depth))))
+            pygame.draw.line(
+                screen, color, grasper_xy, target_xy, thickness,
+            )
+            if outline is not None:
+                # White-identity outline for visibility.
+                pygame.draw.line(
+                    screen, outline, grasper_xy, target_xy, 1,
+                )
+        # Fighter dots — drawn after grip lines so they sit on top of
+        # the line endpoints.
+        self._draw_topdown_fighter(
+            screen, a_xy, snap.body_a.identity,
+            near_edge=(snap.mini_map.a_near_edge
+                       if snap.mini_map is not None else False),
+        )
+        self._draw_topdown_fighter(
+            screen, b_xy, snap.body_b.identity,
+            near_edge=(snap.mini_map.b_near_edge
+                       if snap.mini_map is not None else False),
+        )
+        # Intent + actual arrows projected onto the mat plane,
+        # originating from each fighter's dot.
+        self._draw_topdown_arrows(screen, snap, pos_for)
+        # Pane outline.
+        pygame.draw.rect(
+            screen, COL_PANEL_LINE,
+            (CENTRE_PANE_X, CENTRE_PANE_Y, CENTRE_PANE_W, CENTRE_PANE_H),
+            1,
+        )
+
+    def _draw_topdown_tail(self, screen, tail, color, mat_to_px) -> None:
+        import pygame
+        n = len(tail)
+        if n < 2:
+            return
+        for i in range(1, n):
+            alpha = int(40 + 180 * (i / n))
+            surf = pygame.Surface((4, 4), pygame.SRCALPHA)
+            surf.fill((*color, alpha))
+            px = mat_to_px(tail[i])
+            screen.blit(surf, (px[0] - 2, px[1] - 2))
+
+    def _draw_topdown_fighter(
+        self, screen, xy: tuple[int, int],
+        identity_tag: str, near_edge: bool,
+    ) -> None:
+        import pygame
+        col = _identity_color(identity_tag)
+        outline = _identity_outline(identity_tag)
+        pygame.draw.circle(screen, col, xy, 12)
+        if outline is not None:
+            pygame.draw.circle(screen, outline, xy, 12, 1)
+        if near_edge:
+            import math
+            r = 16 + int(4 * (0.5 + 0.5 * math.sin(time.monotonic() * 5.0)))
+            surf = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(
+                surf, (*col, 160), (r + 1, r + 1), r, 2,
+            )
+            screen.blit(surf, (xy[0] - r - 1, xy[1] - r - 1))
+
+    def _draw_topdown_arrows(
+        self, screen, snap: Phase1ViewState,
+        pos_for: dict[str, tuple[int, int]],
+    ) -> None:
+        """Per-fighter intent + actual arrows in the centre pane.
+        Anchor at the fighter dot, with the +x screen direction
+        pointing along the mat-+x axis (so a (1, 0) force vector
+        points right on screen, matching mat coords)."""
+        import pygame
+        if not snap.arrows:
+            return
+        # Slight offset so up to 4 arrows don't overlap from the same
+        # dot — Tori-side arrows up/right of the dot, Uke-side
+        # down/left.
+        offset_for: dict[str, tuple[int, int]] = {
+            snap.body_a.name: (0, -4),
+            snap.body_b.name: (0, +4),
+        }
+        for arrow in snap.arrows:
+            anchor = pos_for.get(arrow.judoka_name)
+            if anchor is None:
+                continue
+            offs = offset_for.get(arrow.judoka_name, (0, 0))
+            anchor = (anchor[0] + offs[0], anchor[1] + offs[1])
+            length_px = self._arrow_pixel_length(arrow.magnitude)
+            self._draw_one_arrow(screen, anchor, arrow, length_px)
+
+    # ------------------------------------------------------------------
+    # Corner anatomy panels — one per fighter, glanceable.
+    # ------------------------------------------------------------------
+    def _draw_anatomy_panel(
+        self, screen, body: BodyView, snap: Phase1ViewState,
+        x: int, side: str,
+    ) -> None:
+        """Anatomical body silhouette inside a corner panel. Renders
+        damage tinting per region, lit grip nodes (only those touched
+        by an active edge), and the active node-flash overlay scaled
+        down for the panel. Stamina bar at the bottom of the panel.
+        Identity tint for the panel border picks left/right side."""
+        import pygame
+        y = ANATOMY_PANEL_TOP_Y
+        # Panel background.
+        pygame.draw.rect(
+            screen, COL_PANEL, (x, y, ANATOMY_PANEL_W, ANATOMY_PANEL_H),
+        )
+        # Identity stripe down the inner edge so the panel reads as
+        # 'this side is fighter X'.
+        accent = _identity_color(body.identity)
+        if side == "left":
+            stripe_x = x + ANATOMY_PANEL_W - 4
+        else:
+            stripe_x = x
+        pygame.draw.rect(
+            screen, accent, (stripe_x, y, 4, ANATOMY_PANEL_H),
+        )
+        # Centre body inside the panel. body_unit_px sized to fit the
+        # panel comfortably with room for the stamina bar.
+        body_unit = 48
+        centre_xy = (x + ANATOMY_PANEL_W // 2,
+                     y + ANATOMY_PANEL_H // 2 - 60)
+        pose = _BodyPose(centre_xy, body_unit, rotated_90=False)
+        self._draw_body(screen, body, pose)
+        # Lit grip nodes for this body.
+        self._draw_anatomy_panel_grip_nodes(screen, body, snap, pose)
+        # Node flashes scaled to the panel.
+        now_wall = time.monotonic()
+        self._draw_anatomy_panel_node_flashes(screen, body, pose, now_wall)
+        # Panel border + label.
+        pygame.draw.rect(
+            screen, COL_PANEL_LINE,
+            (x, y, ANATOMY_PANEL_W, ANATOMY_PANEL_H), 1,
+        )
+        label = self._font_med.render(body.name, True, accent)
+        screen.blit(label, (x + 12, y + 8))
+
+    def _draw_anatomy_panel_grip_nodes(
+        self, screen, body: BodyView, snap: Phase1ViewState,
+        pose: "_BodyPose",
+    ) -> None:
+        """Light up only the nodes that have an active edge touching
+        this body. Target-side nodes get the gripper's color; this
+        body's hand-nodes (when it owns a grip on the opponent) get
+        its own identity colour."""
+        import pygame
+        for e in snap.grip_edges:
+            # A node on THIS body lights up if it's the target body
+            # of an edge, OR if the edge's grasper is this body and
+            # the grasper hand is on this body.
+            node_id = None
+            tint = None
+            if e.target_id == body.name:
+                node_id = e.target_node
+                tint = _identity_color(e.grasper_identity)
+            elif e.grasper_id == body.name:
+                node_id = e.grasper_part   # 'left_hand' / 'right_hand'
+                tint = _identity_color(body.identity)
+            if node_id is None:
+                continue
+            xy = grip_node_screen_xy(node_id, pose)
+            if xy is None:
+                continue
+            pygame.draw.circle(screen, tint, xy, 5)
+            pygame.draw.circle(screen, COL_PANEL_LINE, xy, 5, 1)
+
+    def _draw_anatomy_panel_node_flashes(
+        self, screen, body: BodyView, pose: "_BodyPose", now_wall: float,
+    ) -> None:
+        """Overlay any active node flashes for this body's nodes.
+        Walks the same _active_node_flashes list as the original
+        draw, filtered to flashes that fired against this judoka."""
+        import pygame
+        for entry in self._active_node_flashes:
+            nf, started, base = entry
+            if nf.target_id != body.name:
+                continue
+            life = scaled_duration(base, self._playback_rate)
+            if life <= 0:
+                continue
+            t = max(0.0, min(1.0, (now_wall - started) / life))
+            alpha = int(255 * (1.0 - t))
+            xy = grip_node_screen_xy(nf.node_id, pose)
+            if xy is None:
+                continue
+            color = _node_flash_color(nf.kind)
+            if nf.kind == NODE_FLASH_DEEPENED:
+                radius = 6 + int(8 * t)
+            else:
+                radius = 6 + int(14 * t)
+            surf = pygame.Surface(
+                (radius * 2 + 4, radius * 2 + 4), pygame.SRCALPHA,
+            )
+            ring = 1 if nf.kind == NODE_FLASH_DEEPENED else 2
+            pygame.draw.circle(
+                surf, (*color, max(0, alpha)),
+                (radius + 2, radius + 2), radius, ring,
+            )
+            screen.blit(surf, (xy[0] - radius - 2, xy[1] - radius - 2))
 
     def _draw_body(self, screen, body: BodyView, pose: _BodyPose) -> None:
         """HAJ-187 anatomy + HAJ-189 damage tinting. Each region's
