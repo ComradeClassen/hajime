@@ -409,6 +409,71 @@ def test_live_match_populates_arrows() -> None:
     )
 
 
+def test_body_view_captures_facing() -> None:
+    """The centre-pane top-down view needs facing to place hand
+    dots. _capture_body must thread state.body_state.facing onto
+    BodyView."""
+    m = _fresh_match()
+    snap = capture_phase1_view(m, tick=0, events=[])
+    # Default placement: blue faces +x, white faces -x.
+    assert snap.body_a.facing[0] == 1.0
+    assert snap.body_b.facing[0] == -1.0
+
+
+def test_topdown_hand_positions_forward_facing() -> None:
+    """Forward facing (+x) puts left hand at body +y (above) and
+    right hand at body -y (below) when the rotation convention is
+    facing=+x → perp=+y. 30cm forward, 22cm lateral."""
+    from phase1_viewer import _topdown_hand_positions_mat
+    left, right = _topdown_hand_positions_mat((0.0, 0.0), (1.0, 0.0))
+    assert left  == (0.30, 0.22)
+    assert right == (0.30, -0.22)
+
+
+def test_topdown_hand_positions_reverse_facing_mirrors() -> None:
+    """Facing -x flips left/right hands across the y-axis."""
+    from phase1_viewer import _topdown_hand_positions_mat
+    left, right = _topdown_hand_positions_mat((0.0, 0.0), (-1.0, 0.0))
+    assert left  == (-0.30, -0.22)
+    assert right == (-0.30, 0.22)
+
+
+def test_owned_hands_by_grasper_indexes_correctly() -> None:
+    """Index returns {grasper_id: {hand_part, ...}} for active edges
+    only — no entry when no edges, only the hand parts that own
+    grips listed."""
+    from phase1_viewer import owned_hands_by_grasper, GripEdgeView
+    edges = [
+        GripEdgeView(
+            edge_id=1, grasper_id="X", grasper_identity=Identity.BLUE,
+            grasper_part="right_hand", target_id="Y",
+            target_identity=Identity.WHITE,
+            target_node="left_lapel", target_raw="left_lapel",
+            depth=0.7, state="stable",
+        ),
+        GripEdgeView(
+            edge_id=2, grasper_id="X", grasper_identity=Identity.BLUE,
+            grasper_part="left_hand", target_id="Y",
+            target_identity=Identity.WHITE,
+            target_node="right_sleeve", target_raw="right_sleeve",
+            depth=0.4, state="stable",
+        ),
+        GripEdgeView(
+            edge_id=3, grasper_id="Y", grasper_identity=Identity.WHITE,
+            grasper_part="right_hand", target_id="X",
+            target_identity=Identity.BLUE,
+            target_node="belt", target_raw="belt",
+            depth=1.0, state="stable",
+        ),
+    ]
+    owned = owned_hands_by_grasper(edges)
+    assert owned == {
+        "X": {"right_hand", "left_hand"},
+        "Y": {"right_hand"},
+    }
+    assert owned_hands_by_grasper([]) == {}
+
+
 def test_live_match_mini_map_tail_grows() -> None:
     rec = Phase1RecordingRenderer()
     random.seed(707)

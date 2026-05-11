@@ -153,6 +153,13 @@ class BodyView:
     region_damage:  tuple[tuple[str, float], ...]
     cardio:         float          # 0.0–1.0 stamina bar
     com_position:   tuple[float, float]
+    # Forward unit vector in mat coords. Captured so the top-down
+    # renderer can place hand dots offset from the CoM along facing
+    # — without it, hand positions can't be derived from snapshot
+    # alone (the engine recomputes facing per tick from grip /
+    # locomotion state). Defaulted to +x so older snapshots /
+    # synthetic test fixtures keep working.
+    facing:         tuple[float, float] = (1.0, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -577,6 +584,7 @@ def _capture_body(judoka, identity_tag: str, sub_loop: SubLoopState,
         region_damage=tuple(region_damage),
         cardio=float(state.cardio_current),
         com_position=tuple(state.body_state.com_position),
+        facing=tuple(state.body_state.facing),
     )
 
 
@@ -1096,6 +1104,53 @@ COL_MAT_SAFETY = (148, 110,  74)
 COL_MAT_CONTEST = (188, 154, 100)
 COL_MAT_GRID    = ( 60,  64,  74)
 COL_KUZUSHI     = (255,  95,  60)
+
+# Hand offsets in body frame (meters). Mirrors the old top-down
+# match_viewer.py constants — hands extend 30cm forward of CoM and
+# 22cm to either side. Used by the centre pane to place hand dots
+# and to anchor grip lines on the grasper hand.
+HAND_FORWARD_M: float = 0.30
+HAND_LATERAL_M: float = 0.22
+
+
+def _topdown_hand_positions_mat(
+    com: tuple[float, float], facing: tuple[float, float],
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return (left_hand, right_hand) positions in mat coords given
+    a CoM and a facing unit vector. Body-frame +x = facing; body
+    +y (left side) = facing rotated 90° CCW. Same convention as the
+    legacy top-down match_viewer.py — keep them aligned so anyone
+    cross-referencing the two viewers reads consistent geometry."""
+    cx, cy = com
+    fx, fy = facing
+    perp_x, perp_y = -fy, fx   # 90° CCW
+    forward = (fx * HAND_FORWARD_M, fy * HAND_FORWARD_M)
+    lateral = (perp_x * HAND_LATERAL_M, perp_y * HAND_LATERAL_M)
+    left  = (cx + forward[0] + lateral[0], cy + forward[1] + lateral[1])
+    right = (cx + forward[0] - lateral[0], cy + forward[1] - lateral[1])
+    return left, right
+
+
+# Which display nodes anchor at the *opponent's hand* (sleeve grips
+# travel hand-to-hand) vs at the opponent's torso/CoM (lapel/collar
+# /belt sit on the gi over the body). Determines where the centre
+# pane's grip line terminates so the visual reads like real grip
+# geometry, not abstract "fighter A is gripping fighter B."
+_TARGET_NODE_ANCHOR_HAND: dict[str, str] = {
+    "left_sleeve":  "left_hand",
+    "right_sleeve": "right_hand",
+}
+
+
+def owned_hands_by_grasper(grip_edges) -> dict[str, set[str]]:
+    """Index grip edges by grasper_id → set of grasper hand parts
+    that own at least one active edge. Used by the centre-pane
+    renderer to brighten gripping hands and by tests that assert
+    which hand reads as gripping at a given tick. Pure function."""
+    out: dict[str, set[str]] = {}
+    for e in grip_edges:
+        out.setdefault(e.grasper_id, set()).add(e.grasper_part)
+    return out
 
 # Identity colours. Blue judoka is straight blue; white judoka is
 # off-white with a dark outline so it reads against the background.
@@ -1729,34 +1784,74 @@ class Phase1AnatomicalRenderer:
         # currently captured. The dot itself is enough at this scale.
         a_xy = mat_to_px(snap.mat_coords_a)
         b_xy = mat_to_px(snap.mat_coords_b)
-        # Top-down grip lines BETWEEN the dots — owner-tinted with
-        # depth-scaled thickness. State (deepening / stripping /
-        # contested / compromised) carries the same dash treatment as
-        # the centre pane on the original layout, but at this scale we
-        # keep it simple: solid lines, owner color, thickness from
-        # depth. The corner anatomy panels carry the full grip-state
-        # detail (nodes light + flashes).
-        pos_for: dict[str, tuple[int, int]] = {
+        # Hand positions in mat coords for both fighters.
+        a_hand_l_mat, a_hand_r_mat = _topdown_hand_positions_mat(
+            snap.body_a.com_position, snap.body_a.facing,
+        )
+        b_hand_l_mat, b_hand_r_mat = _topdown_hand_positions_mat(
+            snap.body_b.com_position, snap.body_b.facing,
+        )
+        hands_for: dict[str, dict[str, tuple[int, int]]] = {
+            snap.body_a.name: {
+                "left_hand":  mat_to_px(a_hand_l_mat),
+                "right_hand": mat_to_px(a_hand_r_mat),
+            },
+            snap.body_b.name: {
+                "left_hand":  mat_to_px(b_hand_l_mat),
+                "right_hand": mat_to_px(b_hand_r_mat),
+            },
+        }
+        com_for: dict[str, tuple[int, int]] = {
             snap.body_a.name: a_xy, snap.body_b.name: b_xy,
         }
+        # Top-down grip lines: from grasper's hand → target's
+        # hand-or-CoM. Sleeve grips travel hand-to-hand (the gripping
+        # hand catches the sleeve cuff over the opponent's hand);
+        # lapel / collar / belt / leg grips terminate at opponent CoM
+        # (the rough centroid of where those targets sit on the body).
+        # Owner-tinted, depth-scaled thickness. The corner anatomy
+        # panels carry the full grip-state animation detail.
         for e in snap.grip_edges:
-            grasper_xy = pos_for.get(e.grasper_id)
-            target_xy  = pos_for.get(e.target_id)
-            if grasper_xy is None or target_xy is None:
+            grasper_hand_xy = hands_for.get(e.grasper_id, {}).get(
+                e.grasper_part,
+            )
+            if grasper_hand_xy is None:
+                continue
+            target_anchor_hand = _TARGET_NODE_ANCHOR_HAND.get(e.target_node)
+            if target_anchor_hand is not None:
+                target_xy = hands_for.get(e.target_id, {}).get(
+                    target_anchor_hand,
+                )
+            else:
+                target_xy = com_for.get(e.target_id)
+            if target_xy is None:
                 continue
             color = _identity_color(e.grasper_identity)
             outline = _identity_outline(e.grasper_identity)
             thickness = max(1, min(6, int(round(1 + 5 * e.depth))))
             pygame.draw.line(
-                screen, color, grasper_xy, target_xy, thickness,
+                screen, color, grasper_hand_xy, target_xy, thickness,
             )
             if outline is not None:
                 # White-identity outline for visibility.
                 pygame.draw.line(
-                    screen, outline, grasper_xy, target_xy, 1,
+                    screen, outline, grasper_hand_xy, target_xy, 1,
                 )
-        # Fighter dots — drawn after grip lines so they sit on top of
-        # the line endpoints.
+
+        # Hand dots — drawn after grip lines so the hand sits on top
+        # of its grip line endpoint. Brighter when this hand owns at
+        # least one active edge; dimmer when free.
+        owned_for = owned_hands_by_grasper(snap.grip_edges)
+        for body in (snap.body_a, snap.body_b):
+            owned = owned_for.get(body.name, set())
+            for which in ("left_hand", "right_hand"):
+                hand_xy = hands_for[body.name][which]
+                self._draw_topdown_hand(
+                    screen, hand_xy, body.identity, which in owned,
+                )
+
+        # Fighter dots — drawn after grip lines + hands so the body
+        # circle sits on top of everything else.
         self._draw_topdown_fighter(
             screen, a_xy, snap.body_a.identity,
             near_edge=(snap.mini_map.a_near_edge
@@ -1767,6 +1862,8 @@ class Phase1AnatomicalRenderer:
             near_edge=(snap.mini_map.b_near_edge
                        if snap.mini_map is not None else False),
         )
+        # Reuse the COM positions for arrow anchoring.
+        pos_for: dict[str, tuple[int, int]] = com_for
         # Intent + actual arrows projected onto the mat plane,
         # originating from each fighter's dot.
         self._draw_topdown_arrows(screen, snap, pos_for)
@@ -1788,6 +1885,25 @@ class Phase1AnatomicalRenderer:
             surf.fill((*color, alpha))
             px = mat_to_px(tail[i])
             screen.blit(surf, (px[0] - 2, px[1] - 2))
+
+    def _draw_topdown_hand(
+        self, screen, xy: tuple[int, int],
+        identity_tag: str, gripping: bool,
+    ) -> None:
+        """Hand dot offset from CoM along the facing direction. Bright
+        when this hand owns at least one active grip edge; dimmer
+        when free. Mirrors the legacy match_viewer.py vocabulary so
+        anyone cross-referencing reads consistent symbols."""
+        import pygame
+        col = _identity_color(identity_tag)
+        if not gripping:
+            # Dim the colour for free hands so the eye lands on
+            # active gripping hands first.
+            col = tuple(c // 2 + 30 for c in col)
+        pygame.draw.circle(screen, col, xy, 4)
+        outline = _identity_outline(identity_tag)
+        if outline is not None:
+            pygame.draw.circle(screen, outline, xy, 4, 1)
 
     def _draw_topdown_fighter(
         self, screen, xy: tuple[int, int],
