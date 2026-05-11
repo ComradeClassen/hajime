@@ -1392,7 +1392,7 @@ class TextBurstQueue:
 # are unreadable; advanced users speed up with `+`. Mirrors the
 # existing match_viewer.py default so the two viewers feel consistent.
 # ---------------------------------------------------------------------------
-DEFAULT_PLAYBACK_RATE: float = 0.7
+DEFAULT_PLAYBACK_RATE: float = 1.25
 MIN_PLAYBACK_RATE:     float = 0.05    # 1 tick per 20s — slow study mode
 MAX_PLAYBACK_RATE:     float = 8.0     # 8 ticks/s — too fast to read on purpose
 PLAYBACK_STEP_FACTOR:  float = 1.5

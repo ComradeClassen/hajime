@@ -373,7 +373,7 @@ TRAIL_LENGTH:    int = 30
 # slow, let the user speed up with +/- as they get fluent. A 4-minute
 # (240-tick) match plays in ~8 minutes of wall clock at the default;
 # tap '+' twice to roughly halve that.
-DEFAULT_TICKS_PER_SECOND: float = 0.7
+DEFAULT_TICKS_PER_SECOND: float = 1.25
 MIN_TPS: float = 0.1
 MAX_TPS: float = 30.0   # 10× of real-time is the ticket spec; 30 leaves headroom
 TPS_STEP_FACTOR: float = 1.5
