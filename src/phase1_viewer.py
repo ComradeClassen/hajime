@@ -1490,9 +1490,16 @@ class Phase1AnatomicalRenderer:
         animate smoothly, accept keyboard input for pause / step /
         speed scrub. Mirrors the structure of match_viewer.py's
         PygameMatchRenderer.run_interactive but trimmed to Phase 1's
-        smaller surface."""
+        smaller surface.
+
+        After the engine reports done, calls match.end() (so the prose
+        summary fires once) then enters a linger loop that holds the
+        final frame on screen until the user explicitly quits. Without
+        the linger, the window auto-closes the moment the match ends
+        and the user never gets to read the closing beats."""
         match.begin()
         last_step = time.monotonic()
+        match_resolved = False
         try:
             while self._open and not match.is_done():
                 self._pump_input()
@@ -1517,15 +1524,49 @@ class Phase1AnatomicalRenderer:
                 if self._latest_snap is not None:
                     self._render_frame(self._latest_snap)
                 self._clock.tick(60)
-            match.end()
+            # Engine done — fire end() once so the post-match prose
+            # summary lands, then drop into the linger loop.
+            if not match_resolved:
+                match.end()
+                match_resolved = True
+            self._linger_after_match()
         finally:
-            # If the user closed the window before match.end() ran in the
-            # try-block, ensure end() still fires for the prose summary.
-            if not getattr(match, "match_over", False):
+            # If the user closed the window before match.end() ran in
+            # the try-block, ensure end() still fires for the prose
+            # summary. Idempotency guarded by match_resolved + the
+            # _resolve_match call inside Match.end is itself idempotent
+            # via match_over.
+            if not match_resolved and not getattr(
+                match, "match_over", False,
+            ):
                 try:
                     match.end()
                 except Exception:
                     raise
+
+    def _linger_after_match(self) -> None:
+        """Hold the final tick on screen after the match ends. The
+        user can read the closing prose burst, the score panel, the
+        last grip configuration — and only quits when they press
+        q / Esc / close the window. Speed controls (+/-/0) and pause
+        are inert here (no engine to advance), but kept active so
+        keystrokes don't feel dead. Renders at 60 FPS so any
+        still-fading flashes finish their animation cleanly."""
+        # Mark paused so the footer hint reads PAUSED — communicates
+        # to the user that the engine isn't advancing.
+        self._paused = True
+        while self._open:
+            self._pump_input()
+            if not self._open:
+                break
+            cur = time.monotonic()
+            self._burst_queue.set_playback_rate(self._playback_rate)
+            self._burst_queue.tick_wall(cur)
+            self._cull_flashes(cur)
+            self._cull_node_flashes(cur)
+            if self._latest_snap is not None:
+                self._render_frame(self._latest_snap)
+            self._clock.tick(60)
 
     # --- Test introspection -------------------------------------------------
     def snapshots(self) -> list[Phase1ViewState]:
