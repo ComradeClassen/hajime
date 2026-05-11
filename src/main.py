@@ -473,6 +473,17 @@ if __name__ == "__main__":
                              "(default 1.25). 1.0 = real-time, higher = "
                              "sped up. Use +/- in the viewer window to "
                              "scrub live.")
+    parser.add_argument("--ticker-altitude",
+                        choices=("mat_side", "stands", "review", "broadcast"),
+                        default="stands",
+                        help="Narration altitude for the on-screen event "
+                             "ticker. mat_side = every event with prose "
+                             "(legacy, noisy). stands = narrative beats "
+                             "only — drops move events, SUB_TSUKURI, "
+                             "SUB_KAKE_COMMIT, baseline grip churn (new "
+                             "default). review = only meaningful turning "
+                             "points. broadcast = only score-defining "
+                             "moments. Stdout prose log is unaffected.")
     args = parser.parse_args()
 
     import random
@@ -522,14 +533,19 @@ if __name__ == "__main__":
         try:
             from match_viewer import (
                 PygameMatchRenderer, DEFAULT_TICKS_PER_SECOND,
+                TICKER_ALTITUDES,
             )
         except ImportError as e:
             parser.error(
                 f"--viewer needs pygame: {e}. Install with `pip install pygame-ce`."
             )
         tps = args.viewer_tps if args.viewer_tps is not None else DEFAULT_TICKS_PER_SECOND
+        ticker_threshold = TICKER_ALTITUDES[args.ticker_altitude]
         def renderer_factory():
-            return PygameMatchRenderer(ticks_per_second=tps)
+            return PygameMatchRenderer(
+                ticks_per_second=tps,
+                ticker_altitude_threshold=ticker_threshold,
+            )
     else:
         def renderer_factory():
             return None

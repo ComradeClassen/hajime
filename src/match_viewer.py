@@ -29,11 +29,31 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
 from enums import GripMode
+from significance import (
+    THRESHOLD_MAT_SIDE, THRESHOLD_STANDS,
+    THRESHOLD_REVIEW, THRESHOLD_BROADCAST,
+)
 
 if TYPE_CHECKING:
     from match import Match
     from grip_graph import Event
     from judoka import Judoka
+
+
+# ---------------------------------------------------------------------------
+# TICKER ALTITUDE — narration filter for the on-screen event ticker.
+# Each value maps to a `significance` floor. Per session feedback, the
+# default went from "show everything" (mat-side, threshold 1) to
+# "show narrative beats" (stands, threshold 4) so the in-viewer log
+# reads more like what a player would see than what a developer would
+# debug. CLI: --ticker-altitude {mat_side|stands|review|broadcast}.
+# ---------------------------------------------------------------------------
+TICKER_ALTITUDES: dict[str, int] = {
+    "mat_side":  THRESHOLD_MAT_SIDE,    # 1 — every event with prose (legacy)
+    "stands":    THRESHOLD_STANDS,      # 4 — narrative beats only (new default)
+    "review":    THRESHOLD_REVIEW,      # 7 — only meaningful turning points
+    "broadcast": THRESHOLD_BROADCAST,   # 9 — only score-defining moments
+}
 
 
 # ---------------------------------------------------------------------------
@@ -519,7 +539,12 @@ class PygameMatchRenderer:
     """v2 interactive viewer. Drives the match loop so it can pause,
     step, and scrub speed; surfaces a ticker and click-to-inspect."""
 
-    def __init__(self, ticks_per_second: float = DEFAULT_TICKS_PER_SECOND) -> None:
+    def __init__(
+        self,
+        ticks_per_second: float = DEFAULT_TICKS_PER_SECOND,
+        *,
+        ticker_altitude_threshold: int = THRESHOLD_STANDS,
+    ) -> None:
         import pygame  # noqa: F401  (validate dep at construction)
         self._tps = max(MIN_TPS, min(MAX_TPS, float(ticks_per_second)))
         self._initial_tps = self._tps
@@ -541,6 +566,15 @@ class PygameMatchRenderer:
         self._inspect_target: Optional[str] = None
 
         # Event ticker buffer: list of (tick, description, frame_seen_at).
+        # Filter: only events whose significance ≥ this threshold are
+        # pushed to the on-screen ticker. The full mat-side stream
+        # still goes to stdout / the prose log; this is just the
+        # in-viewer surface. STANDS (4) is the default — drops per-tick
+        # mechanics (move, SUB_TSUKURI, SUB_KAKE_COMMIT, baseline
+        # grip churn) and surfaces narrative beats (kuzushi, grip
+        # kills, throws, scores, referee). Override per-launch with
+        # the --ticker-altitude CLI flag.
+        self._ticker_altitude_threshold: int = ticker_altitude_threshold
         self._event_log: deque[tuple[int, str, int]] = deque(
             maxlen=EVENT_BUFFER_LEN,
         )
@@ -904,8 +938,18 @@ class PygameMatchRenderer:
                 self._last_counter_target   = (e.data or {}).get("attacker")
             elif e.event_type == "GRIP_ESTABLISH":
                 grip_seat_this_tick += 1
-            # Stash everything-with-a-description into the ticker.
-            if e.description:
+            # Stash narratively-significant events with a description
+            # into the ticker. The threshold (default STANDS = 4)
+            # drops per-tick mechanics — movement narration,
+            # SUB_TSUKURI, SUB_KAKE_COMMIT, baseline grip churn — and
+            # keeps narrative beats (kuzushi induction, grip kills,
+            # throws, scores, referee). Significance is set on the
+            # event at emit time by `significance_for(...)` in match.py
+            # so by the time it reaches the renderer the floor is
+            # already correct.
+            if e.description and getattr(
+                e, "significance", THRESHOLD_MAT_SIDE,
+            ) >= self._ticker_altitude_threshold:
                 self._event_log.append((tick, e.description, self._frame_idx))
         if grip_seat_this_tick >= GRIP_SEAT_THRESHOLD:
             self._last_grip_seat_tick = tick
