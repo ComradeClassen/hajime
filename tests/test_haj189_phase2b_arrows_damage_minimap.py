@@ -20,7 +20,7 @@ from match import Match
 from referee import build_suzuki
 import main as main_module
 
-from phase1_viewer import (
+from viewer_capture import (
     ARROW_KIND_ACTUAL,
     ARROW_KIND_INTENT,
     DAMAGE_COMPROMISED,
@@ -424,7 +424,7 @@ def test_topdown_hand_positions_forward_facing() -> None:
     """Forward facing (+x) puts left hand at body +y (above) and
     right hand at body -y (below) when the rotation convention is
     facing=+x → perp=+y. 30cm forward, 22cm lateral."""
-    from phase1_viewer import _topdown_hand_positions_mat
+    from viewer_capture import topdown_hand_positions_mat as _topdown_hand_positions_mat
     left, right = _topdown_hand_positions_mat((0.0, 0.0), (1.0, 0.0))
     assert left  == (0.30, 0.22)
     assert right == (0.30, -0.22)
@@ -432,7 +432,7 @@ def test_topdown_hand_positions_forward_facing() -> None:
 
 def test_topdown_hand_positions_reverse_facing_mirrors() -> None:
     """Facing -x flips left/right hands across the y-axis."""
-    from phase1_viewer import _topdown_hand_positions_mat
+    from viewer_capture import topdown_hand_positions_mat as _topdown_hand_positions_mat
     left, right = _topdown_hand_positions_mat((0.0, 0.0), (-1.0, 0.0))
     assert left  == (-0.30, -0.22)
     assert right == (-0.30, 0.22)
@@ -442,7 +442,7 @@ def test_owned_hands_by_grasper_indexes_correctly() -> None:
     """Index returns {grasper_id: {hand_part, ...}} for active edges
     only — no entry when no edges, only the hand parts that own
     grips listed."""
-    from phase1_viewer import owned_hands_by_grasper, GripEdgeView
+    from viewer_capture import owned_hands_by_grasper, GripEdgeView
     edges = [
         GripEdgeView(
             edge_id=1, grasper_id="X", grasper_identity=Identity.BLUE,

@@ -468,16 +468,11 @@ if __name__ == "__main__":
                              "alongside the match. Dev-tool only — reads "
                              "match state, never mutates it. Requires "
                              "pygame (`pip install pygame-ce`).")
-    parser.add_argument("--viewer-phase1", action="store_true",
-                        help="HAJ-187: open the anatomical Phase 1 viewer "
-                             "(bodies, clock, score, text-burst captioning). "
-                             "Mutually exclusive with --viewer.")
     parser.add_argument("--viewer-tps", type=float, default=None,
                         help="Viewer pacing in ticks/second of wall clock "
-                             "(default 0.5 — ~2s per engine tick, slow "
-                             "enough to actually read state changes). "
-                             "1.0 = real-time, higher = sped up. Use +/- "
-                             "in the viewer window to scrub live.")
+                             "(default 1.25). 1.0 = real-time, higher = "
+                             "sped up. Use +/- in the viewer window to "
+                             "scrub live.")
     args = parser.parse_args()
 
     import random
@@ -521,10 +516,8 @@ if __name__ == "__main__":
         def debug_factory():
             return None
 
-    # HAJ-125 / HAJ-187 — viewer factory. Imported lazily so the rest
-    # of main.py never needs pygame loaded.
-    if args.viewer and args.viewer_phase1:
-        parser.error("--viewer and --viewer-phase1 are mutually exclusive.")
+    # HAJ-125 — viewer factory. Imported lazily so the rest of
+    # main.py never needs pygame loaded.
     if args.viewer:
         try:
             from match_viewer import (
@@ -537,21 +530,6 @@ if __name__ == "__main__":
         tps = args.viewer_tps if args.viewer_tps is not None else DEFAULT_TICKS_PER_SECOND
         def renderer_factory():
             return PygameMatchRenderer(ticks_per_second=tps)
-    elif args.viewer_phase1:
-        try:
-            from phase1_viewer import (
-                Phase1AnatomicalRenderer, DEFAULT_PLAYBACK_RATE,
-            )
-        except ImportError as e:
-            parser.error(
-                f"--viewer-phase1 needs pygame: {e}. "
-                "Install with `pip install pygame-ce`."
-            )
-        rate = (args.viewer_tps
-                if args.viewer_tps is not None
-                else DEFAULT_PLAYBACK_RATE)
-        def renderer_factory():
-            return Phase1AnatomicalRenderer(playback_rate=rate)
     else:
         def renderer_factory():
             return None

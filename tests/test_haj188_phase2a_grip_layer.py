@@ -25,7 +25,7 @@ from match import Match
 from referee import build_suzuki
 import main as main_module
 
-from phase1_viewer import (
+from viewer_capture import (
     EDGE_STATE_COMPROMISED,
     EDGE_STATE_CONTESTED,
     EDGE_STATE_DEEPENING,
@@ -401,7 +401,7 @@ def test_switched_ownership_flash_actually_fires_on_same_target() -> None:
     #
     # The detector still needs to be wired right for the abstraction.
     # Test that detector with synthetic snapshots instead.
-    from phase1_viewer import _derive_grip_node_flashes
+    from viewer_capture import _derive_grip_node_flashes
     cur_edge = GripEdgeView(
         edge_id=999, grasper_id="X", grasper_identity=Identity.WHITE,
         grasper_part="right_hand", target_id="Y",
@@ -475,7 +475,7 @@ def test_grip_event_descriptions_become_text_bursts_same_tick() -> None:
 # we confirm the per-kind base durations exist and are positive.)
 # ---------------------------------------------------------------------------
 def test_node_flash_base_durations_are_positive() -> None:
-    from phase1_viewer import _node_flash_base_duration
+    from viewer_capture import node_flash_base_duration as _node_flash_base_duration
     for kind in (NODE_FLASH_STRIPPED, NODE_FLASH_DEEPENED,
                  NODE_FLASH_COMPROMISED, NODE_FLASH_SWITCHED):
         assert _node_flash_base_duration(kind) > 0

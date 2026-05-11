@@ -21,7 +21,7 @@ from match import Match, Renderer
 from referee import build_suzuki
 import main as main_module
 
-from phase1_viewer import (
+from viewer_capture import (
     ANATOMICAL_REGIONS,
     Identity,
     MatchClockView,

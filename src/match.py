@@ -970,8 +970,9 @@ class Match:
         # commit) and per-fighter perception bookkeeping read by the
         # reaction-lag math.
         self._intent_signals: list[IntentSignal] = []
-        # HAJ-189 — viewer-facing per-tick force state. The Phase 2b
-        # anatomical viewer (phase1_viewer.py) needs both the *requested*
+        # HAJ-189 — viewer-facing per-tick force state. The dev
+        # viewer (capture layer in src/viewer_capture.py) needs the
+        # *requested*
         # (intent) and *delivered* (actual) force vector per fighter so
         # it can render the gray-vs-solid arrow grammar. Populated by
         # _compute_net_force_on each tick; reset at the top of every
