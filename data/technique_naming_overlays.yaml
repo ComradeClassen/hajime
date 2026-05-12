@@ -1,0 +1,16 @@
+# Technique naming overlay — HAJ-204 skeleton fixture.
+#
+# Per design-notes/triage/technique-vocabulary-system.md Section 2 ("The
+# catalog as data file"): the naming overlay lives in a separate file from
+# the canonical catalog because it grows during play, while the catalog is
+# authored once.
+#
+# Section 2 also locks the starting state: the overlay ships empty.
+# Custom names emerge through play (master-tier acquisition, seminar
+# propagation, lineage inheritance). The empty list below is intentional;
+# overlays appear here only via simulation, not authoring.
+#
+# The Cranford anchor dojo specifically gets no pre-applied overlay names
+# (Section 11 Q9 — "nothing pre-authored").
+
+overlays: []

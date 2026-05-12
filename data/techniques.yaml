@@ -1,0 +1,117 @@
+# Technique catalog — HAJ-204 skeleton fixture.
+#
+# This file is a small hand-authored sample (4 techniques) used to exercise
+# the schema and loader. The full 40–60-technique catalog authored from
+# Kodokan Judo (Kano) and Judo Unleashed (Ohlenkamp) is HAJ-205. Entries
+# here are minimally plausible but should not be treated as competition-
+# accurate authoring — they exist to validate the loader path.
+#
+# Schema reference: design-notes/triage/technique-vocabulary-system.md
+# Section 2. Loader: src/technique_catalog.py.
+
+techniques:
+  - technique_id: uchi_mata
+    name_japanese: Uchi-mata
+    name_english: Inner Thigh Throw
+    family: koshi_waza
+    subfamily: forward_throw
+    kodokan_status: gokyo_no_waza
+    canonical_grip_signature:
+      tori_required_grips:
+        - hand: tori_left
+          target_region: uke_sleeve_upper
+          minimum_depth: controlled
+        - hand: tori_right
+          target_region: uke_lapel_high
+          minimum_depth: controlled
+      uke_disqualifying_grips:
+        - hand: tori_right
+          target_region: uke_sleeve_lower
+          minimum_depth: deep
+    kuzushi_vector:
+      - forward_right_diagonal
+      - forward_pure
+    couple_type: forward_rotation_about_hip_axis
+    posture_requirements: upright_or_forward_compromised
+    base_difficulty: 70
+    pedagogical_prerequisites:
+      - harai_goshi
+    minimum_belt_for_competition_use: green
+    failed_throw_consequence: uke_lands_stomach
+    ne_waza_followup_preferences:
+      - kesa_gatame
+    era_introduced: 1895
+
+  - technique_id: o_soto_gari
+    name_japanese: O-soto-gari
+    name_english: Major Outer Reap
+    family: ashi_waza
+    subfamily: rear_throw
+    kodokan_status: gokyo_no_waza
+    canonical_grip_signature:
+      tori_required_grips:
+        - hand: tori_left
+          target_region: uke_sleeve_upper
+          minimum_depth: shallow
+        - hand: tori_right
+          target_region: uke_lapel_high
+          minimum_depth: controlled
+      uke_disqualifying_grips: []
+    kuzushi_vector:
+      - rear_right_diagonal
+      - direct_rear
+    couple_type: reverse_rotation_about_shoulder_axis
+    posture_requirements: extended_backward
+    base_difficulty: 35
+    minimum_belt_for_competition_use: yellow
+    failed_throw_consequence: tori_falls_to_back
+    era_introduced: 1895
+
+  - technique_id: seoi_nage
+    name_japanese: Seoi-nage
+    name_english: Shoulder Throw
+    family: te_waza
+    subfamily: forward_throw
+    kodokan_status: gokyo_no_waza
+    canonical_grip_signature:
+      tori_required_grips:
+        - hand: tori_left
+          target_region: uke_sleeve_upper
+          minimum_depth: deep
+        - hand: tori_right
+          target_region: uke_lapel_high
+          minimum_depth: controlled
+    kuzushi_vector:
+      - forward_pure
+    couple_type: forward_rotation_about_shoulder_axis
+    posture_requirements: bent_forward
+    base_difficulty: 55
+    pedagogical_prerequisites: []
+    minimum_belt_for_competition_use: yellow
+    failed_throw_consequence: tori_to_knees
+    era_introduced: 1895
+
+  - technique_id: tomoe_nage
+    name_japanese: Tomoe-nage
+    name_english: Circle Throw
+    family: sutemi_waza
+    subfamily: forward_throw
+    kodokan_status: gokyo_no_waza
+    canonical_grip_signature:
+      tori_required_grips:
+        - hand: tori_left
+          target_region: uke_sleeve_upper
+          minimum_depth: controlled
+        - hand: tori_right
+          target_region: uke_lapel_high
+          minimum_depth: controlled
+    kuzushi_vector:
+      - forward_pure
+    couple_type: lever_inverted_commit
+    posture_requirements: upright_or_forward_compromised
+    base_difficulty: 60
+    minimum_belt_for_competition_use: green
+    failed_throw_consequence: tori_falls_to_back
+    ne_waza_followup_preferences:
+      - juji_gatame
+    era_introduced: 1895
