@@ -640,6 +640,11 @@ class Chronicle:
     def __contains__(self, entry_id: object) -> bool:
         return entry_id in self._entries
 
+    def __iter__(self):
+        """Iterate over all entries in insertion order (chronological when
+        the orchestrator writes them in order)."""
+        return iter(self._entries.values())
+
     def get(self, entry_id: str) -> Optional[ChronicleEntry]:
         return self._entries.get(entry_id)
 
