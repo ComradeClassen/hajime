@@ -42,9 +42,9 @@ techniques:
       - kesa_gatame
     era_introduced: 1895
 
-  - technique_id: o_soto_gari
-    name_japanese: O-soto-gari
-    name_english: Major Outer Reap
+  - technique_id: osoto_gari
+    name_japanese: Osoto-gari
+    name_english: Large Outer Reap
     family: ashi_waza
     subfamily: rear_throw
     kodokan_status: gokyo_no_waza
