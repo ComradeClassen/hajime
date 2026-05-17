@@ -1,5 +1,5 @@
 # technique_catalog.py
-# Schema + loader for the technique vocabulary substrate (HAJ-204).
+# Schema + loader for the technique vocabulary substrate (HAJ-204, revised HAJ-213).
 #
 # Implements:
 #   - TechniqueDefinition       — one entry in the canonical catalog
@@ -8,9 +8,16 @@
 #   - load_catalog              — YAML/JSON → dict[technique_id, TechniqueDefinition]
 #   - load_naming_overlays      — YAML/JSON → dict[(dojo_id, technique_id), overlay]
 #
-# Schema is locked by design-notes/triage/technique-vocabulary-system.md v1.1.
+# Schema is locked by design-notes/triage/technique-vocabulary-system.md v1.2.
 # Section 2 defines TechniqueDefinition and TechniqueNamingOverlay.
 # Section 5 defines TechniqueRecord and its bidirectional ledger.
+#
+# HAJ-213 schema revision (v1.2): canonical_grip_signatures is a list (was a
+# single signature) to express genuine multi-configuration variants; each
+# signature carries mirror_eligible (engine auto-mirrors for opposite-stance
+# judoka, not authored explicitly). kuzushi_vector split into admissible
+# (required, gates Stage 2 selection) + primary (optional, scoring/prose).
+# Admissible accepts the `any` wildcard for omnidirectional techniques.
 #
 # Validation here is intentionally basic: required fields, enum membership,
 # grip-signature internal shape, kuzushi-vector parsing, sensible eras.
@@ -128,12 +135,17 @@ class NamingType(Enum):
 
 # ---------------------------------------------------------------------------
 # STAGE 1 — GRIP SIGNATURE
+# Section 2 (v1.2) — `canonical_grip_signatures` is a list of these. A
+# technique is Stage 1-available if ANY signature in the list is satisfied.
+# Most techniques have a single-entry list; multi-entry lists express
+# genuinely distinct grip variants of the same technique (e.g., classic
+# vs. one-handed seoi-nage).
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class GripSpec:
-    """One grip the canonical signature names.
+    """One grip a signature names.
 
-    Section 2 "tori_required_grips" / "uke_disqualifying_grips" each contain
+    Each signature's tori_required_grips / uke_disqualifying_grips contain
     a list of these.
     """
     hand: GripHand
@@ -142,19 +154,32 @@ class GripSpec:
 
 
 @dataclass
-class CanonicalGripSignature:
+class GripSignature:
+    """One valid grip configuration for a technique.
+
+    `mirror_eligible` declares the engine should auto-mirror this signature
+    for opposite-stance judoka at Stage 1 filter time. Authors record only
+    the canonical (right-stance) configuration; lefty equivalents are
+    handled by the judoka substrate downstream, not by listing duplicate
+    entries here.
+    """
     tori_required_grips: list[GripSpec] = field(default_factory=list)
     uke_disqualifying_grips: list[GripSpec] = field(default_factory=list)
+    mirror_eligible: bool = True
 
 
 # ---------------------------------------------------------------------------
-# KUZUSHI VECTOR
-# Section 2 declares `kuzushi_vector` as a list of body-frame direction
-# strings (e.g. "forward_right_diagonal", "direct_rear", "forward_pure").
-# We keep the free-string form here — full physics-substrate validation is
-# HAJ-211. Parsing only enforces the shape: a non-empty list of recognised
-# direction tokens.
+# KUZUSHI VECTORS
+# Section 2 (v1.2) splits the v1.1 `kuzushi_vector` into:
+#   - admissible_kuzushi_vectors — required; gates Stage 2 selection. The
+#     special token "any" is a wildcard meaning all directions (used for
+#     omnidirectional techniques like foot sweeps).
+#   - primary_kuzushi_vectors    — optional; subset of admissible used for
+#     scoring quality and prose surfaces. Defaults to a copy of admissible.
+# Full physics-substrate validation remains HAJ-211.
 # ---------------------------------------------------------------------------
+KUZUSHI_ANY_TOKEN = "any"
+
 KUZUSHI_DIRECTION_TOKENS: frozenset[str] = frozenset({
     "forward_pure",
     "forward_right_diagonal",
@@ -173,8 +198,8 @@ class TechniqueDefinition:
     """One entry in the canonical technique catalog.
 
     Schema mirrors design-notes/triage/technique-vocabulary-system.md
-    Section 2. Field order matches the design doc's section order so the
-    YAML is readable next to the spec.
+    Section 2 (v1.2). Field order matches the design doc's section order so
+    the YAML is readable next to the spec.
     """
     # Identity
     technique_id: str
@@ -186,16 +211,20 @@ class TechniqueDefinition:
     subfamily: str
     kodokan_status: KodokanStatus
 
-    # Stage 1 — availability
-    canonical_grip_signature: CanonicalGripSignature
+    # Stage 1 — availability (list: any signature satisfied → available)
+    canonical_grip_signatures: list[GripSignature]
 
     # Stage 2 — kinetic preconditions
-    kuzushi_vector: list[str]
+    admissible_kuzushi_vectors: list[str]               # ["any"] wildcard supported
     couple_type: str
     posture_requirements: UkePostureRequirement
 
     # Difficulty & pedagogy
     base_difficulty: int                                # 0–100
+
+    # Optional Stage 2 — primary (scoring/prose); defaults to admissible.
+    primary_kuzushi_vectors: list[str] = field(default_factory=list)
+
     pedagogical_prerequisites: list[str] = field(default_factory=list)
     minimum_belt_for_competition_use: Optional[str] = None
 
@@ -206,6 +235,10 @@ class TechniqueDefinition:
     # Era
     era_introduced: Optional[int] = None
     era_restricted: Optional[int] = None
+
+    def is_omnidirectional(self) -> bool:
+        """True if admissible_kuzushi_vectors uses the `any` wildcard."""
+        return KUZUSHI_ANY_TOKEN in self.admissible_kuzushi_vectors
 
 
 # ---------------------------------------------------------------------------
@@ -334,12 +367,10 @@ def _parse_grip_spec(raw: dict, context: str) -> GripSpec:
     )
 
 
-def _parse_grip_signature(raw: Any, context: str) -> CanonicalGripSignature:
-    if raw is None:
-        return CanonicalGripSignature()
+def _parse_grip_signature(raw: Any, context: str) -> GripSignature:
     if not isinstance(raw, dict):
         raise CatalogValidationError(
-            f"{context}: canonical_grip_signature must be a mapping"
+            f"{context}: grip signature must be a mapping"
         )
     tori_raw = raw.get("tori_required_grips", []) or []
     uke_raw = raw.get("uke_disqualifying_grips", []) or []
@@ -347,7 +378,12 @@ def _parse_grip_signature(raw: Any, context: str) -> CanonicalGripSignature:
         raise CatalogValidationError(
             f"{context}: grip signature lists must be sequences"
         )
-    return CanonicalGripSignature(
+    mirror_raw = raw.get("mirror_eligible", True)
+    if not isinstance(mirror_raw, bool):
+        raise CatalogValidationError(
+            f"{context}.mirror_eligible: expected boolean, got {type(mirror_raw).__name__}"
+        )
+    return GripSignature(
         tori_required_grips=[
             _parse_grip_spec(g, f"{context}.tori_required_grips[{i}]")
             for i, g in enumerate(tori_raw)
@@ -356,13 +392,76 @@ def _parse_grip_signature(raw: Any, context: str) -> CanonicalGripSignature:
             _parse_grip_spec(g, f"{context}.uke_disqualifying_grips[{i}]")
             for i, g in enumerate(uke_raw)
         ],
+        mirror_eligible=mirror_raw,
     )
 
 
-def _parse_kuzushi_vector(raw: Any, context: str) -> list[str]:
+def _parse_grip_signatures(raw: Any, context: str) -> list[GripSignature]:
     if not isinstance(raw, list) or not raw:
         raise CatalogValidationError(
-            f"{context}: kuzushi_vector must be a non-empty list of direction strings"
+            f"{context}: canonical_grip_signatures must be a non-empty list of grip signatures"
+        )
+    return [
+        _parse_grip_signature(sig, f"{context}[{i}]")
+        for i, sig in enumerate(raw)
+    ]
+
+
+def _parse_admissible_kuzushi(raw: Any, context: str) -> list[str]:
+    """Parse admissible_kuzushi_vectors.
+
+    Accepts the literal string `any` (treated as `[\"any\"]`) or a non-empty
+    list of direction tokens. The `any` wildcard may appear inside a list,
+    in which case the list must contain only that token.
+    """
+    if isinstance(raw, str):
+        if raw != KUZUSHI_ANY_TOKEN:
+            raise CatalogValidationError(
+                f"{context}: scalar string only valid as '{KUZUSHI_ANY_TOKEN}' wildcard, got {raw!r}"
+            )
+        return [KUZUSHI_ANY_TOKEN]
+    if not isinstance(raw, list) or not raw:
+        raise CatalogValidationError(
+            f"{context}: admissible_kuzushi_vectors must be the '{KUZUSHI_ANY_TOKEN}' wildcard "
+            "or a non-empty list of direction tokens"
+        )
+    if KUZUSHI_ANY_TOKEN in raw and len(raw) > 1:
+        raise CatalogValidationError(
+            f"{context}: '{KUZUSHI_ANY_TOKEN}' wildcard cannot be combined with explicit directions"
+        )
+    if raw == [KUZUSHI_ANY_TOKEN]:
+        return [KUZUSHI_ANY_TOKEN]
+    unknown = [v for v in raw if v not in KUZUSHI_DIRECTION_TOKENS]
+    if unknown:
+        valid = ", ".join(sorted(KUZUSHI_DIRECTION_TOKENS))
+        raise CatalogValidationError(
+            f"{context}: unknown kuzushi direction(s) {unknown}; expected from: {valid}"
+        )
+    return list(raw)
+
+
+def _parse_primary_kuzushi(
+    raw: Any,
+    admissible: list[str],
+    context: str,
+) -> list[str]:
+    """Parse primary_kuzushi_vectors (optional).
+
+    If omitted, returns a copy of admissible. If given, must be a non-empty
+    list of direction tokens, each present in admissible — except when
+    admissible is the `any` wildcard, in which case primary may be any
+    subset of known directions.
+    """
+    if raw is None:
+        return list(admissible)
+    if not isinstance(raw, list) or not raw:
+        raise CatalogValidationError(
+            f"{context}: primary_kuzushi_vectors must be a non-empty list of direction tokens"
+        )
+    if KUZUSHI_ANY_TOKEN in raw:
+        raise CatalogValidationError(
+            f"{context}: primary_kuzushi_vectors cannot contain the '{KUZUSHI_ANY_TOKEN}' wildcard; "
+            "primary directions must be explicit"
         )
     unknown = [v for v in raw if v not in KUZUSHI_DIRECTION_TOKENS]
     if unknown:
@@ -370,6 +469,12 @@ def _parse_kuzushi_vector(raw: Any, context: str) -> list[str]:
         raise CatalogValidationError(
             f"{context}: unknown kuzushi direction(s) {unknown}; expected from: {valid}"
         )
+    if admissible != [KUZUSHI_ANY_TOKEN]:
+        not_in_admissible = [v for v in raw if v not in admissible]
+        if not_in_admissible:
+            raise CatalogValidationError(
+                f"{context}: primary direction(s) {not_in_admissible} not in admissible_kuzushi_vectors {admissible}"
+            )
     return list(raw)
 
 
@@ -431,6 +536,16 @@ def _parse_definition(raw: Any) -> TechniqueDefinition:
             f"{ctx}: ne_waza_followup_preferences must be a list of technique_id strings"
         )
 
+    admissible = _parse_admissible_kuzushi(
+        _require_field(raw, "admissible_kuzushi_vectors", ctx),
+        f"{ctx}.admissible_kuzushi_vectors",
+    )
+    primary = _parse_primary_kuzushi(
+        raw.get("primary_kuzushi_vectors"),
+        admissible,
+        f"{ctx}.primary_kuzushi_vectors",
+    )
+
     return TechniqueDefinition(
         technique_id=technique_id,
         name_japanese=_require_field(raw, "name_japanese", ctx),
@@ -440,12 +555,12 @@ def _parse_definition(raw: Any) -> TechniqueDefinition:
         kodokan_status=_coerce_enum(
             KodokanStatus, _require_field(raw, "kodokan_status", ctx), context=f"{ctx}.kodokan_status"
         ),
-        canonical_grip_signature=_parse_grip_signature(
-            raw.get("canonical_grip_signature"), f"{ctx}.canonical_grip_signature"
+        canonical_grip_signatures=_parse_grip_signatures(
+            _require_field(raw, "canonical_grip_signatures", ctx),
+            f"{ctx}.canonical_grip_signatures",
         ),
-        kuzushi_vector=_parse_kuzushi_vector(
-            _require_field(raw, "kuzushi_vector", ctx), f"{ctx}.kuzushi_vector"
-        ),
+        admissible_kuzushi_vectors=admissible,
+        primary_kuzushi_vectors=primary,
         couple_type=_require_field(raw, "couple_type", ctx),
         posture_requirements=_coerce_enum(
             UkePostureRequirement,

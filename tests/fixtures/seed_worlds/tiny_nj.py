@@ -46,10 +46,10 @@ from orchestrator import (
 )
 from technique_catalog import (
     AcquisitionSource,
-    CanonicalGripSignature,
     FailedThrowConsequence,
     GripDepth,
     GripHand,
+    GripSignature,
     GripSpec,
     GripTargetRegion,
     KodokanStatus,
@@ -91,16 +91,18 @@ def _build_test_catalog() -> dict[str, TechniqueDefinition]:
                 family=family,
                 subfamily="forward_throw",
                 kodokan_status=KodokanStatus.GOKYO_NO_WAZA,
-                canonical_grip_signature=CanonicalGripSignature(
-                    tori_required_grips=[
-                        GripSpec(
-                            hand=GripHand.TORI_RIGHT,
-                            target_region=GripTargetRegion.UKE_LAPEL_HIGH,
-                            minimum_depth=GripDepth.CONTROLLED,
-                        ),
-                    ],
-                ),
-                kuzushi_vector=["forward_pure"],
+                canonical_grip_signatures=[
+                    GripSignature(
+                        tori_required_grips=[
+                            GripSpec(
+                                hand=GripHand.TORI_RIGHT,
+                                target_region=GripTargetRegion.UKE_LAPEL_HIGH,
+                                minimum_depth=GripDepth.CONTROLLED,
+                            ),
+                        ],
+                    ),
+                ],
+                admissible_kuzushi_vectors=["forward_pure"],
                 couple_type="placeholder",
                 posture_requirements=UkePostureRequirement.ANY,
                 base_difficulty=40 + j * 5,

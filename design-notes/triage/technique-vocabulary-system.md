@@ -1,6 +1,6 @@
 # Technique Vocabulary System
 
-**Status:** Draft v1.1 — 2026-05-11
+**Status:** Draft v1.2 — 2026-05-17
 **Scope:** Supersedes the v2 worldgen spec's treatment of "signature strength" as a base resolver dimension. Establishes the full per-judoka technique vocabulary substrate.
 **Related:** `ring-2-worldgen-spec-v2.md`, `physics-substrate.md`, `grip-as-cause.md`, `Judo_Biomechanics_for_Simulation__Kuzushi__Couples__and_Levers.md`, `ne-waza-substrate.md`
 
@@ -18,8 +18,8 @@ The other four resolver dimensions (tachiwaza, ne-waza, conditioning, fight IQ) 
 
 **Engine implications.** This reframe is also load-bearing for the Ring 1 match engine. The vocabulary system implies a two-stage technique resolution model:
 
-- **Stage 1 (availability):** The current grip configuration determines which techniques are available. Each technique in the catalog declares a `canonical_grip_signature` — positive constraints (grips that must be present) and negative constraints (opponent grips that must be absent). A technique is available iff the current grip graph satisfies both.
-- **Stage 2 (selection):** When kuzushi fires, one technique is selected from the available set based on the kuzushi vector matching the technique's `kinetic_preconditions`, the judoka's proficiency, fight IQ, conditioning, and a stochastic component.
+- **Stage 1 (availability):** The current grip configuration determines which techniques are available. Each technique in the catalog declares one or more `canonical_grip_signatures` — each signature has positive constraints (grips that must be present) and negative constraints (opponent grips that must be absent). A technique is available iff *at least one* signature is satisfied by the current grip graph (accounting for `mirror_eligible` and the judoka's stance).
+- **Stage 2 (selection):** When kuzushi fires, one technique is selected from the available set based on the kuzushi vector being in the technique's `admissible_kuzushi_vectors`, the judoka's proficiency, fight IQ, conditioning, and a stochastic component. Scoring quality is influenced by whether the kuzushi vector is also in the technique's `primary_kuzushi_vectors`.
 
 Grip configuration *gates the menu*. Kuzushi *selects the order from the menu*. Both stages are necessary; neither alone is sufficient.
 
@@ -51,17 +51,34 @@ Each entry in the catalog is a `TechniqueDefinition` with the following schema:
 
 ### Stage 1 fields — grip availability
 
-- `canonical_grip_signature` — a structured configuration constraint with two parts:
+- `canonical_grip_signatures` — a list of structured configuration constraints. A technique is available at Stage 1 if *any one* signature in the list is satisfied by the current grip graph. Most techniques have a single-entry list; multi-entry lists express genuinely distinct grip variants of the same technique (e.g., classic seoi-nage vs. one-handed seoi-nage — different grip configurations, same throw). Each entry has three parts:
   - `tori_required_grips` — list of grip specifications the executing judoka *must* hold. Each spec names a hand (tori_left | tori_right), a target region (uke_lapel_high | uke_lapel_low | uke_sleeve_upper | uke_sleeve_lower | uke_back | uke_belt), and a minimum depth (shallow | controlled | deep).
-  - `uke_disqualifying_grips` — list of grip specifications that, if held by the opponent, *block* this technique from availability. Often expressed as "opponent must not have controlled-or-deep grip on tori's throwing-side sleeve" or similar. May be empty for some techniques.
+  - `uke_disqualifying_grips` — list of grip specifications that, if held by the opponent, *block* this signature from satisfaction. Often expressed as "opponent must not have controlled-or-deep grip on tori's throwing-side sleeve" or similar. May be empty.
+  - `mirror_eligible` (boolean, default `true`) — declares that the engine should automatically test this signature's mirror image at Stage 1 against opposite-stance judoka. Set to `false` only for techniques that genuinely do not mirror. Authors do **not** write mirror variants explicitly — the catalog records one canonical configuration (by convention, right-stance) and the engine handles the lefty mirror via the judoka's stance attribute. This keeps the catalog compact and avoids the maintenance burden of duplicate mirror entries.
 
-The Stage 1 availability filter takes the current grip graph and returns the set of techniques whose `canonical_grip_signature` is satisfied. This is consulted every tick during action selection; performance matters at scale (Ring 2 resolver runs thousands of matches per simulated year).
+The Stage 1 availability filter takes the current grip graph and returns the set of techniques whose `canonical_grip_signatures` contain at least one satisfied signature (accounting for `mirror_eligible` and judoka stance). This is consulted every tick during action selection; performance matters at scale (Ring 2 resolver runs thousands of matches per simulated year).
 
 ### Stage 2 fields — kinetic preconditions
 
-- `kuzushi_vector` — the direction of opponent balance-break required for entry, in body-frame coordinates (e.g., `forward_right_diagonal`, `direct_rear`, `forward_pure`). Multiple permitted (`[forward_right_diagonal, forward_pure]`).
+- `admissible_kuzushi_vectors` — the directions of opponent balance-break in which the technique *can* fire, in body-frame coordinates (e.g., `forward_right_diagonal`, `direct_rear`, `forward_pure`). Stage 2 selection consults this field: when kuzushi fires in direction D, a technique is eligible iff D is in its admissible list. The special token `any` is a wildcard meaning all directions — used for omnidirectional techniques like foot sweeps that admit kuzushi in whatever direction matches uke's step.
+- `primary_kuzushi_vectors` (optional) — subset of `admissible_kuzushi_vectors` that represents the technique's *scoring* directions, used by the landing-quality roll and by prose surfaces ("M. Okada's forward-throw repertoire"). If omitted, defaults to equal `admissible_kuzushi_vectors`. For uchi-mata, primary equals admissible. For deashi-harai, admissible is `any` but primary is `[forward_right_diagonal, forward_left_diagonal]` — sweeping forward scores cleanest, even though the sweep can fire in any direction.
 - `couple_type` — the biomechanical couple the technique exploits, from the physics substrate vocabulary (e.g., `forward_rotation_about_hip_axis`, `reverse_rotation_about_shoulder_axis`). Tied to the existing `Judo_Biomechanics_for_Simulation` framework.
 - `posture_requirements` — opponent postural state that enables the technique (`upright_or_forward_compromised`, `bent_forward`, `extended_backward`, `any`). Often correlated with kuzushi vector but encoded separately for cases where they decouple.
+
+### Schema-revision rationale (v1.2)
+
+The v1.1 schema treated `canonical_grip_signature` and `kuzushi_vector` as single-configuration fields. Catalog authoring against Kodokan Judo (HAJ-205) immediately hit two cases the v1.1 shape couldn't represent cleanly:
+
+1. **Multi-configuration grip variants.** Some techniques (seoi-nage classic vs. one-handed, etc.) admit genuinely distinct grip configurations that are not mirrors of each other. The v1.1 shape forced a single canonical, misrepresenting the technique.
+2. **Lefty/righty mirroring.** Almost all judo techniques mirror, but the v1.1 shape conflated "the canonical right-stance grip" with "the only grip." Authoring mirror duplicates would double the catalog and risk drift.
+3. **Omnidirectional and admissible-vs-primary distinction.** The v1.1 `kuzushi_vector` was being authored as the *primary scoring* direction, but Stage 2 selection actually wants the *admissible* set. Foot sweeps in particular admit kuzushi in any direction matching uke's step.
+
+The v1.2 decisions:
+
+- **Grip: list-of-signatures, not per-grip alternation.** Per-grip `target_region: [a, b]` alternation fails because alternations across grips are coupled (tori_left=sleeve goes with tori_right=lapel, not tori_right=sleeve). List-of-signatures captures coupled alternation naturally and treats each variant as a complete configuration.
+- **Mirroring is engine-handled, not catalog-authored.** `mirror_eligible: true` (default) declares that the engine should auto-mirror at Stage 1 filter time based on judoka stance. The judoka stance attribute lives in the judoka substrate, not in the catalog. This keeps the catalog the size of "variants that actually differ" rather than 2× that.
+- **Kuzushi semantics split: admissible (required) + primary (optional).** Admissible drives Stage 2 selection; primary drives scoring and prose. Defaulting primary to admissible keeps the common case ergonomic.
+- **`any` wildcard for admissible kuzushi.** Foot sweeps and similarly omnidirectional techniques get to declare their nature compactly rather than listing all nine directions.
 
 ### Difficulty and pedagogical fields
 

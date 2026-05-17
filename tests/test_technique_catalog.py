@@ -1,15 +1,17 @@
-# test_technique_catalog.py — HAJ-204 acceptance tests.
+# test_technique_catalog.py — HAJ-204 acceptance tests, revised under HAJ-213.
 #
 # Exercises src/technique_catalog.py against the hand-authored sample
 # catalog (data/techniques.yaml) plus inline malformed fixtures.
 #
-# Coverage targets from the ticket:
-#   - Dataclasses match Section 2 / Section 5 schema
+# Coverage targets from HAJ-204 + HAJ-213:
+#   - Dataclasses match Section 2 / Section 5 schema (v1.2)
 #   - Loader reads YAML and returns dict[technique_id, definition]
 #   - Loader handles missing optional fields gracefully
 #   - Basic schema validation rejects malformed entries with clear errors
-#   - All schema sections (identity, classification, grip signature, kinetic
+#   - All schema sections (identity, classification, grip signatures, kinetic
 #     preconditions, difficulty, ne-waza, era) are exercised
+#   - Multi-signature grip lists, mirror_eligible default + override
+#   - admissible_kuzushi_vectors `any` wildcard and primary subset
 #   - Naming overlay loader (including the empty file case)
 
 from __future__ import annotations
@@ -25,14 +27,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from technique_catalog import (
     AcquisitionSource,
-    CanonicalGripSignature,
     CatalogValidationError,
     FailedThrowConsequence,
     GripDepth,
     GripHand,
+    GripSignature,
     GripSpec,
     GripTargetRegion,
     KodokanStatus,
+    KUZUSHI_ANY_TOKEN,
     NamingType,
     PROFICIENCY_ORDER,
     ProficiencyTier,
@@ -81,6 +84,15 @@ def test_technique_record_default_construction():
     assert record.last_used_year is None
 
 
+def test_grip_signature_mirror_eligible_default():
+    # Section 2 (v1.2): mirror_eligible defaults to True so authors record
+    # only the canonical configuration; the engine handles lefty mirrors.
+    sig = GripSignature()
+    assert sig.mirror_eligible is True
+    assert sig.tori_required_grips == []
+    assert sig.uke_disqualifying_grips == []
+
+
 def test_naming_overlay_round_trip_shape():
     overlay = TechniqueNamingOverlay(
         dojo_id="cranford_jkc",
@@ -100,7 +112,9 @@ def test_naming_overlay_round_trip_shape():
 # ---------------------------------------------------------------------------
 def test_load_sample_catalog_yaml():
     catalog = load_catalog(SAMPLE_CATALOG)
-    assert set(catalog.keys()) == {"uchi_mata", "o_soto_gari", "seoi_nage", "tomoe_nage"}
+    assert set(catalog.keys()) == {
+        "deashi_harai", "uchi_mata", "osoto_gari", "seoi_nage", "tomoe_nage"
+    }
 
     uchi = catalog["uchi_mata"]
     # Identity
@@ -110,16 +124,21 @@ def test_load_sample_catalog_yaml():
     assert uchi.family is TechniqueFamily.KOSHI_WAZA
     assert uchi.subfamily == "forward_throw"
     assert uchi.kodokan_status is KodokanStatus.GOKYO_NO_WAZA
-    # Stage 1 — grip signature
-    assert len(uchi.canonical_grip_signature.tori_required_grips) == 2
-    first_grip = uchi.canonical_grip_signature.tori_required_grips[0]
+    # Stage 1 — grip signatures (list)
+    assert len(uchi.canonical_grip_signatures) == 1
+    sig = uchi.canonical_grip_signatures[0]
+    assert sig.mirror_eligible is True
+    assert len(sig.tori_required_grips) == 2
+    first_grip = sig.tori_required_grips[0]
     assert first_grip.hand is GripHand.TORI_LEFT
     assert first_grip.target_region is GripTargetRegion.UKE_SLEEVE_UPPER
     assert first_grip.minimum_depth is GripDepth.CONTROLLED
-    disq = uchi.canonical_grip_signature.uke_disqualifying_grips
-    assert len(disq) == 1 and disq[0].minimum_depth is GripDepth.DEEP
+    assert len(sig.uke_disqualifying_grips) == 1
+    assert sig.uke_disqualifying_grips[0].minimum_depth is GripDepth.DEEP
     # Stage 2 — kinetic
-    assert uchi.kuzushi_vector == ["forward_right_diagonal", "forward_pure"]
+    assert uchi.admissible_kuzushi_vectors == ["forward_right_diagonal", "forward_pure"]
+    # primary omitted in YAML → defaults to admissible
+    assert uchi.primary_kuzushi_vectors == ["forward_right_diagonal", "forward_pure"]
     assert uchi.couple_type == "forward_rotation_about_hip_axis"
     assert uchi.posture_requirements is UkePostureRequirement.UPRIGHT_OR_FORWARD_COMPROMISED
     # Difficulty & pedagogy
@@ -132,6 +151,18 @@ def test_load_sample_catalog_yaml():
     # Era
     assert uchi.era_introduced == 1895
     assert uchi.era_restricted is None
+
+
+def test_sample_catalog_deashi_uses_any_wildcard():
+    # Deashi-harai is the canonical omnidirectional foot sweep — admissible
+    # is `any`, primary lists the forward-scoring directions.
+    catalog = load_catalog(SAMPLE_CATALOG)
+    deashi = catalog["deashi_harai"]
+    assert deashi.admissible_kuzushi_vectors == [KUZUSHI_ANY_TOKEN]
+    assert deashi.is_omnidirectional() is True
+    assert deashi.primary_kuzushi_vectors == [
+        "forward_right_diagonal", "forward_left_diagonal",
+    ]
 
 
 def test_load_sample_catalog_covers_each_family():
@@ -155,12 +186,12 @@ MINIMAL_YAML = textwrap.dedent("""
         family: te_waza
         subfamily: forward_throw
         kodokan_status: shinmeisho_no_waza
-        canonical_grip_signature:
-          tori_required_grips:
-            - hand: tori_right
-              target_region: uke_lapel_high
-              minimum_depth: shallow
-        kuzushi_vector:
+        canonical_grip_signatures:
+          - tori_required_grips:
+              - hand: tori_right
+                target_region: uke_lapel_high
+                minimum_depth: shallow
+        admissible_kuzushi_vectors:
           - forward_pure
         couple_type: placeholder_couple
         posture_requirements: any
@@ -181,7 +212,11 @@ def test_loader_accepts_minimal_entry_with_optional_fields_omitted(tmp_path):
     assert definition.ne_waza_followup_preferences == []
     assert definition.era_introduced is None
     assert definition.era_restricted is None
-    assert definition.canonical_grip_signature.uke_disqualifying_grips == []
+    sig = definition.canonical_grip_signatures[0]
+    assert sig.uke_disqualifying_grips == []
+    assert sig.mirror_eligible is True
+    # primary defaults to admissible when omitted
+    assert definition.primary_kuzushi_vectors == ["forward_pure"]
 
 
 def test_loader_accepts_json_format(tmp_path):
@@ -194,16 +229,18 @@ def test_loader_accepts_json_format(tmp_path):
                 "family": "te_waza",
                 "subfamily": "forward_throw",
                 "kodokan_status": "gokyo_no_waza",
-                "canonical_grip_signature": {
-                    "tori_required_grips": [
-                        {
-                            "hand": "tori_right",
-                            "target_region": "uke_lapel_high",
-                            "minimum_depth": "controlled",
-                        }
-                    ]
-                },
-                "kuzushi_vector": ["forward_pure"],
+                "canonical_grip_signatures": [
+                    {
+                        "tori_required_grips": [
+                            {
+                                "hand": "tori_right",
+                                "target_region": "uke_lapel_high",
+                                "minimum_depth": "controlled",
+                            }
+                        ]
+                    }
+                ],
+                "admissible_kuzushi_vectors": ["forward_pure"],
                 "couple_type": "placeholder",
                 "posture_requirements": "any",
                 "base_difficulty": 50,
@@ -216,6 +253,109 @@ def test_loader_accepts_json_format(tmp_path):
     catalog = load_catalog(json_path)
     assert "json_throw" in catalog
     assert catalog["json_throw"].base_difficulty == 50
+
+
+# ---------------------------------------------------------------------------
+# v1.2 schema — multi-signature lists, mirror_eligible, kuzushi any wildcard
+# ---------------------------------------------------------------------------
+def test_multi_signature_list_is_parsed(tmp_path):
+    # Multi-entry signatures express genuinely distinct grip variants
+    # (e.g., classic seoi-nage vs. one-handed seoi-nage).
+    path = tmp_path / "multi_sig.yaml"
+    path.write_text(textwrap.dedent("""
+        techniques:
+          - technique_id: variant_throw
+            name_japanese: V
+            name_english: V
+            family: te_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_left
+                    target_region: uke_sleeve_upper
+                    minimum_depth: deep
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+                mirror_eligible: true
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_belt
+                    minimum_depth: controlled
+                mirror_eligible: false
+            admissible_kuzushi_vectors: [forward_pure]
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 50
+    """).strip(), encoding="utf-8")
+
+    catalog = load_catalog(path)
+    sigs = catalog["variant_throw"].canonical_grip_signatures
+    assert len(sigs) == 2
+    assert sigs[0].mirror_eligible is True
+    assert sigs[1].mirror_eligible is False
+    assert sigs[1].tori_required_grips[0].target_region is GripTargetRegion.UKE_BELT
+
+
+def test_primary_kuzushi_can_be_explicit_subset(tmp_path):
+    path = tmp_path / "primary.yaml"
+    path.write_text(textwrap.dedent("""
+        techniques:
+          - technique_id: subset_throw
+            name_japanese: S
+            name_english: S
+            family: te_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors:
+              - forward_pure
+              - forward_right_diagonal
+              - forward_left_diagonal
+            primary_kuzushi_vectors:
+              - forward_pure
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 50
+    """).strip(), encoding="utf-8")
+
+    definition = load_catalog(path)["subset_throw"]
+    assert definition.primary_kuzushi_vectors == ["forward_pure"]
+    assert len(definition.admissible_kuzushi_vectors) == 3
+
+
+def test_kuzushi_any_wildcard_as_scalar(tmp_path):
+    # `admissible_kuzushi_vectors: any` (scalar) is the canonical compact form.
+    path = tmp_path / "any.yaml"
+    path.write_text(textwrap.dedent("""
+        techniques:
+          - technique_id: omni_throw
+            name_japanese: O
+            name_english: O
+            family: ashi_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: any
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 50
+    """).strip(), encoding="utf-8")
+
+    definition = load_catalog(path)["omni_throw"]
+    assert definition.is_omnidirectional() is True
+    assert definition.admissible_kuzushi_vectors == [KUZUSHI_ANY_TOKEN]
+    # primary defaults to a copy of admissible — keeps the wildcard sentinel
+    assert definition.primary_kuzushi_vectors == [KUZUSHI_ANY_TOKEN]
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +376,12 @@ def test_missing_required_field_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
@@ -254,7 +399,12 @@ def test_invalid_family_enum_is_rejected(tmp_path):
             family: not_a_real_family
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
@@ -272,17 +422,60 @@ def test_invalid_grip_depth_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            canonical_grip_signature:
-              tori_required_grips:
-                - hand: tori_right
-                  target_region: uke_lapel_high
-                  minimum_depth: featherlight
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: featherlight
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
     """)
     with pytest.raises(CatalogValidationError, match="featherlight"):
+        load_catalog(path)
+
+
+def test_empty_grip_signatures_list_is_rejected(tmp_path):
+    path = _write(tmp_path, """
+        techniques:
+          - technique_id: broken
+            name_japanese: B
+            name_english: B
+            family: te_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures: []
+            admissible_kuzushi_vectors: [forward_pure]
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 40
+    """)
+    with pytest.raises(CatalogValidationError, match="canonical_grip_signatures"):
+        load_catalog(path)
+
+
+def test_non_boolean_mirror_eligible_is_rejected(tmp_path):
+    path = _write(tmp_path, """
+        techniques:
+          - technique_id: broken
+            name_japanese: B
+            name_english: B
+            family: te_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+                mirror_eligible: "yes"
+            admissible_kuzushi_vectors: [forward_pure]
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 40
+    """)
+    with pytest.raises(CatalogValidationError, match="mirror_eligible"):
         load_catalog(path)
 
 
@@ -295,12 +488,88 @@ def test_unknown_kuzushi_direction_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [sideways_corkscrew]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [sideways_corkscrew]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
     """)
     with pytest.raises(CatalogValidationError, match="sideways_corkscrew"):
+        load_catalog(path)
+
+
+def test_any_wildcard_cannot_combine_with_explicit_directions(tmp_path):
+    path = _write(tmp_path, """
+        techniques:
+          - technique_id: broken
+            name_japanese: B
+            name_english: B
+            family: te_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [any, forward_pure]
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 40
+    """)
+    with pytest.raises(CatalogValidationError, match="wildcard"):
+        load_catalog(path)
+
+
+def test_primary_kuzushi_not_in_admissible_is_rejected(tmp_path):
+    path = _write(tmp_path, """
+        techniques:
+          - technique_id: broken
+            name_japanese: B
+            name_english: B
+            family: te_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
+            primary_kuzushi_vectors: [rear_pure]
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 40
+    """)
+    with pytest.raises(CatalogValidationError, match="not in admissible"):
+        load_catalog(path)
+
+
+def test_primary_kuzushi_cannot_contain_any_wildcard(tmp_path):
+    path = _write(tmp_path, """
+        techniques:
+          - technique_id: broken
+            name_japanese: B
+            name_english: B
+            family: te_waza
+            subfamily: forward_throw
+            kodokan_status: gokyo_no_waza
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: any
+            primary_kuzushi_vectors: [any]
+            couple_type: placeholder
+            posture_requirements: any
+            base_difficulty: 40
+    """)
+    with pytest.raises(CatalogValidationError, match="primary_kuzushi_vectors"):
         load_catalog(path)
 
 
@@ -313,7 +582,12 @@ def test_base_difficulty_out_of_range_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 250
@@ -331,7 +605,12 @@ def test_implausible_era_year_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
@@ -350,7 +629,12 @@ def test_era_restricted_before_introduced_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
@@ -370,7 +654,12 @@ def test_duplicate_technique_id_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
@@ -380,7 +669,12 @@ def test_duplicate_technique_id_is_rejected(tmp_path):
             family: te_waza
             subfamily: forward_throw
             kodokan_status: gokyo_no_waza
-            kuzushi_vector: [forward_pure]
+            canonical_grip_signatures:
+              - tori_required_grips:
+                  - hand: tori_right
+                    target_region: uke_lapel_high
+                    minimum_depth: controlled
+            admissible_kuzushi_vectors: [forward_pure]
             couple_type: placeholder
             posture_requirements: any
             base_difficulty: 40
